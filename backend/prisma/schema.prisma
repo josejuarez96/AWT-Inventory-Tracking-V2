@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int       @id @default(autoincrement())
+  username      String    @unique @db.VarChar(50)
+  passwordHash  String    @map("password_hash")
+  fullName      String    @map("full_name") @db.VarChar(100)
+  role          String    @db.VarChar(20) // 'admin' or 'user'
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  lastLoginAt   DateTime? @map("last_login_at")
+
+  transactions  Transaction[]
+
+  @@map("users")
+}
+
+model Vendor {
+  id            Int       @id @default(autoincrement())
+  vendorCode    String    @unique @map("vendor_code") @db.VarChar(50)
+  vendorName    String    @map("vendor_name") @db.VarChar(200)
+  contactPerson String?   @map("contact_person") @db.VarChar(100)
+  phone         String?   @db.VarChar(20)
+  email         String?   @db.VarChar(100)
+  paymentTerms  String?   @map("payment_terms") @db.VarChar(50)
+  notes         String?
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  transactions  Transaction[]
+
+  @@map("vendors")
+}
+
+model Item {
+  id              Int       @id @default(autoincrement())
+  itemCode        String    @unique @map("item_code") @db.VarChar(50)
+  description     String
+  category        String?   @db.VarChar(100)
+  unitOfMeasure   String    @default("EA") @map("unit_of_measure") @db.VarChar(20)
+  minQuantity     Decimal?  @map("min_quantity") @db.Decimal(10, 2)
+  maxQuantity     Decimal?  @map("max_quantity") @db.Decimal(10, 2)
+  isActive        Boolean   @default(true) @map("is_active")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  transactions    Transaction[]
+
+  @@map("items")
+}
+
+model Transaction {
+  id              Int       @id @default(autoincrement())
+  transactionType String    @map("transaction_type") @db.VarChar(20) // 'RECEIPT', 'ADJUSTMENT', 'TRANSFER', 'OPENING_BALANCE'
+  itemId          Int       @map("item_id")
+  vendorId        Int?      @map("vendor_id")
+  location        String    @db.VarChar(50) // 'ADEL' or 'CALHOUN'
+  quantity        Decimal   @db.Decimal(10, 2)
+  unitCost        Decimal?  @map("unit_cost") @db.Decimal(10, 2)
+  referencePrice  Decimal?  @map("reference_price") @db.Decimal(10, 2)
+  invoiceNumber   String?   @map("invoice_number") @db.VarChar(100)
+  transactionDate DateTime  @map("transaction_date") @db.Date
+  notes           String?
+  createdBy       Int       @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  item            Item      @relation(fields: [itemId], references: [id])
+  vendor          Vendor?   @relation(fields: [vendorId], references: [id])
+  user            User      @relation(fields: [createdBy], references: [id])
+
+  @@index([itemId])
+  @@index([transactionDate])
+  @@index([transactionType])
+  @@map("transactions")
+}

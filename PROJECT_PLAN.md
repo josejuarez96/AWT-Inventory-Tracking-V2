@@ -144,7 +144,7 @@ CREATE INDEX idx_vendors_code ON Vendors(vendor_code);
   - Session persistence
 - [ ] **User Seed Script**: Create first admin user (Jose)
 - [ ] **Base Layout**: Responsive sidebar navigation with links to all pages
-- [ ] **Dashboard Page**: Landing page with welcome message and summary placeholders
+- [ ] **Dashboard Page**: Landing page with welcome message and placeholder stat cards (Total Items, Transactions MTD, Active Vendors, Team Members) — placeholders upgraded to live data in Phase 2
 - [ ] **User Management UI** (Admin only): Create/edit users, assign roles
 
 **Success Criteria**:
@@ -161,8 +161,8 @@ CREATE INDEX idx_vendors_code ON Vendors(vendor_code);
 
 **Estimated Time**: 20-30 hours
 
-### Phase 2: Core Transactions & CSV Import (The "Alix" Phase)
-**Goal**: Enable receipt entry AND bulk data loading via CSV.
+### Phase 2: Core Transactions, CSV Import & Live Dashboard (The "Alix" Phase)
+**Goal**: Enable receipt entry, bulk data loading via CSV, and upgrade the dashboard to a fully actionable operations hub.
 
 **Note**: CSV imports are for future use when you have real vendor/item lists. For now, use test data from seed script.
 
@@ -190,6 +190,27 @@ CREATE INDEX idx_vendors_code ON Vendors(vendor_code);
   - Audit trail of all movements (receipts, adjustments, transfers)
   - Filter by date range, item, transaction type
   - Shows who created each transaction and when
+- [ ] **Live Dashboard Upgrade**:
+  - **Stat Cards (live data)**: Replace placeholders with real counts — Total Items, Transactions (MTD), Active Vendors, Team Members
+  - **Running Low Alerts**: Items at or below `min_quantity`, sorted by urgency
+    - Burn rate calculated from last 30 days of outgoing usage (negative transactions) ÷ 30 = units/day
+    - Days remaining = current stock ÷ burn rate (shown as "~X days left")
+    - Empty state: "No low stock items detected" (expected until transaction history accumulates)
+  - **Dead Stock**: Items with zero transaction activity in the last 90 days
+    - Shows item code, description, qty on hand, last movement date
+    - Empty state: "No dead stock detected"
+  - **Inventory Valuation**: Total on-hand value = qty on hand × last known unit cost, per item
+    - Broken down by ADEL total, CALHOUN total, and combined grand total
+    - Used to cross-check against QuickBooks on-hand value
+  - **Recent Activity Feed**: Last 20 transactions, newest first
+    - Human-readable format: "Alix received 50 × Trailer Tires from Dexter at ADEL" or "Jose adjusted Highway Axle −2 at CALHOUN"
+    - Empty state: "No recent activity"
+  - **New backend endpoints required**:
+    - `GET /api/dashboard/stats` — live counts for stat cards
+    - `GET /api/dashboard/low-stock` — items below min_qty with burn rate + days remaining
+    - `GET /api/dashboard/dead-stock` — items with no activity in last 90 days
+    - `GET /api/dashboard/valuation` — on-hand inventory value by location
+    - `GET /api/dashboard/activity` — last 20 transactions as human-readable strings
 
 **Success Criteria**:
 ✅ Admin can upload Vendors CSV and see preview before importing (tested with sample CSV)
@@ -199,11 +220,17 @@ CREATE INDEX idx_vendors_code ON Vendors(vendor_code);
 ✅ Stock position view accurately reflects inventory after receipts
 ✅ Transaction history shows all movements with full audit trail
 ✅ All CSV imports validate data and show clear error messages for bad data
+✅ Dashboard stat cards show live counts (not placeholders)
+✅ Running Low widget shows burn rate and days remaining for items below min_quantity
+✅ Dead Stock widget lists items with no activity in 90+ days
+✅ Inventory Valuation shows on-hand value split by ADEL, CALHOUN, and combined
+✅ Recent Activity Feed shows last 20 transactions in human-readable format
+✅ All dashboard widgets handle empty state gracefully (no crashes when no data yet)
 ✅ Works perfectly with seed test data on localhost
 
 **Deployment**: Still local development - can demo to Alix on your computer!
 
-**Estimated Time**: 40-50 hours
+**Estimated Time**: 50-60 hours
 
 ### Phase 3: Inventory Correction
 **Goal**: Handle adjustments, initial counts, and location transfers.

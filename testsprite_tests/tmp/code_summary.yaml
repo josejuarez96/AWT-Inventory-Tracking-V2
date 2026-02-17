@@ -8,6 +8,8 @@ tech_stack:
   - JWT (jsonwebtoken)
   - bcrypt
   - express-validator
+  - multer
+  - csv-parse
   - dotenv
 features:
   - name: Health Check API
@@ -31,7 +33,6 @@ features:
     files:
       - backend/src/routes/auth.js
       - backend/src/middleware/auth.js
-      - backend/src/lib/prisma.js
     endpoints:
       - method: POST
         path: /api/auth/login
@@ -85,12 +86,12 @@ features:
         auth_required: true
         response_schema:
           "200":
-            users: User[]
+            users: "User[]"
           "401": Unauthorized
           "403": Admin access required
       - method: POST
         path: /api/users
-        description: Create a new user account
+        description: Create a new user account, returns HTTP 201 with body wrapped in user envelope
         auth_required: true
         request_schema:
           body:
@@ -99,35 +100,38 @@ features:
             fullName: string
             role: "admin | user"
         response_schema:
-          "201": User
+          "201":
+            user: User
           "400": Validation error
           "401": Unauthorized
           "403": Admin access required
           "409": Username already taken
       - method: PUT
         path: /api/users/:id
-        description: Update a user's fullName, role, or password — all fields optional
+        description: Update a user's fullName, role, or password — all fields optional. Returns HTTP 200 with body wrapped in user envelope.
         auth_required: true
         request_schema:
           body:
-            fullName: string (optional)
+            fullName: "string (optional)"
             role: "admin | user (optional)"
-            password: string (optional)
+            password: "string (optional)"
         response_schema:
-          "200": User
+          "200":
+            user: User
           "400": Validation error or no fields to update
           "401": Unauthorized
           "403": Admin access required
           "404": User not found
       - method: PATCH
         path: /api/users/:id/status
-        description: Activate or deactivate a user account. Cannot deactivate own account.
+        description: Activate or deactivate a user account. Cannot deactivate own account. Returns HTTP 200 with body wrapped in user envelope.
         auth_required: true
         request_schema:
           body:
             isActive: boolean
         response_schema:
-          "200": User
+          "200":
+            user: User
           "400": Cannot deactivate own account
           "401": Unauthorized
           "403": Admin access required
@@ -135,7 +139,201 @@ features:
     depends_on:
       - Authentication API
 
+  - name: Vendor Management API
+    description: List vendors and bulk CSV import (admin only for imports)
+    files:
+      - backend/src/routes/vendors.js
+    endpoints:
+      - method: GET
+        path: /api/vendors
+        description: List all active vendors
+        auth_required: true
+        response_schema:
+          "200":
+            vendors: "Vendor[]"
+          "401": Unauthorized
+      - method: POST
+        path: /api/vendors/import/preview
+        description: Parse uploaded CSV file and return rows with validation errors. No DB writes. Multipart/form-data with field named 'file'.
+        auth_required: true
+        request_schema:
+          body:
+            file: "CSV file (multipart/form-data, field name: file)"
+        response_schema:
+          "200":
+            rows: "array of parsed row objects (normalized headers)"
+            errors: "array of {rowNumber, field, message}"
+          "400": No file or parse error
+          "401": Unauthorized
+          "403": Admin access required
+      - method: POST
+        path: /api/vendors/import
+        description: Commit validated vendor rows to database. JSON body. skipDuplicates by vendorCode.
+        auth_required: true
+        request_schema:
+          body:
+            rows: "array of vendor row objects with vendor_code, vendor_name, etc."
+        response_schema:
+          "201":
+            inserted: number
+          "400": Validation error
+          "401": Unauthorized
+          "403": Admin access required
+    depends_on:
+      - Authentication API
+
+  - name: Item Management API
+    description: List items and bulk CSV import (admin only for imports)
+    files:
+      - backend/src/routes/items.js
+    endpoints:
+      - method: GET
+        path: /api/items
+        description: List all active items
+        auth_required: true
+        response_schema:
+          "200":
+            items: "Item[]"
+          "401": Unauthorized
+      - method: POST
+        path: /api/items/import/preview
+        description: Parse uploaded items CSV file and return rows with validation errors. No DB writes. Multipart/form-data with field named 'file'.
+        auth_required: true
+        request_schema:
+          body:
+            file: "CSV file (multipart/form-data, field name: file)"
+        response_schema:
+          "200":
+            rows: "array of parsed row objects"
+            errors: "array of {rowNumber, field, message}"
+          "400": No file or parse error
+          "401": Unauthorized
+          "403": Admin access required
+      - method: POST
+        path: /api/items/import
+        description: Commit validated item rows to database. JSON body. skipDuplicates by itemCode.
+        auth_required: true
+        request_schema:
+          body:
+            rows: "array of item row objects with item_code, description, etc."
+        response_schema:
+          "201":
+            inserted: number
+          "400": Validation error
+          "401": Unauthorized
+          "403": Admin access required
+    depends_on:
+      - Authentication API
+
+  - name: Transaction API
+    description: Create receipts, view stock position, and query transaction history
+    files:
+      - backend/src/routes/transactions.js
+    endpoints:
+      - method: POST
+        path: /api/transactions/receipts
+        description: Create a RECEIPT transaction. Returns created transaction and lastPaidPrice for the item.
+        auth_required: true
+        request_schema:
+          body:
+            itemId: "integer"
+            vendorId: "integer"
+            location: "ADEL | CALHOUN"
+            quantity: "number (positive float)"
+            unitCost: "number (positive float)"
+            transactionDate: "ISO 8601 date string e.g. 2026-02-17"
+            invoiceNumber: "string (optional)"
+            notes: "string (optional)"
+        response_schema:
+          "201":
+            transaction: Transaction
+            lastPaidPrice: "number | null"
+          "400": Validation error
+          "401": Unauthorized
+          "404": Item or Vendor not found
+      - method: GET
+        path: /api/transactions/stock-position
+        description: Current qty on hand per item per location, calculated from SUM of all transaction quantities grouped by itemId and location
+        auth_required: true
+        response_schema:
+          "200":
+            positions: "array of {item: {id, itemCode, description, category, unitOfMeasure, minQuantity}, adelQty, calhounQty, totalQty}"
+          "401": Unauthorized
+      - method: GET
+        path: /api/transactions
+        description: Transaction history. Supports optional query params: itemId (int), location (ADEL|CALHOUN), type (RECEIPT|ADJUSTMENT|TRANSFER|OPENING_BALANCE), from (date), to (date).
+        auth_required: true
+        response_schema:
+          "200":
+            transactions: "Transaction[] with item, vendor, user included"
+          "400": Validation error on filter params
+          "401": Unauthorized
+    depends_on:
+      - Authentication API
+      - Vendor Management API
+      - Item Management API
+
+  - name: Dashboard API
+    description: Aggregated metrics and alerts for the operations dashboard
+    files:
+      - backend/src/routes/dashboard.js
+    endpoints:
+      - method: GET
+        path: /api/dashboard/stats
+        description: Live counts for stat cards
+        auth_required: true
+        response_schema:
+          "200":
+            totalItems: number
+            transactionsMTD: number
+            activeVendors: number
+            teamMembers: number
+          "401": Unauthorized
+      - method: GET
+        path: /api/dashboard/low-stock
+        description: Items at or below min_quantity. burnRate is units/day from last 30 days outgoing transactions (null if no outgoing). daysRemaining is currentStock/burnRate (null if no burn rate).
+        auth_required: true
+        response_schema:
+          "200":
+            items: "array of {id, itemCode, description, category, unitOfMeasure, currentStock, minQuantity, burnRate, daysRemaining}"
+          "401": Unauthorized
+      - method: GET
+        path: /api/dashboard/dead-stock
+        description: Items with stock on hand but zero transaction activity in the last 90 days
+        auth_required: true
+        response_schema:
+          "200":
+            items: "array of {id, itemCode, description, category, currentStock}"
+          "401": Unauthorized
+      - method: GET
+        path: /api/dashboard/valuation
+        description: On-hand inventory value by location using last known unit cost per item per location
+        auth_required: true
+        response_schema:
+          "200":
+            adel: number
+            calhoun: number
+            total: number
+          "401": Unauthorized
+      - method: GET
+        path: /api/dashboard/activity
+        description: Last 20 transactions as human-readable strings, newest first
+        auth_required: true
+        response_schema:
+          "200":
+            activity: "array of {id, description, transactionType, location, transactionDate, createdAt}"
+          "401": Unauthorized
+    depends_on:
+      - Authentication API
+      - Transaction API
+
 known_limitations:
   - issue: No rate limiting on login endpoint
     location: backend/src/routes/auth.js
     impact: Brute force possible, acceptable for internal tool at this stage
+  - issue: No DELETE endpoint for users, vendors, or items
+    location: backend/src/routes/users.js
+    impact: Soft-delete only via isActive flag; test cleanup falls back to deactivation
+  - issue: No token revocation/blacklist
+    location: backend/src/routes/auth.js
+    impact: JWT remains valid until 7-day expiry after logout; mitigated by isActive check on every request

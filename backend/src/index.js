@@ -4,6 +4,10 @@ const cors = require('cors');
 
 const authRoutes = require('./routes/auth');
 const usersRoutes = require('./routes/users');
+const vendorsRoutes = require('./routes/vendors');
+const itemsRoutes = require('./routes/items');
+const transactionsRoutes = require('./routes/transactions');
+const dashboardRoutes = require('./routes/dashboard');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,6 +32,10 @@ app.get('/api/health', (req, res) => {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/vendors', vendorsRoutes);
+app.use('/api/items', itemsRoutes);
+app.use('/api/transactions', transactionsRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Global error handler (Express 5 forwards async errors automatically)
 app.use((err, req, res, _next) => {

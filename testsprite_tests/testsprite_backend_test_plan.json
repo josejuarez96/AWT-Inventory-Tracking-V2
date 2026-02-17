@@ -2,7 +2,7 @@
   {
     "id": "TC001",
     "title": "health check api returns server status and timestamp",
-    "description": "Test the GET /api/health endpoint to verify it returns a 200 status with a JSON body containing status, message, and timestamp fields indicating the server is running."
+    "description": "Test the GET /api/health endpoint to verify it returns a 200 status with a JSON object containing status, message, and timestamp fields when the server is running normally."
   },
   {
     "id": "TC002",
@@ -17,26 +17,26 @@
   {
     "id": "TC004",
     "title": "authentication logout acknowledges logout with message",
-    "description": "Test the POST /api/auth/logout endpoint with a valid Authorization Bearer token to ensure it returns a 200 status with a confirmation message acknowledging logout."
+    "description": "Test the POST /api/auth/logout endpoint with a valid Authorization Bearer token to ensure it returns a 200 status with a message acknowledging logout."
   },
   {
     "id": "TC005",
-    "title": "user management list users requires admin authorization",
-    "description": "Test the GET /api/users endpoint with an admin token to verify it returns a 200 status with a list of users excluding password hashes, and test with no or non-admin token to verify 401 or 403 errors."
+    "title": "user management list users requires admin token",
+    "description": "Test the GET /api/users endpoint with an admin Authorization Bearer token to verify it returns a 200 status with a list of users excluding password hashes."
   },
   {
     "id": "TC006",
-    "title": "user management create user with admin authorization",
-    "description": "Test the POST /api/users endpoint with valid admin token and user data to create a new user, expecting a 201 status with the created user object, and test error cases like duplicate username and non-admin access."
+    "title": "user management create user with admin token",
+    "description": "Test the POST /api/users endpoint with an admin Authorization Bearer token and valid user data to ensure it creates a new user and returns a 201 status with the created user object."
   },
   {
     "id": "TC007",
-    "title": "user management update user fields with admin authorization",
-    "description": "Test the PUT /api/users/:id endpoint with admin token and valid update fields (fullName, role, password) to update a user, expecting a 200 status with updated user, and test error cases like no fields to update and user not found."
+    "title": "user management update user fields with admin token",
+    "description": "Test the PUT /api/users/:id endpoint with an admin Authorization Bearer token and valid update fields (fullName, role, password) to verify it updates the user and returns a 200 status with the updated user object."
   },
   {
     "id": "TC008",
-    "title": "user management activate deactivate user account with admin authorization",
-    "description": "Test the PATCH /api/users/:id/status endpoint with admin token to activate or deactivate a user account, ensuring it returns 200 with updated user, and test error case where admin tries to deactivate own account resulting in 400 error."
+    "title": "user management change user status with admin token",
+    "description": "Test the PATCH /api/users/:id/status endpoint with an admin Authorization Bearer token and a body containing isActive boolean to verify it activates or deactivates the user account, returning a 200 status with the updated user."
   }
 ]

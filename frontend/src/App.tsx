@@ -5,6 +5,10 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { LoginPage } from '@/pages/LoginPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { UsersPage } from '@/pages/UsersPage';
+import { StockPositionPage } from '@/pages/StockPositionPage';
+import { TransactionHistoryPage } from '@/pages/TransactionHistoryPage';
+import { ReceiptPage } from '@/pages/ReceiptPage';
+import { ImportPage } from '@/pages/ImportPage';
 
 export default function App() {
   return (
@@ -18,10 +22,14 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/inventory" element={<StockPositionPage />} />
+              <Route path="/transactions" element={<TransactionHistoryPage />} />
+              <Route path="/receipts" element={<ReceiptPage />} />
 
               {/* Admin only */}
               <Route element={<ProtectedRoute requiredRole="admin" />}>
                 <Route path="/users" element={<UsersPage />} />
+                <Route path="/import" element={<ImportPage />} />
               </Route>
             </Route>
           </Route>

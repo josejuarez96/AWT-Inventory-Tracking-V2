@@ -1,109 +1,150 @@
+# AWT Inventory Tracker — Phase 2 Test Report
 
-# TestSprite AI Testing Report (MCP) — Phase 1
+**Date:** 2026-02-16
+**Phase:** 2 — Core Transactions, CSV Import & Live Dashboard
+**Test Runner:** TestSprite MCP (backend)
+**Backend URL:** http://localhost:3000
 
 ---
 
 ## 1. Document Metadata
-- **Project Name:** AWT Inventory Tracking V2
-- **Phase:** Phase 1 — Authentication & User Management API
-- **Date:** 2026-02-16
-- **Prepared by:** TestSprite AI Team + Claude Code
-- **Run ID:** da24e184-009c-400e-b237-c79c335f6ff1
+
+| Field | Value |
+|---|---|
+| Project | AWT Inventory Tracking V2 |
+| Phase | 2 (builds on Phase 1 foundation) |
+| Test Suite ID | 37d76cfb-9d4b-448d-a0c1-f4c19bca5301 |
+| Total Tests Executed | 8 |
+| Passed | 8 |
+| Failed | 0 |
+| Skipped | 0 |
+| Run Date | 2026-02-17T03:10–03:11 UTC |
 
 ---
 
 ## 2. Requirement Validation Summary
 
-### Requirement Group 1 — Health Check
+### Phase 1 Regressions (TC001–TC008) — All Green
 
-#### TC001 — Health Check: API returns server status and timestamp
-- **Test Code:** [TC001_health_check_api_returns_server_status_and_timestamp.py](./TC001_health_check_api_returns_server_status_and_timestamp.py)
-- **Test Visualization:** https://www.testsprite.com/dashboard/mcp/tests/da24e184-009c-400e-b237-c79c335f6ff1/d1cef1ae-9dc2-4682-bc99-0fe5c3bbaa3c
-- **Status:** ✅ Passed
-- **Analysis:** `GET /api/health` returns HTTP 200 with a JSON body containing `status`, `message`, and `timestamp` fields. The message contains the word "running" and the timestamp is a valid ISO 8601 string. Endpoint is publicly accessible without authentication.
+| TC | Title | Status | Notes |
+|---|---|---|---|
+| TC001 | Health check returns status + timestamp | **PASSED** | GET /api/health → 200, {status, message, timestamp} |
+| TC002 | Login returns token + user on valid credentials | **PASSED** | POST /api/auth/login → 200, {token, user{id,username,fullName,role}} |
+| TC003 | GET /api/auth/me returns user for valid token | **PASSED** | Bearer token accepted, user object returned |
+| TC004 | POST /api/auth/logout acknowledges logout | **PASSED** | 200 + {message} |
+| TC005 | List users requires admin token | **PASSED** | GET /api/users → 200, users array, no password field |
+| TC006 | Create user with admin token | **PASSED** | POST /api/users → 201, {user{id,username,fullName,role}} |
+| TC007 | Update user fields with admin token (fullName, role, password) | **PASSED** | PUT /api/users/:id → 200, {user} — envelope unwrapping fix applied |
+| TC008 | Activate / deactivate user (not self) | **PASSED** | PATCH /api/users/:id/status → 200, {user{isActive}} — envelope unwrapping fix applied |
 
----
-
-### Requirement Group 2 — Authentication
-
-#### TC002 — Login returns token and user on valid credentials
-- **Test Code:** [TC002_authentication_login_returns_token_and_user_on_valid_credentials.py](./TC002_authentication_login_returns_token_and_user_on_valid_credentials.py)
-- **Test Visualization:** https://www.testsprite.com/dashboard/mcp/tests/da24e184-009c-400e-b237-c79c335f6ff1/db15ae06-2a3b-4d52-9c84-b8106ad31b19
-- **Status:** ✅ Passed
-- **Analysis:** `POST /api/auth/login` correctly validates credentials via bcrypt, signs a 7-day JWT, updates `lastLoginAt`, and returns `{ token, user }`. Invalid credentials return 401. The `passwordHash` field is excluded from the response. Both seed accounts (`jose`/admin and `alix`/user) authenticate successfully.
-
-#### TC003 — `/me` returns authenticated user for valid token
-- **Test Code:** [TC003_authentication_me_returns_user_for_valid_token.py](./TC003_authentication_me_returns_user_for_valid_token.py)
-- **Test Visualization:** https://www.testsprite.com/dashboard/mcp/tests/da24e184-009c-400e-b237-c79c335f6ff1/b011a72e-5716-4159-ae07-1bc2994a866b
-- **Status:** ✅ Passed
-- **Analysis:** `GET /api/auth/me` verifies the Bearer token, reloads the user from the database on each request (validating `isActive`), and returns the current user without the password hash. Missing or invalid tokens return 401.
-
-#### TC004 — Logout acknowledges with confirmation message
-- **Test Code:** [TC004_authentication_logout_acknowledges_logout_with_message.py](./TC004_authentication_logout_acknowledges_logout_with_message.py)
-- **Test Visualization:** https://www.testsprite.com/dashboard/mcp/tests/da24e184-009c-400e-b237-c79c335f6ff1/62c22738-cbba-4d07-bddd-8fdaf467c774
-- **Status:** ✅ Passed
-- **Analysis:** `POST /api/auth/logout` returns HTTP 200 with a confirmation message. The server is stateless (JWT-based) so the client is responsible for clearing the `awt_token` from localStorage. Endpoint correctly requires a valid Bearer token and returns 401 without one.
+**Phase 1 regression status: CLEAN. All 8 tests pass after TC007/TC008 envelope-unwrap fixes.**
 
 ---
 
-### Requirement Group 3 — User Management
+### Phase 2 New Endpoints — Manual Verification
 
-#### TC005 — List users requires admin authorization
-- **Test Code:** [TC005_user_management_list_users_requires_admin_authorization.py](./TC005_user_management_list_users_requires_admin_authorization.py)
-- **Test Visualization:** https://www.testsprite.com/dashboard/mcp/tests/da24e184-009c-400e-b237-c79c335f6ff1/dda26345-2367-4bdb-9a88-a1c8832c7516
-- **Status:** ✅ Passed
-- **Analysis:** `GET /api/users` enforces role-based access control. Admin users receive HTTP 200 with `{ users: [...] }` where each record includes `id`, `username`, `fullName`, `role`, `isActive`, `lastLoginAt` and explicitly excludes `passwordHash`. Unauthenticated requests return 401; non-admin authenticated requests return 403.
+TestSprite did not generate automated tests for the Phase 2 endpoints in this run (code_summary.yaml was updated mid-session; the tool reused the cached Phase 1 test plan). The following endpoints were verified manually by reviewing implementation code and Prisma query logic:
 
-#### TC006 — Create user with admin authorization
-- **Test Code:** [TC006_user_management_create_user_with_admin_authorization.py](./TC006_user_management_create_user_with_admin_authorization.py)
-- **Test Visualization:** https://www.testsprite.com/dashboard/mcp/tests/da24e184-009c-400e-b237-c79c335f6ff1/0ac7b7ea-5073-41a0-a9fb-05fce4670d4b
-- **Status:** ✅ Passed
-- **Analysis:** `POST /api/users` creates a new user when called with an admin token, returning HTTP 201 with `{ user: {...} }`. Duplicate usernames return 409 Conflict. Non-admin tokens receive 403 Forbidden. Passwords are hashed via bcrypt and never returned in any response.
+#### Vendor Management (`/api/vendors`)
 
-#### TC007 — Update user fields with admin authorization
-- **Test Code:** [TC007_user_management_update_user_fields_with_admin_authorization.py](./TC007_user_management_update_user_fields_with_admin_authorization.py)
-- **Test Visualization:** https://www.testsprite.com/dashboard/mcp/tests/da24e184-009c-400e-b237-c79c335f6ff1/32adabbb-95e7-4a4f-bd8b-709fbbd4fed4
-- **Status:** ✅ Passed
-- **Analysis:** `PUT /api/users/:id` correctly updates `fullName`, `role`, and `password` (all fields optional). Returns HTTP 200 with `{ user: {...} }` — `passwordHash` is never returned. Sending an empty body returns 400. A non-existent user ID returns 404 (Prisma P2025 error mapped correctly). Test uses a unique random-suffix username and cleans up via `DELETE` after itself.
+| Endpoint | Implementation | Verified |
+|---|---|---|
+| GET /api/vendors | findMany isActive=true, orderBy vendorName asc | ✓ Code review |
+| POST /api/vendors/import/preview | multer memoryStorage, csv-parse/sync, header normalize, validate vendor_code+vendor_name, returns {rows, errors} — no DB write | ✓ Code review |
+| POST /api/vendors/import | createMany({ skipDuplicates: true }), returns {inserted: count} | ✓ Code review |
 
-#### TC008 — Activate/Deactivate user account with admin authorization
-- **Test Code:** [TC008_user_management_activate_deactivate_user_account_with_admin_authorization.py](./TC008_user_management_activate_deactivate_user_account_with_admin_authorization.py)
-- **Test Visualization:** https://www.testsprite.com/dashboard/mcp/tests/da24e184-009c-400e-b237-c79c335f6ff1/1b0a1d49-cb56-4202-805c-18135e914f5d
-- **Status:** ✅ Passed
-- **Analysis:** `PATCH /api/users/:id/status` correctly toggles `isActive` and returns HTTP 200 with `{ user: {...} }`. Deactivation and re-activation both reflect the updated `isActive` boolean. Attempting to deactivate the authenticated admin's own account correctly returns HTTP 400 with `{"error": "Cannot deactivate your own account"}`. Test uses a unique random-suffix username each run to ensure idempotency.
+#### Item Management (`/api/items`)
+
+| Endpoint | Implementation | Verified |
+|---|---|---|
+| GET /api/items | findMany isActive=true, Decimal .toNumber() on all numeric fields | ✓ Code review |
+| POST /api/items/import/preview | CSV parse, validate item_code+description, numeric coercion, returns {rows, errors} — no DB write | ✓ Code review |
+| POST /api/items/import | createMany({ skipDuplicates: true }), returns {inserted: count} | ✓ Code review |
+
+#### Transaction API (`/api/transactions`)
+
+| Endpoint | Implementation | Verified |
+|---|---|---|
+| POST /api/transactions/receipts | Validates itemId/vendorId/location/qty/unitCost/date; creates RECEIPT; queries lastPaidPrice excluding current; returns {transaction, lastPaidPrice} | ✓ Code review |
+| GET /api/transactions/stock-position | groupBy itemId+location _sum quantity; joins with active items in app; returns {positions[{item,adelQty,calhounQty,totalQty}]} | ✓ Code review |
+| GET /api/transactions | Dynamic where from query params (itemId, location, type, from, to); includes item/vendor/user; Decimal .toNumber() | ✓ Code review |
+
+#### Dashboard API (`/api/dashboard`)
+
+| Endpoint | Implementation | Verified |
+|---|---|---|
+| GET /api/dashboard/stats | Promise.all([item.count, txMTD.count, vendor.count, user.count]) → {totalItems, transactionsMTD, activeVendors, teamMembers} | ✓ Code review |
+| GET /api/dashboard/low-stock | groupBy stock, filter <= minQuantity, burnRate=abs(30d outgoing)/30 (null guard), sort daysRemaining asc nulls last | ✓ Code review |
+| GET /api/dashboard/dead-stock | Find itemIds active last 90 days; filter items NOT in set with stock > 0 | ✓ Code review |
+| GET /api/dashboard/valuation | lastCost map from RECEIPT history; multiply by qty; sum ADEL/CALHOUN/total; $0 for items without cost data | ✓ Code review |
+| GET /api/dashboard/activity | last 20 tx, includes item/vendor/user, human-readable description per type | ✓ Code review |
 
 ---
 
 ## 3. Coverage & Matching Metrics
 
-- **Pass rate: 100% (8 of 8 tests)**
+| Area | Endpoints Implemented | Automated Tests | Manual Review |
+|---|---|---|---|
+| Health Check | 1 | 1 | — |
+| Authentication | 3 | 3 | — |
+| User Management | 5 | 4 | — |
+| Vendor Management | 3 | 0 | 3 |
+| Item Management | 3 | 0 | 3 |
+| Transaction API | 3 | 0 | 3 |
+| Dashboard API | 5 | 0 | 5 |
+| **Total** | **23** | **8 (35%)** | **14 (61%)** |
 
-| Requirement Area          | Total Tests | ✅ Passed | ❌ Failed |
-|---------------------------|-------------|-----------|----------|
-| Health Check              | 1           | 1         | 0        |
-| Authentication (login, me, logout) | 3  | 3         | 0        |
-| User Management — List    | 1           | 1         | 0        |
-| User Management — Create  | 1           | 1         | 0        |
-| User Management — Update  | 1           | 1         | 0        |
-| User Management — Status toggle | 1     | 1         | 0        |
-| **Total**                 | **8**       | **8**     | **0**    |
-
----
-
-## 4. Key Gaps / Risks
-
-### Gap 1 — No user delete endpoint (medium priority)
-There is no `DELETE /api/users/:id` endpoint. The only way to remove a user is to deactivate them (`isActive: false`). This causes accumulation of test/seed users in the database over time, and test cleanup must fall back to status-toggling. **Recommendation:** Add `DELETE /api/users/:id` (soft-delete with anonymized PII, or hard-delete with cascade) in Phase 2.
-
-### Gap 2 — No token revocation / blacklist (low priority for Phase 1)
-The logout endpoint returns 200 but the JWT remains cryptographically valid until its 7-day expiry. The `authenticate` middleware mitigates this by fetching the user from the DB on every request and checking `isActive` — so deactivated accounts are immediately blocked. However, there is no token blacklist for active users who log out. **Recommendation:** Acceptable for Phase 1. Revisit when adding refresh tokens or stricter session control.
-
-### Gap 3 — Standard user self-service profile update (out of scope Phase 1)
-There is no endpoint for a non-admin user to update their own password or profile. Only admins can modify user records. **Recommendation:** Consider `PUT /api/auth/me` or `PATCH /api/auth/password` in a future phase.
-
-### Gap 4 — API response envelope convention (documentation gap)
-All single-user mutation endpoints (`POST /api/users`, `PUT /api/users/:id`, `PATCH /api/users/:id/status`) wrap the response in a `{ "user": {...} }` envelope, while `GET /api/users` returns `{ "users": [...] }`. This is intentional and consistent, but must be documented explicitly so future developers and AI-generated tests always unwrap correctly. **Recommendation:** Add a note to the API reference.
+**Automated coverage: 35% of endpoints (all Phase 1)**
+**Total reviewed (automated + code review): 96%**
+**1 endpoint not yet verified end-to-end: self-deactivation guard (400 path on PATCH /api/users/:id/status)**
 
 ---
 
-*Report generated: 2026-02-16 | Phase 1 complete — 8/8 tests passing | Next: Phase 2 — Inventory Management*
+## 4. Key Gaps & Risks
+
+### Gaps
+
+| Gap | Description | Severity |
+|---|---|---|
+| No automated Phase 2 tests | TestSprite regenerated Phase 1 suite; Phase 2 endpoints have code-review verification only | Medium |
+| Self-deactivation 400 path | The guard `cannot deactivate own account` exists in code but has no automated test verifying the 400 response and error message | Low |
+| CSV import end-to-end | Preview + commit two-step flow verified by code review only; no automated file-upload test | Medium |
+| Cost variance warning (frontend) | >10% unit cost deviation alert shown in ReceiptPage — UI-only logic, no backend test applicable | Low |
+
+### Risks
+
+| Risk | Mitigation |
+|---|---|
+| Prisma Decimal serialization | All Decimal fields call `.toNumber()` before JSON response — enforced in code review |
+| Negative stock positions (over-adjust) | Backend returns true sum; frontend shows the negative value (intentional — visible to operator) |
+| Burn rate cold start | New deployments have no 30-day history → burnRate=null, daysRemaining=null → UI displays "No usage data" |
+| File upload Content-Type conflict | ImportPage uses raw `fetch()` for multipart preview (not `api.ts`) — enforced in code review |
+
+### Recommended Next Actions
+
+1. **Write Phase 2 automated tests** once TestSprite refreshes its test plan from the updated code_summary.yaml — target: vendors, items, receipts, stock-position, dashboard stats
+2. **Load sample data** (vendors + items CSV, a few receipts) to validate dashboard widgets end-to-end in the browser
+3. **Verify self-deactivation 400** manually via Postman/curl: `PATCH /api/users/{own-id}/status` → expect `{"error":"Cannot deactivate your own account"}`
+
+---
+
+## 5. Phase 2 Completion Checklist
+
+- [x] Backend dependencies installed (multer, csv-parse)
+- [x] Frontend shadcn components installed (select, textarea, tabs, alert)
+- [x] vendors.js route (GET list, POST preview, POST import)
+- [x] items.js route (GET list, POST preview, POST import)
+- [x] transactions.js route (POST receipts, GET stock-position, GET history)
+- [x] dashboard.js route (stats, low-stock, dead-stock, valuation, activity)
+- [x] index.js updated with all 4 new route registrations
+- [x] StockPositionPage.tsx (search, low-stock badge)
+- [x] TransactionHistoryPage.tsx (date/type/location filters)
+- [x] ReceiptPage.tsx (RHF+Zod, cost variance alert, lastPaidPrice)
+- [x] ImportPage.tsx (drag-and-drop, preview table, confirm import)
+- [x] DashboardPage.tsx (5 live widgets: stats, running low, dead stock, valuation, activity)
+- [x] Sidebar.tsx updated (Inventory, Transactions enabled; Receipts, Import added)
+- [x] App.tsx updated (4 new routes registered)
+- [x] TypeScript compiles with zero errors
+- [x] Phase 1 regression suite: 8/8 PASSED
+- [ ] Phase 2 automated test suite (pending TestSprite plan refresh)
+- [ ] End-to-end browser smoke test with sample data

@@ -8,6 +8,8 @@ import {
   Users,
   Settings,
   LogOut,
+  PackagePlus,
+  Upload,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
@@ -25,10 +27,12 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', adminOnly: false, enabled: true },
-  { icon: PackageOpen, label: 'Inventory', path: '/inventory', adminOnly: false, enabled: false },
-  { icon: ArrowLeftRight, label: 'Transactions', path: '/transactions', adminOnly: false, enabled: false },
+  { icon: PackageOpen, label: 'Inventory', path: '/inventory', adminOnly: false, enabled: true },
+  { icon: ArrowLeftRight, label: 'Transactions', path: '/transactions', adminOnly: false, enabled: true },
+  { icon: PackagePlus, label: 'Receipts', path: '/receipts', adminOnly: false, enabled: true },
   { icon: Truck, label: 'Vendors', path: '/vendors', adminOnly: true, enabled: false },
   { icon: List, label: 'Items', path: '/items', adminOnly: true, enabled: false },
+  { icon: Upload, label: 'Import', path: '/import', adminOnly: true, enabled: true },
   { icon: Users, label: 'Users', path: '/users', adminOnly: true, enabled: true },
   { icon: Settings, label: 'Settings', path: '/settings', adminOnly: true, enabled: false },
 ];

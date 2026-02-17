@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -18,6 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 type Transaction = {
   id: number;
@@ -26,6 +28,7 @@ type Transaction = {
   quantity: number;
   unitCost: number | null;
   invoiceNumber: string | null;
+  notes: string | null;
   transactionDate: string;
   createdAt: string;
   item: { itemCode: string; description: string };
@@ -33,11 +36,21 @@ type Transaction = {
   user: { fullName: string };
 };
 
+type PaginatedResponse = {
+  transactions: Transaction[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
 const TYPE_LABELS: Record<string, string> = {
   RECEIPT: 'Receipt',
   ADJUSTMENT: 'Adjustment',
   TRANSFER: 'Transfer',
   OPENING_BALANCE: 'Opening Balance',
+  CONSUMPTION: 'Consumption',
+  PRODUCTION: 'Production',
 };
 
 const TYPE_VARIANTS: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
@@ -45,6 +58,8 @@ const TYPE_VARIANTS: Record<string, 'default' | 'secondary' | 'outline' | 'destr
   ADJUSTMENT: 'destructive',
   TRANSFER: 'secondary',
   OPENING_BALANCE: 'outline',
+  CONSUMPTION: 'destructive',
+  PRODUCTION: 'default',
 };
 
 export function TransactionHistoryPage() {
@@ -57,6 +72,11 @@ export function TransactionHistoryPage() {
   const [filterType, setFilterType] = useState('ALL');
   const [filterLocation, setFilterLocation] = useState('ALL');
 
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 50;
+
   useEffect(() => {
     async function load() {
       setIsLoading(true);
@@ -67,12 +87,15 @@ export function TransactionHistoryPage() {
         if (filterTo) params.set('to', filterTo);
         if (filterType !== 'ALL') params.set('type', filterType);
         if (filterLocation !== 'ALL') params.set('location', filterLocation);
+        params.set('page', String(page));
+        params.set('limit', String(limit));
 
-        const qs = params.toString();
-        const data = await api.get<{ transactions: Transaction[] }>(
-          `/api/transactions${qs ? `?${qs}` : ''}`
+        const data = await api.get<PaginatedResponse>(
+          `/api/transactions?${params.toString()}`
         );
         setTransactions(data.transactions);
+        setTotal(data.total);
+        setTotalPages(data.totalPages);
       } catch {
         setError('Failed to load transactions.');
       } finally {
@@ -80,6 +103,11 @@ export function TransactionHistoryPage() {
       }
     }
     load();
+  }, [filterFrom, filterTo, filterType, filterLocation, page]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
   }, [filterFrom, filterTo, filterType, filterLocation]);
 
   const formatDate = (dateStr: string) =>
@@ -129,6 +157,8 @@ export function TransactionHistoryPage() {
               <SelectItem value="ADJUSTMENT">Adjustment</SelectItem>
               <SelectItem value="TRANSFER">Transfer</SelectItem>
               <SelectItem value="OPENING_BALANCE">Opening Balance</SelectItem>
+              <SelectItem value="CONSUMPTION">Consumption</SelectItem>
+              <SelectItem value="PRODUCTION">Production</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -148,7 +178,7 @@ export function TransactionHistoryPage() {
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-gray-500">Loading…</p>
+        <p className="text-sm text-gray-500">Loading...</p>
       ) : error ? (
         <p className="text-sm text-red-600">{error}</p>
       ) : transactions.length === 0 ? (
@@ -164,8 +194,9 @@ export function TransactionHistoryPage() {
                 <TableHead>Vendor</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Unit Cost</TableHead>
+                <TableHead className="text-right">Total Cost</TableHead>
                 <TableHead>Invoice #</TableHead>
+                <TableHead>Details</TableHead>
                 <TableHead>Created By</TableHead>
               </TableRow>
             </TableHeader>
@@ -193,8 +224,33 @@ export function TransactionHistoryPage() {
                       {t.quantity >= 0 ? '+' : ''}{t.quantity}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right text-sm">{formatCurrency(t.unitCost)}</TableCell>
+                  <TableCell className="text-right text-sm">
+                    {t.unitCost !== null ? (
+                      <div>
+                        <div className="font-medium">{formatCurrency(Math.abs(t.quantity) * t.unitCost)}</div>
+                        <div className="text-xs text-gray-400">@ {formatCurrency(t.unitCost)}/ea</div>
+                      </div>
+                    ) : '—'}
+                  </TableCell>
                   <TableCell className="text-sm text-gray-500">{t.invoiceNumber ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-gray-600 max-w-[220px]">
+                    {t.transactionType === 'ADJUSTMENT' && t.notes ? (
+                      <div className="space-y-1">
+                        <Badge variant="outline" className="text-xs">
+                          {t.notes.match(/^\[(.+?)\]/)?.[1] ?? 'Adjustment'}
+                        </Badge>
+                        {t.notes.replace(/^\[.+?\]\s*/, '') ? (
+                          <p className="text-xs text-gray-500 leading-snug">
+                            {t.notes.replace(/^\[.+?\]\s*/, '')}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : t.notes ? (
+                      <p className="text-xs text-gray-500 truncate" title={t.notes}>{t.notes}</p>
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
                   <TableCell className="text-sm text-gray-600">{t.user.fullName}</TableCell>
                 </TableRow>
               ))}
@@ -203,8 +259,38 @@ export function TransactionHistoryPage() {
         </div>
       )}
 
-      {!isLoading && !error && (
-        <p className="text-xs text-gray-400">{transactions.length} transaction{transactions.length !== 1 ? 's' : ''}</p>
+      {/* Pagination controls */}
+      {!isLoading && !error && total > 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-gray-400">
+            Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total} transaction{total !== 1 ? 's' : ''}
+          </p>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Prev
+              </Button>
+              <span className="text-sm text-gray-600">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

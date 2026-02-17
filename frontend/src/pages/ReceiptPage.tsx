@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '@/lib/api';
@@ -15,45 +15,68 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { AlertTriangle, CheckCircle } from 'lucide-react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { AlertTriangle, CheckCircle, Plus, X } from 'lucide-react';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string };
 
-const schema = z.object({
+const lineItemSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
+  quantity: z.coerce.number({ invalid_type_error: 'Required' }).positive('Must be > 0'),
+  unitCost: z.coerce.number({ invalid_type_error: 'Required' }).positive('Must be > 0'),
+});
+
+const receiptSchema = z.object({
   vendorId: z.string().min(1, 'Vendor is required'),
   location: z.enum(['ADEL', 'CALHOUN'], { required_error: 'Location is required' }),
-  quantity: z.coerce.number({ invalid_type_error: 'Must be a number' }).positive('Must be greater than 0'),
-  unitCost: z.coerce.number({ invalid_type_error: 'Must be a number' }).positive('Must be greater than 0'),
   transactionDate: z.string().min(1, 'Date is required'),
   invoiceNumber: z.string().optional(),
   notes: z.string().optional(),
+  lineItems: z.array(lineItemSchema).min(1, 'At least one line item is required'),
 });
 
-type FormValues = z.infer<typeof schema>;
+type ReceiptFormValues = z.infer<typeof receiptSchema>;
 
 export function ReceiptPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [items, setItems] = useState<Item[]>([]);
-  const [lastPaidPrice, setLastPaidPrice] = useState<number | null>(null);
+  const [lastPaidPrices, setLastPaidPrices] = useState<Record<number, number | null>>({});
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const form = useForm<ReceiptFormValues>({
+    resolver: zodResolver(receiptSchema),
+    defaultValues: {
+      vendorId: '',
+      location: 'ADEL',
+      transactionDate: new Date().toISOString().split('T')[0],
+      invoiceNumber: '',
+      notes: '',
+      lineItems: [{ itemId: '', quantity: undefined as unknown as number, unitCost: undefined as unknown as number }],
+    },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: 'lineItems',
+  });
 
   const {
     register,
     handleSubmit,
     watch,
     setValue,
-    reset,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      transactionDate: new Date().toISOString().split('T')[0],
-      location: 'ADEL',
-    },
-  });
+  } = form;
 
   useEffect(() => {
     async function loadData() {
@@ -65,49 +88,69 @@ export function ReceiptPage() {
         setVendors(vendorData.vendors);
         setItems(itemData.items);
       } catch {
-        // non-fatal — user will see empty dropdowns
+        // non-fatal
       }
     }
     loadData();
   }, []);
 
-  const currentUnitCost = watch('unitCost');
-  const priceDelta =
-    lastPaidPrice && currentUnitCost
-      ? Math.abs((Number(currentUnitCost) - lastPaidPrice) / lastPaidPrice)
-      : 0;
-  const showCostWarning = lastPaidPrice !== null && priceDelta > 0.1;
+  // Compute line totals and receipt total
+  const watchedLines = watch('lineItems');
+  const lineTotals = watchedLines.map((li) => {
+    const qty = Number(li.quantity) || 0;
+    const cost = Number(li.unitCost) || 0;
+    return qty * cost;
+  });
+  const receiptTotal = lineTotals.reduce((sum, lt) => sum + lt, 0);
 
-  async function onSubmit(values: FormValues) {
+  // Price variance check per line
+  function getVariance(index: number) {
+    const li = watchedLines[index];
+    if (!li?.itemId || !li?.unitCost) return null;
+    const itemId = parseInt(li.itemId);
+    const lastPaid = lastPaidPrices[itemId];
+    if (lastPaid === null || lastPaid === undefined) return null;
+    const cost = Number(li.unitCost);
+    if (!cost) return null;
+    const delta = Math.abs((cost - lastPaid) / lastPaid);
+    if (delta <= 0.1) return null;
+    return { delta, lastPaid };
+  }
+
+  async function onSubmit(values: ReceiptFormValues) {
     setSubmitError(null);
     setSuccessMessage(null);
     try {
-      const data = await api.post<{ transaction: { id: number }; lastPaidPrice: number | null }>(
-        '/api/transactions/receipts',
-        {
-          itemId: parseInt(values.itemId),
-          vendorId: parseInt(values.vendorId),
-          location: values.location,
-          quantity: values.quantity,
-          unitCost: values.unitCost,
-          transactionDate: values.transactionDate,
-          invoiceNumber: values.invoiceNumber || undefined,
-          notes: values.notes || undefined,
-        }
+      const data = await api.post<{
+        transactions: Array<{ id: number }>;
+        lastPaidPrices: Record<number, number | null>;
+      }>('/api/transactions/receipts/batch', {
+        vendorId: parseInt(values.vendorId),
+        location: values.location,
+        transactionDate: values.transactionDate,
+        invoiceNumber: values.invoiceNumber || undefined,
+        notes: values.notes || undefined,
+        lineItems: values.lineItems.map((li) => ({
+          itemId: parseInt(li.itemId),
+          quantity: li.quantity,
+          unitCost: li.unitCost,
+        })),
+      });
+
+      setLastPaidPrices(data.lastPaidPrices);
+      const count = data.transactions.length;
+      setSuccessMessage(
+        `Receipt saved: ${count} item${count !== 1 ? 's' : ''} received successfully.`
       );
-      setLastPaidPrice(data.lastPaidPrice);
-      setSuccessMessage(`Receipt #${data.transaction.id} recorded successfully.`);
-      // Reset form but keep location for fast sequential entry
+
       const prevLocation = values.location;
-      reset({
-        itemId: '',
+      form.reset({
         vendorId: '',
         location: prevLocation,
-        quantity: undefined,
-        unitCost: undefined,
         transactionDate: new Date().toISOString().split('T')[0],
         invoiceNumber: '',
         notes: '',
+        lineItems: [{ itemId: '', quantity: undefined as unknown as number, unitCost: undefined as unknown as number }],
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to save receipt.';
@@ -115,12 +158,15 @@ export function ReceiptPage() {
     }
   }
 
+  const formatCurrency = (val: number) =>
+    `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">New Receipt</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Record inventory received from a vendor.
+          Record inventory received from a vendor. Add multiple items per receipt.
         </p>
       </div>
 
@@ -132,151 +178,202 @@ export function ReceiptPage() {
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Row 1: Item + Vendor */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <Label htmlFor="itemId">Item <span className="text-red-500">*</span></Label>
-            <Select onValueChange={(v) => { setValue('itemId', v); setLastPaidPrice(null); }}>
-              <SelectTrigger id="itemId">
-                <SelectValue placeholder="Select item…" />
-              </SelectTrigger>
-              <SelectContent>
-                {items.map((item) => (
-                  <SelectItem key={item.id} value={String(item.id)}>
-                    {item.itemCode} — {item.description}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.itemId && (
-              <p className="text-xs text-red-600">{errors.itemId.message}</p>
-            )}
-          </div>
+        {/* ====== HEADER SECTION ====== */}
+        <div className="rounded-lg border bg-white p-4 space-y-4">
+          <h2 className="text-sm font-medium text-gray-700">Receipt Details</h2>
 
-          <div className="space-y-1">
-            <Label htmlFor="vendorId">Vendor <span className="text-red-500">*</span></Label>
-            <Select onValueChange={(v) => setValue('vendorId', v)}>
-              <SelectTrigger id="vendorId">
-                <SelectValue placeholder="Select vendor…" />
-              </SelectTrigger>
-              <SelectContent>
-                {vendors.map((v) => (
-                  <SelectItem key={v.id} value={String(v.id)}>
-                    {v.vendorName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.vendorId && (
-              <p className="text-xs text-red-600">{errors.vendorId.message}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Row 2: Location + Date */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <Label htmlFor="location">Location <span className="text-red-500">*</span></Label>
-            <Select
-              defaultValue="ADEL"
-              onValueChange={(v) => setValue('location', v as 'ADEL' | 'CALHOUN')}
-            >
-              <SelectTrigger id="location">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ADEL">ADEL</SelectItem>
-                <SelectItem value="CALHOUN">CALHOUN</SelectItem>
-              </SelectContent>
-            </Select>
-            {errors.location && (
-              <p className="text-xs text-red-600">{errors.location.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="transactionDate">Date <span className="text-red-500">*</span></Label>
-            <Input
-              id="transactionDate"
-              type="date"
-              {...register('transactionDate')}
-            />
-            {errors.transactionDate && (
-              <p className="text-xs text-red-600">{errors.transactionDate.message}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Row 3: Quantity + Unit Cost */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <Label htmlFor="quantity">Quantity <span className="text-red-500">*</span></Label>
-            <Input
-              id="quantity"
-              type="number"
-              step="0.01"
-              min="0.01"
-              placeholder="0"
-              {...register('quantity')}
-            />
-            {errors.quantity && (
-              <p className="text-xs text-red-600">{errors.quantity.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="unitCost">
-              Unit Cost ($) <span className="text-red-500">*</span>
-              {lastPaidPrice !== null && (
-                <span className="ml-2 text-xs font-normal text-gray-500">
-                  Last paid: ${lastPaidPrice.toFixed(2)}
-                </span>
+          {/* Row 1: Vendor + Location */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label>Vendor <span className="text-red-500">*</span></Label>
+              <Select onValueChange={(v) => setValue('vendorId', v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select vendor..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {vendors.map((v) => (
+                    <SelectItem key={v.id} value={String(v.id)}>
+                      {v.vendorName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.vendorId && (
+                <p className="text-xs text-red-600">{errors.vendorId.message}</p>
               )}
-            </Label>
-            <Input
-              id="unitCost"
-              type="number"
-              step="0.01"
-              min="0.01"
-              placeholder="0.00"
-              {...register('unitCost')}
+            </div>
+
+            <div className="space-y-1">
+              <Label>Location <span className="text-red-500">*</span></Label>
+              <Select
+                defaultValue="ADEL"
+                onValueChange={(v) => setValue('location', v as 'ADEL' | 'CALHOUN')}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ADEL">ADEL</SelectItem>
+                  <SelectItem value="CALHOUN">CALHOUN</SelectItem>
+                </SelectContent>
+              </Select>
+              {errors.location && (
+                <p className="text-xs text-red-600">{errors.location.message}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Row 2: Date + Invoice */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label>Date <span className="text-red-500">*</span></Label>
+              <Input type="date" {...register('transactionDate')} />
+              {errors.transactionDate && (
+                <p className="text-xs text-red-600">{errors.transactionDate.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <Label>Invoice Number <span className="text-gray-400">(optional)</span></Label>
+              <Input placeholder="INV-12345" {...register('invoiceNumber')} />
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-1">
+            <Label>Notes <span className="text-gray-400">(optional)</span></Label>
+            <Textarea
+              placeholder="Any notes about this receipt..."
+              rows={2}
+              {...register('notes')}
             />
-            {errors.unitCost && (
-              <p className="text-xs text-red-600">{errors.unitCost.message}</p>
-            )}
           </div>
         </div>
 
-        {/* Cost variance warning */}
-        {showCostWarning && (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              This cost differs from the last paid price (${lastPaidPrice!.toFixed(2)}) by{' '}
-              {(priceDelta * 100).toFixed(1)}%. Double-check before saving.
-            </AlertDescription>
-          </Alert>
-        )}
+        {/* ====== LINE ITEMS SECTION ====== */}
+        <div className="rounded-lg border bg-white p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-gray-700">Line Items</h2>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => append({ itemId: '', quantity: undefined as unknown as number, unitCost: undefined as unknown as number })}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Line
+            </Button>
+          </div>
 
-        {/* Invoice Number */}
-        <div className="space-y-1">
-          <Label htmlFor="invoiceNumber">Invoice Number <span className="text-gray-400">(optional)</span></Label>
-          <Input
-            id="invoiceNumber"
-            placeholder="INV-12345"
-            {...register('invoiceNumber')}
-          />
-        </div>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">#</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="w-28">Qty</TableHead>
+                  <TableHead className="w-32">Unit Cost ($)</TableHead>
+                  <TableHead className="w-28 text-right">Line Total</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {fields.map((field, index) => {
+                  const variance = getVariance(index);
+                  return (
+                    <TableRow key={field.id} className={variance ? 'border-b-0' : undefined}>
+                      <TableCell className="text-gray-400 text-sm">{index + 1}</TableCell>
+                      <TableCell>
+                        <Select onValueChange={(v) => setValue(`lineItems.${index}.itemId`, v)}>
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Select item..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {items.map((item) => (
+                              <SelectItem key={item.id} value={String(item.id)}>
+                                {item.itemCode} — {item.description}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {errors.lineItems?.[index]?.itemId && (
+                          <p className="text-xs text-red-600 mt-0.5">{errors.lineItems[index].itemId?.message}</p>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          placeholder="0"
+                          className="h-9"
+                          {...register(`lineItems.${index}.quantity`)}
+                        />
+                        {errors.lineItems?.[index]?.quantity && (
+                          <p className="text-xs text-red-600 mt-0.5">{errors.lineItems[index].quantity?.message}</p>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          placeholder="0.00"
+                          className="h-9"
+                          {...register(`lineItems.${index}.unitCost`)}
+                        />
+                        {errors.lineItems?.[index]?.unitCost && (
+                          <p className="text-xs text-red-600 mt-0.5">{errors.lineItems[index].unitCost?.message}</p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {lineTotals[index] > 0 ? formatCurrency(lineTotals[index]) : '--'}
+                      </TableCell>
+                      <TableCell>
+                        {fields.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => remove(index)}
+                          >
+                            <X className="h-4 w-4 text-gray-400" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+              <TableFooter>
+                <TableRow>
+                  <TableCell colSpan={4} className="text-right font-medium">
+                    Receipt Total
+                  </TableCell>
+                  <TableCell className="text-right font-mono font-bold">
+                    {receiptTotal > 0 ? formatCurrency(receiptTotal) : '--'}
+                  </TableCell>
+                  <TableCell />
+                </TableRow>
+              </TableFooter>
+            </Table>
+          </div>
 
-        {/* Notes */}
-        <div className="space-y-1">
-          <Label htmlFor="notes">Notes <span className="text-gray-400">(optional)</span></Label>
-          <Textarea
-            id="notes"
-            placeholder="Any notes about this receipt…"
-            rows={3}
-            {...register('notes')}
-          />
+          {/* Per-line variance warnings */}
+          {watchedLines.map((_, index) => {
+            const variance = getVariance(index);
+            if (!variance) return null;
+            return (
+              <Alert key={index} variant="destructive" className="py-2">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Line {index + 1}: Unit cost differs from last paid ({formatCurrency(variance.lastPaid)}) by{' '}
+                  {(variance.delta * 100).toFixed(1)}%. Double-check before saving.
+                </AlertDescription>
+              </Alert>
+            );
+          })}
         </div>
 
         {submitError && (
@@ -285,7 +382,10 @@ export function ReceiptPage() {
 
         <div className="flex justify-end">
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving…' : 'Save Receipt'}
+            {isSubmitting
+              ? 'Saving...'
+              : `Save Receipt (${fields.length} item${fields.length !== 1 ? 's' : ''})`
+            }
           </Button>
         </div>
       </form>

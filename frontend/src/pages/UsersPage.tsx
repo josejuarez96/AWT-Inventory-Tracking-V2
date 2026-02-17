@@ -24,9 +24,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, UserPlus } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { MoreHorizontal, UserPlus, Pencil, KeyRound } from 'lucide-react';
 
 type User = {
   id: number;
@@ -45,10 +47,14 @@ type CreateUserForm = {
   role: 'admin' | 'user';
 };
 
+const PASSWORD_HINT = 'Min 8 characters, 1 uppercase, 1 lowercase, 1 number';
+
 export function UsersPage() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+
+  // Create dialog
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateUserForm>({
     username: '',
@@ -58,6 +64,22 @@ export function UsersPage() {
   });
   const [createError, setCreateError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+
+  // Edit dialog
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState({ fullName: '', role: 'user' as 'admin' | 'user' });
+  const [editError, setEditError] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Reset password dialog
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetUser, setResetUser] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+  const [toggleError, setToggleError] = useState('');
 
   async function fetchUsers() {
     setIsLoadingUsers(true);
@@ -89,12 +111,62 @@ export function UsersPage() {
     }
   }
 
+  function openEditDialog(u: User) {
+    setEditingUser(u);
+    setEditForm({ fullName: u.fullName, role: u.role });
+    setEditError('');
+    setEditDialogOpen(true);
+  }
+
+  async function handleEditUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingUser) return;
+    setEditError('');
+    setIsSavingEdit(true);
+    try {
+      await api.put(`/api/users/${editingUser.id}`, editForm);
+      setEditDialogOpen(false);
+      setEditingUser(null);
+      void fetchUsers();
+    } catch (err) {
+      setEditError(err instanceof ApiError ? err.message : 'Failed to update user');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
+
+  function openResetDialog(u: User) {
+    setResetUser(u);
+    setNewPassword('');
+    setResetError('');
+    setResetSuccess('');
+    setResetDialogOpen(true);
+  }
+
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetUser) return;
+    setResetError('');
+    setResetSuccess('');
+    setIsResetting(true);
+    try {
+      await api.put(`/api/users/${resetUser.id}`, { password: newPassword });
+      setResetSuccess('Password reset successfully. User should change it on next login.');
+      setNewPassword('');
+    } catch (err) {
+      setResetError(err instanceof ApiError ? err.message : 'Failed to reset password');
+    } finally {
+      setIsResetting(false);
+    }
+  }
+
   async function handleToggleStatus(userId: number, currentStatus: boolean) {
+    setToggleError('');
     try {
       await api.patch(`/api/users/${userId}/status`, { isActive: !currentStatus });
       void fetchUsers();
     } catch (err) {
-      console.error('Failed to toggle status', err);
+      setToggleError(err instanceof ApiError ? err.message : 'Failed to update user status');
     }
   }
 
@@ -143,8 +215,9 @@ export function UsersPage() {
                   value={createForm.password}
                   onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
                   required
-                  minLength={6}
+                  minLength={8}
                 />
+                <p className="text-xs text-gray-500">{PASSWORD_HINT}</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="create-role">Role</Label>
@@ -177,6 +250,15 @@ export function UsersPage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {toggleError && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex items-center justify-between">
+            {toggleError}
+            <Button variant="ghost" size="sm" onClick={() => setToggleError('')}>Dismiss</Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {isLoadingUsers ? (
         <p className="text-sm text-gray-500">Loading users...</p>
@@ -222,6 +304,15 @@ export function UsersPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEditDialog(u)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openResetDialog(u)}>
+                            <KeyRound className="mr-2 h-4 w-4" />
+                            Reset Password
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() => void handleToggleStatus(u.id, u.isActive)}
                           >
@@ -237,6 +328,92 @@ export function UsersPage() {
           </Table>
         </div>
       )}
+
+      {/* Edit User Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit User — {editingUser?.fullName}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEditUser} className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-fullName">Full Name</Label>
+              <Input
+                id="edit-fullName"
+                value={editForm.fullName}
+                onChange={(e) => setEditForm((f) => ({ ...f, fullName: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-role">Role</Label>
+              <select
+                id="edit-role"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={editForm.role}
+                onChange={(e) =>
+                  setEditForm((f) => ({ ...f, role: e.target.value as 'admin' | 'user' }))
+                }
+              >
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            {editError && <p className="text-sm text-red-500">{editError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSavingEdit}>
+                {isSavingEdit ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset Password — {resetUser?.fullName}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleResetPassword} className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="reset-password">New Password</Label>
+              <Input
+                id="reset-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={8}
+              />
+              <p className="text-xs text-gray-500">{PASSWORD_HINT}</p>
+            </div>
+            {resetError && <p className="text-sm text-red-500">{resetError}</p>}
+            {resetSuccess && <p className="text-sm text-green-600">{resetSuccess}</p>}
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setResetDialogOpen(false)}
+              >
+                {resetSuccess ? 'Done' : 'Cancel'}
+              </Button>
+              {!resetSuccess && (
+                <Button type="submit" disabled={isResetting}>
+                  {isResetting ? 'Resetting...' : 'Reset Password'}
+                </Button>
+              )}
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

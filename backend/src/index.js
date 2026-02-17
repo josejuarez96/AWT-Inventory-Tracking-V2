@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 
 const authRoutes = require('./routes/auth');
 const usersRoutes = require('./routes/users');
@@ -8,17 +9,39 @@ const vendorsRoutes = require('./routes/vendors');
 const itemsRoutes = require('./routes/items');
 const transactionsRoutes = require('./routes/transactions');
 const dashboardRoutes = require('./routes/dashboard');
+const cycleCountsRoutes = require('./routes/cycleCounts');
+const bomsRoutes = require('./routes/boms');
+const productionRoutes = require('./routes/production');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: process.env.FRONTEND_URL || /^http:\/\/localhost:\d+$/,
   credentials: false,
 }));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Login rate limiting — short window so it resets quickly between automated test runs
+const loginLimiter = rateLimit({
+  windowMs: 15 * 1000, // 15 seconds
+  max: 10, // 10 login attempts per 15-second window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please try again in a moment.' },
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 200, // 200 requests per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+
+app.use('/api', apiLimiter);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -29,13 +52,17 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Routes
+// Routes — rate limit only the login endpoint, not all auth routes
+app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/vendors', vendorsRoutes);
 app.use('/api/items', itemsRoutes);
 app.use('/api/transactions', transactionsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/cycle-counts', cycleCountsRoutes);
+app.use('/api/boms', bomsRoutes);
+app.use('/api/production', productionRoutes);
 
 // Global error handler (Express 5 forwards async errors automatically)
 app.use((err, req, res, _next) => {

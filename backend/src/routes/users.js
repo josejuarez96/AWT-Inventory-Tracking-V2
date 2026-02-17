@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const { body, param, validationResult } = require('express-validator');
 const prisma = require('../lib/prisma');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const validatePassword = require('../lib/validatePassword');
 
 const router = express.Router();
 
@@ -35,9 +36,7 @@ router.post(
       .notEmpty()
       .isLength({ min: 3, max: 50 })
       .withMessage('Username must be 3-50 characters'),
-    body('password')
-      .isLength({ min: 6 })
-      .withMessage('Password must be at least 6 characters'),
+    body('password').notEmpty().withMessage('Password is required'),
     body('fullName').trim().notEmpty().withMessage('Full name is required'),
     body('role').isIn(['admin', 'user']).withMessage('Role must be admin or user'),
   ],
@@ -48,6 +47,11 @@ router.post(
     }
 
     const { username, password, fullName, role } = req.body;
+
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
+    }
 
     const existing = await prisma.user.findUnique({
       where: { username: username.toLowerCase() },
@@ -86,7 +90,7 @@ router.put(
     param('id').isInt().withMessage('Invalid user ID'),
     body('fullName').optional().trim().notEmpty(),
     body('role').optional().isIn(['admin', 'user']),
-    body('password').optional().isLength({ min: 6 }),
+    body('password').optional(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -96,6 +100,19 @@ router.put(
 
     const userId = parseInt(req.params.id);
     const { fullName, role, password } = req.body;
+
+    if (password !== undefined) {
+      const passwordError = validatePassword(password);
+      if (passwordError) {
+        return res.status(400).json({ error: passwordError });
+      }
+    }
+
+    // Check user exists first (avoids overflow errors for very large IDs)
+    const existing = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existing) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
     const updateData = {};
     if (fullName !== undefined) updateData.fullName = fullName;
@@ -108,27 +125,20 @@ router.put(
       return res.status(400).json({ error: 'No fields to update' });
     }
 
-    try {
-      const user = await prisma.user.update({
-        where: { id: userId },
-        data: updateData,
-        select: {
-          id: true,
-          username: true,
-          fullName: true,
-          role: true,
-          isActive: true,
-          createdAt: true,
-          lastLoginAt: true,
-        },
-      });
-      return res.json({ user });
-    } catch (err) {
-      if (err.code === 'P2025') {
-        return res.status(404).json({ error: 'User not found' });
-      }
-      throw err;
-    }
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        lastLoginAt: true,
+      },
+    });
+    return res.json({ user });
   }
 );
 
@@ -152,27 +162,25 @@ router.patch(
       return res.status(400).json({ error: 'Cannot deactivate your own account' });
     }
 
-    try {
-      const user = await prisma.user.update({
-        where: { id: userId },
-        data: { isActive },
-        select: {
-          id: true,
-          username: true,
-          fullName: true,
-          role: true,
-          isActive: true,
-          createdAt: true,
-          lastLoginAt: true,
-        },
-      });
-      return res.json({ user });
-    } catch (err) {
-      if (err.code === 'P2025') {
-        return res.status(404).json({ error: 'User not found' });
-      }
-      throw err;
+    const existing = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existing) {
+      return res.status(404).json({ error: 'User not found' });
     }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { isActive },
+      select: {
+        id: true,
+        username: true,
+        fullName: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        lastLoginAt: true,
+      },
+    });
+    return res.json({ user });
   }
 );
 

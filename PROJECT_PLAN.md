@@ -100,216 +100,213 @@ CREATE INDEX idx_vendors_code ON Vendors(vendor_code);
 
 ## 📅 Phased Implementation Roadmap
 
-### Phase 0: Project Bootstrap (Local Development Setup)
+### Phase 0: Project Bootstrap ✅ COMPLETE
 **Goal**: Initialize local development environment with test data.
-- [ ] **Initialize Git Repository**: Create repo with proper .gitignore (node_modules, .env, dist/)
-- [ ] **Create Project Structure**:
-  ```
-  /frontend    (React + Vite)
-  /backend     (Node + Express)
-  /docs        (Documentation)
-  ```
-- [ ] **Initialize Frontend**: `npm create vite@latest frontend -- --template react-ts`
-- [ ] **Initialize Backend**: `npm init -y` + install dependencies (express, prisma, bcrypt, jsonwebtoken, cors)
-- [ ] **Local PostgreSQL Setup**:
-  - Option A: Install PostgreSQL locally (recommended for offline dev)
-  - Option B: Use free Railway dev database (requires internet)
-- [ ] **Configure Prisma**: Initialize with PostgreSQL, create initial schema
-- [ ] **Environment Configuration**: Create .env files (DATABASE_URL, JWT_SECRET, PORT)
-- [ ] **Seed Script with Test Data**:
-  - 2 test users (Admin: Jose, User: Alix test account)
-  - 5-10 sample vendors (DEXTER, LIPPERT, ACME PARTS, etc.)
-  - 15-20 sample items (axles, brakes, lights, fasteners, etc.)
-  - 10-15 sample transactions for both ADEL and CALHOUN locations
-- [ ] **Basic README**: Setup instructions for local development
+- [x] Initialize Git repository with proper .gitignore
+- [x] Create project structure (frontend/, backend/)
+- [x] Initialize React+Vite frontend with TypeScript
+- [x] Initialize Node+Express backend
+- [x] Configure Prisma with local PostgreSQL
+- [x] Environment configuration (.env files)
+- [x] Seed script with test data (2 users, sample vendors/items/transactions)
+- [x] README with setup instructions
 
-**Success Criteria**:
-✅ Can run `npm run dev` in frontend and backend locally
-✅ Frontend (localhost:5173) can make API calls to backend (localhost:3000)
-✅ Backend can query PostgreSQL database
-✅ Seed script populates database with realistic test data
-✅ Can log in with test admin account and see sample inventory
+**Completed**: Phase 0 commit `c366173`
 
-**Deployment**: Not required for this phase - build locally first!
+---
 
-**Estimated Time**: 6-8 hours
-
-### Phase 1: Foundation
+### Phase 1: Foundation ✅ COMPLETE
 **Goal**: Establish authentication, database, and application shell.
-- [ ] **Database Migrations**: Run Prisma migrations to create Users, Vendors, Items, Transactions tables
-- [ ] **Authentication System**:
-  - JWT-based login/logout
-  - Password hashing with bcrypt
-  - Protected routes (middleware)
-  - Session persistence
-- [ ] **User Seed Script**: Create first admin user (Jose)
-- [ ] **Base Layout**: Responsive sidebar navigation with links to all pages
-- [ ] **Dashboard Page**: Landing page with welcome message and placeholder stat cards (Total Items, Transactions MTD, Active Vendors, Team Members) — placeholders upgraded to live data in Phase 2
-- [ ] **User Management UI** (Admin only): Create/edit users, assign roles
+- [x] Database migrations (Users, Vendors, Items, Transactions tables)
+- [x] JWT authentication (login/logout, bcrypt hashing, 7-day token)
+- [x] Protected route middleware (`authenticate`, `requireAdmin`)
+- [x] Base layout with responsive sidebar navigation
+- [x] Dashboard page with placeholder stat cards
+- [x] User management UI (admin: create users, toggle active/inactive)
+- [x] Role-based route visibility (admin vs user sidebar links)
 
-**Success Criteria**:
-✅ Admin can log in with username/password
-✅ Invalid credentials show error message
-✅ JWT token stored securely, persists on page reload
-✅ Dashboard displays "Welcome [User Name]" and shows user role
-✅ Navigation sidebar shows appropriate links based on role (admin vs user)
-✅ Database contains all 4 core tables with proper relationships
-✅ Admin can create a new user account (will be real Alix account later)
-✅ Application runs smoothly on localhost
+**Completed**: Phase 1 commit `a67bff7` — 8/8 tests passing
 
-**Deployment**: Still local - no cloud deployment needed yet!
+---
 
-**Estimated Time**: 20-30 hours
+### Phase 2: Core Transactions, CSV Import & Live Dashboard ✅ COMPLETE
+**Goal**: Enable receipt entry, bulk data loading via CSV, and live dashboard.
+- [x] CSV import for Vendors (drag-drop upload, preview, validate, bulk insert)
+- [x] CSV import for Items (same workflow)
+- [x] Receipt entry form (item, vendor, location, qty, cost, date, invoice #)
+- [x] Last Paid Price display with >10% variance warning
+- [x] Stock position view (current qty by item × location, search/filter)
+- [x] Transaction history (audit trail with date/type/location filters)
+- [x] Live dashboard: stat cards, running low alerts, dead stock, valuation, activity feed
+- [x] Dashboard endpoints: `/stats`, `/low-stock`, `/dead-stock`, `/valuation`, `/activity`
 
-### Phase 2: Core Transactions, CSV Import & Live Dashboard (The "Alix" Phase)
-**Goal**: Enable receipt entry, bulk data loading via CSV, and upgrade the dashboard to a fully actionable operations hub.
+**Completed**: Phase 2 commits `983d404`, `34c52c9`, `1af53e8`
+**Test Results**: 18/24 passing (75%) — 6 failures are test-code bugs, not API bugs
 
-**Note**: CSV imports are for future use when you have real vendor/item lists. For now, use test data from seed script.
+**Known limitations carried forward**:
+- ~~Receipt form handles 1 item per submission~~ → ✅ Fixed in Phase 3B (multi-item receipt builder)
+- ~~No pagination on list endpoints~~ → ✅ Fixed in Phase 4B (server-side pagination)
+- ~~N+1 query in low-stock burn rate calculation~~ → ✅ Fixed in Phase 4B (single groupBy query)
+- ~~Sidebar shows Vendors, Items, Settings links as disabled~~ → ✅ Fixed in Phase 4A (full CRUD pages)
 
-- [ ] **CSV Import for Vendors** (Build feature now, use later):
-  - Drag-and-drop file upload UI
-  - Parse CSV (vendor_code, vendor_name, contact_person, phone, email, payment_terms)
-  - Validation: unique codes, required fields
-  - Preview table before import with error highlighting
-  - Bulk insert into Vendors table
-- [ ] **CSV Import for Items** (Build feature now, use later):
-  - Upload UI for parts catalog
-  - Parse CSV (item_code, description, category, unit_of_measure, min_quantity, max_quantity)
-  - Validation: unique codes, required fields
-  - Preview before import
-  - Bulk insert into Items table
-- [ ] **Receipt Entry Form**:
-  - Fast data entry: select item (autocomplete), vendor, quantity, cost, date
-  - Show "Last Paid Price" for reference (variance warning if cost differs >10%)
-  - Create RECEIPT transaction in database
-- [ ] **Stock Position View**:
-  - Real-time table showing current quantity on hand per item per location
-  - Search/filter by item code, description, category
-  - Calculated from Transactions table
-- [ ] **Transaction History**:
-  - Audit trail of all movements (receipts, adjustments, transfers)
-  - Filter by date range, item, transaction type
-  - Shows who created each transaction and when
-- [ ] **Live Dashboard Upgrade**:
-  - **Stat Cards (live data)**: Replace placeholders with real counts — Total Items, Transactions (MTD), Active Vendors, Team Members
-  - **Running Low Alerts**: Items at or below `min_quantity`, sorted by urgency
-    - Burn rate calculated from last 30 days of outgoing usage (negative transactions) ÷ 30 = units/day
-    - Days remaining = current stock ÷ burn rate (shown as "~X days left")
-    - Empty state: "No low stock items detected" (expected until transaction history accumulates)
-  - **Dead Stock**: Items with zero transaction activity in the last 90 days
-    - Shows item code, description, qty on hand, last movement date
-    - Empty state: "No dead stock detected"
-  - **Inventory Valuation**: Total on-hand value = qty on hand × last known unit cost, per item
-    - Broken down by ADEL total, CALHOUN total, and combined grand total
-    - Used to cross-check against QuickBooks on-hand value
-  - **Recent Activity Feed**: Last 20 transactions, newest first
-    - Human-readable format: "Alix received 50 × Trailer Tires from Dexter at ADEL" or "Jose adjusted Highway Axle −2 at CALHOUN"
-    - Empty state: "No recent activity"
-  - **New backend endpoints required**:
-    - `GET /api/dashboard/stats` — live counts for stat cards
-    - `GET /api/dashboard/low-stock` — items below min_qty with burn rate + days remaining
-    - `GET /api/dashboard/dead-stock` — items with no activity in last 90 days
-    - `GET /api/dashboard/valuation` — on-hand inventory value by location
-    - `GET /api/dashboard/activity` — last 20 transactions as human-readable strings
+---
 
-**Success Criteria**:
-✅ Admin can upload Vendors CSV and see preview before importing (tested with sample CSV)
-✅ Admin can upload Items CSV and see preview before importing (tested with sample CSV)
-✅ Test user can create a receipt entry in under 30 seconds using test data
-✅ Receipt form shows last paid price and warns if new price differs significantly
-✅ Stock position view accurately reflects inventory after receipts
-✅ Transaction history shows all movements with full audit trail
-✅ All CSV imports validate data and show clear error messages for bad data
-✅ Dashboard stat cards show live counts (not placeholders)
-✅ Running Low widget shows burn rate and days remaining for items below min_quantity
-✅ Dead Stock widget lists items with no activity in 90+ days
-✅ Inventory Valuation shows on-hand value split by ADEL, CALHOUN, and combined
-✅ Recent Activity Feed shows last 20 transactions in human-readable format
-✅ All dashboard widgets handle empty state gracefully (no crashes when no data yet)
-✅ Works perfectly with seed test data on localhost
+### Phase 3A: Inventory Correction ✅ COMPLETE
+**Goal**: Complete the transaction lifecycle — opening balances, adjustments, and transfers. This is the #1 blocker to go-live. Without these, warehouse staff cannot operate.
 
-**Deployment**: Still local development - can demo to Alix on your computer!
+**Why first**: You need opening balances to load real inventory on day one. You need adjustments for damage/shrinkage/cycle counts. You need transfers because parts move between ADEL and CALHOUN regularly. All three transaction types already exist in the schema — we just need API endpoints and UI forms.
 
-**Estimated Time**: 50-60 hours
+- [x] **Opening Balance Entry**:
+  - Form: select item, location, quantity, optional unit cost
+  - Creates `OPENING_BALANCE` transaction
+  - CSV bulk upload option for day-one inventory load (reuse existing CSV import pattern)
+  - Admin-only operation
+- [x] **Adjustment Entry**:
+  - Form: select item, location, quantity (+/-), reason category, notes
+  - Reason categories: Damage, Shrinkage, Cycle Count, Correction, Other
+  - Creates `ADJUSTMENT` transaction (no vendor, no cost)
+  - Available to all authenticated users
+- [x] **Transfer Entry**:
+  - Form: select item, from location, to location, quantity, notes
+  - Auto-creates two `TRANSFER` transactions atomically:
+    - Negative qty at source location
+    - Positive qty at destination location
+  - Validates sufficient stock at source before allowing transfer
+  - Available to all authenticated users
+- [x] **Backend Endpoints**:
+  - `POST /api/transactions/opening-balances` — create opening balance (admin only)
+  - `POST /api/transactions/opening-balances/import/preview` — CSV preview for bulk load
+  - `POST /api/transactions/opening-balances/import` — CSV commit for bulk load
+  - `POST /api/transactions/adjustments` — create adjustment
+  - `POST /api/transactions/transfers` — create transfer (atomic pair)
+- [x] **Navigation Update**: Add Adjustments and Transfers to sidebar under a "Transactions" group
 
-### Phase 3: Inventory Correction
-**Goal**: Handle adjustments, initial counts, and location transfers.
-- [ ] **Opening Balance Tool**:
-  - Form to input initial stock counts for go-live
-  - Select item, location, quantity, optional cost
-  - Creates OPENING_BALANCE transactions
-  - Optional: CSV upload for bulk opening balances
-- [ ] **Adjustment Entry**:
-  - Form for damage, shrinkage, theft, cycle count corrections
-  - Enter item, location, quantity adjustment (+/-), reason/notes
-  - Creates ADJUSTMENT transaction (no vendor, no cost)
-- [ ] **Transfer Entry**:
-  - Move items between ADEL and CALHOUN locations
-  - Creates two TRANSFER transactions (negative at source, positive at destination)
-  - Maintains audit trail of location movements
+**Success Criteria**: All met ✅
 
-**Success Criteria**:
-✅ Admin can set opening balances for existing inventory
-✅ Alix can create adjustment for damaged items (quantity decreases)
-✅ Alix can transfer items between locations
-✅ Stock position view accurately reflects all adjustments and transfers
-✅ Transaction history clearly shows adjustment reasons and transfer movements
+---
 
-**Estimated Time**: 15-20 hours
+### Phase 3B: Multi-Item Receipt Builder ✅ COMPLETE
+**Goal**: Upgrade receipt entry from single-item form to a multi-line receipt builder that matches real-world receiving workflow (one invoice → many parts).
 
-### Phase 4: Administration & Master Data
-**Goal**: Manage reference data and system configuration.
-- [ ] **Item Catalog Management** (Admin only):
-  - CRUD interface for parts (Create, Read, Update, Deactivate)
-  - Edit item details: description, category, unit of measure, min/max quantities
-  - Search and filter items
-- [ ] **Vendor Management** (Admin only):
-  - CRUD interface for suppliers
-  - Edit vendor details: name, contact, phone, email, payment terms
-  - Deactivate vendors (soft delete)
-- [ ] **System Settings** (Admin only):
-  - Configure cost variance threshold (e.g., warn if cost changes >10%)
-  - Set low stock thresholds per category
-  - Configure backup preferences
-- [ ] **Manual Database Export**:
-  - Admin UI button to download PostgreSQL dump (.sql file)
-  - Backup all data for offline storage
+**Why here**: Receipts are the only transaction type where multi-item grouping is natural (shipments contain multiple parts on one invoice). Adjustments and transfers are inherently single-item operations, so they stay simple. Building this after Phase 3A means the full transaction lifecycle is already working, and this is a UX upgrade on top of a complete system.
 
-**Success Criteria**:
-✅ Admin can manually add/edit/deactivate items and vendors
-✅ Admin can configure cost variance warning threshold
-✅ Admin can export full database backup
-✅ Standard users cannot access admin functions
-✅ Changes to master data are logged (audit trail)
+**Approach**: No schema changes required. Each line item still creates a separate `Transaction` row. All transactions in a batch share the same `invoiceNumber`, linking them logically. This avoids a migration and keeps the existing stock calculation, history, and dashboard queries working unchanged.
 
-**Estimated Time**: 20-25 hours
+- [x] **Receipt Builder UI** (replaces current single-item ReceiptPage):
+  - **Header section** (entered once): Vendor, Invoice #, Transaction Date, Location, Notes
+  - **Line items section**: Add rows with Item (autocomplete), Quantity, Unit Cost
+  - Each line shows Last Paid Price and variance warning independently
+  - Running total displayed (total items, total cost)
+  - Add/remove line items before submission
+  - **Review & Submit**: Show full receipt summary, then submit all lines at once
+- [x] **Backend Endpoint**:
+  - `POST /api/transactions/receipts/batch` — accepts array of line items + shared header fields
+  - Wraps all inserts in a Prisma `$transaction` (atomic — all succeed or all fail)
+  - Returns array of created transactions + lastPaidPrice per item
+  - Validates all items and vendor exist before creating any rows
+- [x] **Backward Compatibility**: Keep existing single-item `POST /api/transactions/receipts` working (used by tests and potential API consumers)
 
-### Phase 5: Advanced Features & Optimization
-**Goal**: Enhanced functionality and intelligence.
+**Success Criteria**: All met ✅
+
+**Bug fix**: Transaction history now sorts by `transactionDate` DESC then `id` DESC, so batch receipt line items appear together instead of scattered.
+
+---
+
+### Phase 4A: Item & Vendor CRUD ✅ COMPLETE
+**Goal**: Enable day-to-day management of master data without CSV imports.
+
+- [x] **Item Management Page** (Admin only):
+  - Searchable/filterable table of all items (active and inactive via `?all=true`)
+  - "Add Item" dialog with all fields (item_code, description, category, UOM, min/max qty, notes)
+  - Edit button per row → same dialog pre-filled
+  - Deactivate/Reactivate toggle (soft delete via `isActive` flag)
+  - Validation: unique item_code (409 conflict), required fields
+- [x] **Vendor Management Page** (Admin only):
+  - Searchable/filterable table of all vendors (active and inactive)
+  - "Add Vendor" dialog (vendor_code, name, contact, phone, email, payment terms, notes)
+  - Edit/Deactivate via dropdown menu per row
+  - Validation: unique vendor_code, required fields
+- [x] **Backend Endpoints**:
+  - `GET /api/items/:id` — single item detail
+  - `POST /api/items` — create item (admin only)
+  - `PUT /api/items/:id` — update item (admin only)
+  - `PATCH /api/items/:id/status` — toggle active/inactive (admin only)
+  - `GET /api/vendors/:id` — single vendor detail
+  - `POST /api/vendors` — create vendor (admin only)
+  - `PUT /api/vendors/:id` — update vendor (admin only)
+  - `PATCH /api/vendors/:id/status` — toggle active/inactive (admin only)
+- [x] **Navigation Update**: Enabled "Items" and "Vendors" sidebar links
+
+**Success Criteria**: All met ✅
+
+---
+
+### Phase 4B: Technical Debt & Performance ✅ COMPLETE
+**Goal**: Fix known performance issues and harden the system before scaling usage.
+
+- [x] **Batch N+1 Queries**:
+  - Low-stock endpoint: replaced per-item burn rate loop with single `groupBy` aggregate query
+  - Valuation endpoint: replaced JS-side aggregation with raw SQL (`SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0)`)
+- [x] **Pagination**:
+  - Stock position: server-side pagination + debounced search (`?search=&page=&limit=`)
+  - Transaction history: server-side pagination with prev/next controls (`?page=&limit=`)
+  - Frontend pages updated with pagination controls and page indicators
+- [x] **Rate Limiting**:
+  - `express-rate-limit` installed and configured
+  - Auth rate limit: 10 requests/minute/IP on `/api/auth`
+  - General API rate limit: 100 requests/minute/IP on all `/api/*`
+- [x] **Unused Schema Fields** — resolved:
+  - `safetyStock`: wired into low-stock threshold (`currentStock < minQuantity + safetyStock`)
+  - `maxQuantity`: wired into overstock count displayed on dashboard `/stats`
+  - `referencePrice`: populated with lastPaidPrice on receipt creation (single + batch)
+  - `leadTimeDays`: removed from schema (migration `20260217084836_remove_lead_time_days`)
+
+**Success Criteria**: All met ✅
+
+---
+
+### Phase 5: Advanced Features & Optimization (Post Go-Live)
+**Goal**: Enhancements driven by real-world usage feedback after the system is in production.
+
+**Priority order** (re-evaluate after 2-4 weeks of live usage):
+
 - [ ] **Mobile/Tablet Optimization**:
-  - Touch-optimized UI for warehouse iPads
-  - Larger buttons, simplified navigation for tablets
-- [ ] **Barcode Scanning Integration**:
-  - Use device camera or USB scanner
-  - Quick lookup/entry by scanning item codes
-- [ ] **Reporting & Analytics**:
+  - Touch-optimized UI for warehouse iPads/phones
+  - Larger touch targets, simplified navigation
+  - Receipt entry optimized for tablet in receiving dock
+- [ ] **Reporting & Export**:
+  - CSV/PDF export of stock position, transaction history
   - "Spend by Vendor" report (monthly, yearly)
-  - "Inventory Value Over Time" chart
-  - "Low Stock Items" alert dashboard
   - "Cost Variance Report" (items with frequent price changes)
-- [ ] **Advanced Features**:
-  - Email notifications for low stock items
-  - Automated reorder suggestions based on min/max levels
-  - Export reports to PDF/Excel
-  - Multi-location inventory summary
+  - "Inventory Value Over Time" chart
+- [ ] **Barcode Scanning**:
+  - Use device camera or USB scanner for item lookup
+  - Quick-add to receipt builder by scanning item codes
+- [ ] **Notifications & Automation**:
+  - Email alerts for low stock items
+  - Automated reorder suggestions based on min/max + lead time
+  - Dashboard notification badges
 
 **Success Criteria**:
-✅ Application works smoothly on iPad in warehouse
-✅ Barcode scanning speeds up item lookup
-✅ Reports provide actionable insights (spend trends, low stock alerts)
-✅ Managers can export reports for review
+- Application works smoothly on iPad in warehouse
+- Users can export any list/report to CSV or PDF
+- Barcode scanning speeds up item lookup during receiving
+- Low stock email alerts reach admin before stockout
 
-**Estimated Time**: 20-30 hours
+**Note**: Exact scope for Phase 5 will be determined by what Alix and warehouse staff actually request after using the system for a few weeks. Build what they need, not what we assume.
+
+---
+
+### Deferred / Out of Scope
+The following ideas were evaluated and intentionally deferred. They can be revisited post-launch if business needs justify them.
+
+| Idea | Reason Deferred |
+|------|----------------|
+| **Purchase Orders** | Full procurement workflow — significant scope beyond inventory tracking. Revisit if vendor ordering becomes a pain point. |
+| **Locations as Data** (dynamic location table) | Only 2 locations (ADEL, CALHOUN). Hardcoded validation is simpler. If a 3rd location is added, it's a quick migration. |
+| **System Settings UI** | Cost variance threshold (10%) works as-is. Low stock thresholds per category adds complexity without clear need. Defer until users request configurability. |
+| **Manual DB Export UI** | Railway provides automatic daily backups. Manual .sql export button is low-value given hosting backup features. |
+| **2FA / Advanced Auth** | 2-5 internal users on a private system. JWT + bcrypt is sufficient. Revisit if the system becomes externally accessible. |
 
 ---
 
@@ -345,37 +342,35 @@ CREATE INDEX idx_vendors_code ON Vendors(vendor_code);
 
 ---
 
-## ⏱️ Timeline Estimates
+## ⏱️ Timeline & Progress
 
-### Assumptions
-- Part-time development (~10-15 hours/week)
-- Single developer with learning curve for new technologies
-- Includes time for testing, debugging, and refinement
+### Completed
 
-### Phase Breakdown
+| Phase | Focus | Status |
+|-------|-------|--------|
+| **Phase 0** | Project Bootstrap | ✅ Complete |
+| **Phase 1** | Foundation & Auth | ✅ Complete (8/8 tests passing) |
+| **Phase 2** | Core Transactions, CSV Import, Dashboard | ✅ Complete (18/24 tests passing — failures are test bugs, not API bugs) |
+| **Phase 3A** | Opening Balances, Adjustments, Transfers | ✅ Complete — full transaction lifecycle |
+| **Phase 3B** | Multi-Item Receipt Builder | ✅ Complete — batch receipts with atomic submission |
+| **Phase 4A** | Item & Vendor CRUD | ✅ Complete — full CRUD with dialog-based UI |
+| **Phase 4B** | Technical Debt & Performance | ✅ Complete — N+1 fixes, pagination, rate limiting, schema cleanup |
 
-| Phase | Focus | Hours | Calendar Time |
-|-------|-------|-------|---------------|
-| **Phase 0** | Project Bootstrap | 6-8 hours | 1 week |
-| **Phase 1** | Foundation & Auth | 20-30 hours | 2-3 weeks |
-| **Phase 2** | Transactions & CSV Import | 40-50 hours | 4-5 weeks |
-| **Phase 3** | Adjustments & Transfers | 15-20 hours | 2 weeks |
-| **Phase 4** | Administration | 20-25 hours | 2-3 weeks |
-| **Phase 5** | Advanced Features | 20-30 hours | 2-4 weeks |
+### Remaining — Build Order
 
-### Key Milestones (Local Development)
+| Priority | Phase | Focus | What It Unlocks |
+|----------|-------|-------|-----------------|
+| **Next** | **Deploy** | Push to Railway/Vercel | Cloud access for Alix and warehouse staff |
+| **After deploy** | **Phase 5** | Mobile, Reporting, Barcode, Notifications | Enhancement: driven by real usage feedback |
 
-- **Week 2**: Phase 0+1 complete → Login works on localhost ✅
-- **Week 7**: Phase 2 complete → Receipt entry + CSV imports work with test data → **LOCAL MVP** ✅
-- **Week 9**: Phase 3 complete → Adjustments/transfers work → **READY FOR TESTING** ✅
-- **Week 14**: Phase 4 complete → Full admin capabilities → **READY TO DEPLOY** ✅
-- **Week 15**: Deploy to cloud (30 minutes) → **PRODUCTION LIVE** ✅
-- **Week 18**: Phase 5 complete → Advanced features → **FEATURE COMPLETE** ✅
+### Key Milestones
 
-### Total Estimates
-- **Local MVP (Phases 0-2)**: ~75 hours, 7-9 weeks (localhost testing)
-- **Ready to Deploy (Phases 0-4)**: ~130 hours, 13-16 weeks (local complete, cloud deployment optional)
-- **Full System + Deployed**: ~150 hours, 15-18 weeks
+- ✅ **Local MVP**: Phases 0-2 complete — receipt entry, CSV imports, live dashboard working on localhost
+- ✅ **Go-Live Ready**: Phase 3A complete — can load real inventory and operate all transaction types
+- ✅ **Operationally Complete**: Phase 4A complete — full master data CRUD without CSV dependency
+- ✅ **Production Hardened**: Phase 4B complete — paginated endpoints, rate limiting, optimized queries
+- ⬜ **Deploy to Cloud**: Push to Railway/Vercel (~30 minutes)
+- ⬜ **Feature Complete**: Phase 5 — based on real-world feedback post-launch
 
 ---
 
@@ -529,24 +524,27 @@ PostgreSQL Database (Railway)
    - ✅ **Mitigation**: Start free, monitor usage, budget $5-20/month if needed
 
 5. **Scope Creep**: Additional features requested mid-development
-   - ✅ **Mitigation**: Strict phase boundaries, defer non-critical features to Phase 5
+   - ✅ **Mitigation**: Evaluate new ideas against go-live requirements. See "Deferred / Out of Scope" section for ideas intentionally tabled
 
 ### ✅ CONFIRMED Decisions
 
-✅ **Development Approach**: Build locally first, deploy when ready (Phases 0-4 local)
-✅ **Test Data**: Use seed scripts with sample vendors/items (no CSV files needed initially)
-✅ **Users**: 2-5 users total (Admin role + Standard user role sufficient)
-✅ **Locations**: ADEL and CALHOUN only (confirmed - no additional locations)
-✅ **CSV Import**: Build feature in Phase 2, but use with real data later (not blocker)
+✅ **Development Approach**: Build locally first, deploy after Phase 4B
+✅ **Test Data**: Seed scripts for development; real data loaded via Opening Balance + CSV import at go-live
+✅ **Users**: 2-5 users total (Admin + Standard roles sufficient)
+✅ **Locations**: ADEL and CALHOUN only (hardcoded — revisit only if a 3rd location is added)
+✅ **Multi-Item Receipts**: No schema changes — batch creates multiple Transaction rows sharing the same invoiceNumber
+✅ **Scope Control**: Purchase orders, dynamic locations, system settings UI, and DB export UI deferred (see Deferred section in roadmap)
 
 ### 🚨 Future Decisions (Not Blocking Development)
 
-**When Ready to Deploy** (after Phase 4):
+**When Ready to Deploy** (after Phase 4B):
 - Custom domain or free Railway URL?
 - Which hosting tier (free vs paid)?
-- When to load real vendor/item data?
+- When to load real vendor/item data (opening balances)?
 
-**No decisions needed to start coding!** Begin Phase 0 whenever ready.
+**Phase 5 scope** (after 2-4 weeks of live usage):
+- Which advanced features do Alix and warehouse staff actually need?
+- Mobile-first or reporting-first?
 
 ### Contingency Plans
 

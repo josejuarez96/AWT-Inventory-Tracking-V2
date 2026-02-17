@@ -3,13 +3,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PackageOpen, ArrowLeftRight, Truck, Users, AlertTriangle, TrendingDown, DollarSign, Activity } from 'lucide-react';
+import { PackageOpen, ArrowLeftRight, Truck, Users, AlertTriangle, TrendingDown, DollarSign, Activity, PackageX } from 'lucide-react';
 
 type DashboardStats = {
   totalItems: number;
   transactionsMTD: number;
   activeVendors: number;
   teamMembers: number;
+  overstockCount: number;
 };
 
 type LowStockItem = {
@@ -116,6 +117,7 @@ export function DashboardPage() {
     { title: 'Transactions (MTD)', icon: ArrowLeftRight, value: stats?.transactionsMTD ?? 0, sub: 'This month' },
     { title: 'Active Vendors', icon: Truck, value: stats?.activeVendors ?? 0, sub: 'Suppliers on file' },
     { title: 'Team Members', icon: Users, value: stats?.teamMembers ?? 0, sub: 'Active users' },
+    ...(stats?.overstockCount ? [{ title: 'Overstock', icon: PackageX, value: stats.overstockCount, sub: 'Items above max quantity' }] : []),
   ];
 
   return (
@@ -215,7 +217,7 @@ export function DashboardPage() {
                   </span>
                 </div>
                 <p className="text-xs text-gray-400">
-                  Based on last known unit cost per item. Compare to QuickBooks on-hand value.
+                  Based on weighted average cost per item.
                 </p>
               </div>
             )}

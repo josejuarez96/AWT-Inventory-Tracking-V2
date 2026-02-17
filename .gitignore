@@ -43,6 +43,12 @@ lerna-debug.log*
 inventory.db
 prisma/migrations/
 
+# TestSprite ephemeral data (API keys, tunnel config, raw results)
+testsprite_tests/tmp/
+
+# Workspace files
+*.code-workspace
+
 # Misc
 .cache/
 *.tsbuildinfo

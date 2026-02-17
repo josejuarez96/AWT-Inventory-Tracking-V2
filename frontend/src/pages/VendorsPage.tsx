@@ -1,0 +1,351 @@
+import { useEffect, useState } from 'react';
+import { api, ApiError } from '@/lib/api';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { MoreHorizontal, Plus, Search } from 'lucide-react';
+
+type Vendor = {
+  id: number;
+  vendorCode: string;
+  vendorName: string;
+  contactPerson: string | null;
+  phone: string | null;
+  email: string | null;
+  paymentTerms: string | null;
+  isActive?: boolean;
+  notes?: string | null;
+  createdAt?: string;
+};
+
+type VendorForm = {
+  vendorCode: string;
+  vendorName: string;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  paymentTerms: string;
+  notes: string;
+};
+
+const EMPTY_FORM: VendorForm = {
+  vendorCode: '',
+  vendorName: '',
+  contactPerson: '',
+  phone: '',
+  email: '',
+  paymentTerms: '',
+  notes: '',
+};
+
+export function VendorsPage() {
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState<VendorForm>(EMPTY_FORM);
+  const [formError, setFormError] = useState('');
+  const [toggleError, setToggleError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function fetchVendors() {
+    setIsLoading(true);
+    try {
+      const data = await api.get<{ vendors: Vendor[] }>('/api/vendors?all=true');
+      setVendors(data.vendors);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void fetchVendors();
+  }, []);
+
+  function openCreate() {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setFormError('');
+    setDialogOpen(true);
+  }
+
+  function openEdit(vendor: Vendor) {
+    setEditingId(vendor.id);
+    setForm({
+      vendorCode: vendor.vendorCode,
+      vendorName: vendor.vendorName,
+      contactPerson: vendor.contactPerson ?? '',
+      phone: vendor.phone ?? '',
+      email: vendor.email ?? '',
+      paymentTerms: vendor.paymentTerms ?? '',
+      notes: vendor.notes ?? '',
+    });
+    setFormError('');
+    setDialogOpen(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError('');
+    setIsSaving(true);
+
+    const payload = {
+      vendorCode: form.vendorCode.trim(),
+      vendorName: form.vendorName.trim(),
+      contactPerson: form.contactPerson.trim() || null,
+      phone: form.phone.trim() || null,
+      email: form.email.trim() || null,
+      paymentTerms: form.paymentTerms.trim() || null,
+      notes: form.notes.trim() || null,
+    };
+
+    try {
+      if (editingId) {
+        await api.put(`/api/vendors/${editingId}`, payload);
+      } else {
+        await api.post('/api/vendors', payload);
+      }
+      setDialogOpen(false);
+      void fetchVendors();
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Failed to save vendor');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleToggleStatus(id: number, currentStatus: boolean) {
+    setToggleError('');
+    try {
+      await api.patch(`/api/vendors/${id}/status`, { isActive: !currentStatus });
+      void fetchVendors();
+    } catch (err) {
+      setToggleError(err instanceof ApiError ? err.message : 'Failed to update vendor status');
+    }
+  }
+
+  const filtered = vendors.filter((v) => {
+    const q = search.toLowerCase();
+    return (
+      v.vendorCode.toLowerCase().includes(q) ||
+      v.vendorName.toLowerCase().includes(q) ||
+      (v.contactPerson ?? '').toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Vendors</h1>
+          <p className="mt-1 text-sm text-gray-500">Manage supplier master data</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Vendor
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{editingId ? 'Edit Vendor' : 'Create New Vendor'}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="vendorCode">Vendor Code <span className="text-red-500">*</span></Label>
+                  <Input
+                    id="vendorCode"
+                    value={form.vendorCode}
+                    onChange={(e) => setForm((f) => ({ ...f, vendorCode: e.target.value }))}
+                    maxLength={50}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="paymentTerms">Payment Terms</Label>
+                  <Input
+                    id="paymentTerms"
+                    value={form.paymentTerms}
+                    onChange={(e) => setForm((f) => ({ ...f, paymentTerms: e.target.value }))}
+                    placeholder="e.g. Net 30"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="vendorName">Vendor Name <span className="text-red-500">*</span></Label>
+                <Input
+                  id="vendorName"
+                  value={form.vendorName}
+                  onChange={(e) => setForm((f) => ({ ...f, vendorName: e.target.value }))}
+                  maxLength={200}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contactPerson">Contact Person</Label>
+                <Input
+                  id="contactPerson"
+                  value={form.contactPerson}
+                  onChange={(e) => setForm((f) => ({ ...f, contactPerson: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone</Label>
+                  <Input
+                    id="phone"
+                    value={form.phone}
+                    onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  value={form.notes}
+                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                />
+              </div>
+              {formError && <p className="text-sm text-red-500">{formError}</p>}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving ? 'Saving...' : editingId ? 'Update Vendor' : 'Create Vendor'}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Input
+          placeholder="Search by code, name, or contact..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      {toggleError && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex items-center justify-between">
+            {toggleError}
+            <Button variant="ghost" size="sm" onClick={() => setToggleError('')}>Dismiss</Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {isLoading ? (
+        <p className="text-sm text-gray-500">Loading vendors...</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-gray-500">
+          {search ? 'No vendors match your search.' : 'No vendors found. Add one to get started.'}
+        </p>
+      ) : (
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Vendor Code</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead>Phone</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Payment Terms</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-10" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((v) => (
+                <TableRow key={v.id} className={v.isActive === false ? 'opacity-50' : ''}>
+                  <TableCell className="font-mono text-sm">{v.vendorCode}</TableCell>
+                  <TableCell className="text-sm font-medium">{v.vendorName}</TableCell>
+                  <TableCell className="text-sm text-gray-500">{v.contactPerson ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-gray-500">{v.phone ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-gray-500">{v.email ?? '—'}</TableCell>
+                  <TableCell className="text-sm text-gray-500">{v.paymentTerms ?? '—'}</TableCell>
+                  <TableCell>
+                    <Badge variant={v.isActive !== false ? 'outline' : 'destructive'}>
+                      {v.isActive !== false ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(v)}>
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => void handleToggleStatus(v.id, v.isActive !== false)}
+                        >
+                          {v.isActive !== false ? 'Deactivate' : 'Activate'}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {!isLoading && (
+        <p className="text-xs text-gray-400">
+          {filtered.length} vendor{filtered.length !== 1 ? 's' : ''}
+          {search && ` matching "${search}"`}
+        </p>
+      )}
+    </div>
+  );
+}

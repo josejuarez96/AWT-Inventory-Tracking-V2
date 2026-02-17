@@ -34,14 +34,29 @@ router.get('/stats', async (req, res) => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [totalItems, transactionsMTD, activeVendors, teamMembers] = await Promise.all([
+  const stockMap = await getStockMap();
+  const totalStock = getTotalStockPerItem(stockMap);
+
+  const [totalItems, transactionsMTD, activeVendors, teamMembers, overstockItems] = await Promise.all([
     prisma.item.count({ where: { isActive: true } }),
     prisma.transaction.count({ where: { transactionDate: { gte: startOfMonth } } }),
     prisma.vendor.count({ where: { isActive: true } }),
     prisma.user.count({ where: { isActive: true } }),
+    prisma.item.findMany({
+      where: { isActive: true, maxQuantity: { not: null } },
+      select: { id: true, maxQuantity: true },
+    }),
   ]);
 
-  return res.json({ totalItems, transactionsMTD, activeVendors, teamMembers });
+  // Count items where current stock exceeds maxQuantity
+  let overstockCount = 0;
+  for (const item of overstockItems) {
+    const currentStock = totalStock[item.id] ?? 0;
+    const maxQty = Number(item.maxQuantity);
+    if (currentStock > maxQty) overstockCount++;
+  }
+
+  return res.json({ totalItems, transactionsMTD, activeVendors, teamMembers, overstockCount });
 });
 
 // GET /api/dashboard/low-stock
@@ -49,38 +64,49 @@ router.get('/low-stock', async (req, res) => {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const stockMap = await getStockMap();
+  // Fetch all data in parallel — 3 queries total (was 2 + N)
+  const [stockMap, items, burnRateRows] = await Promise.all([
+    getStockMap(),
+    prisma.item.findMany({
+      where: { isActive: true, minQuantity: { not: null } },
+      select: {
+        id: true,
+        itemCode: true,
+        description: true,
+        category: true,
+        unitOfMeasure: true,
+        minQuantity: true,
+        safetyStock: true,
+      },
+    }),
+    // Single grouped query replaces per-item N+1 loop
+    prisma.transaction.groupBy({
+      by: ['itemId'],
+      where: {
+        transactionDate: { gte: thirtyDaysAgo },
+        quantity: { lt: 0 },
+      },
+      _sum: { quantity: true },
+    }),
+  ]);
+
   const totalStock = getTotalStockPerItem(stockMap);
 
-  const items = await prisma.item.findMany({
-    where: { isActive: true, minQuantity: { not: null } },
-    select: {
-      id: true,
-      itemCode: true,
-      description: true,
-      category: true,
-      unitOfMeasure: true,
-      minQuantity: true,
-    },
-  });
+  // Build burn rate lookup: itemId → totalOutgoing (absolute value)
+  const burnRateMap = {};
+  for (const row of burnRateRows) {
+    burnRateMap[row.itemId] = Math.abs(Number(row._sum.quantity ?? 0));
+  }
 
   const lowStockItems = [];
   for (const item of items) {
     const currentStock = totalStock[item.id] ?? 0;
     const minQty = Number(item.minQuantity);
-    if (currentStock > minQty) continue;
+    const safety = Number(item.safetyStock ?? 0);
+    const threshold = minQty + safety;
+    if (currentStock > threshold) continue;
 
-    // Calculate burn rate from last 30 days of outgoing transactions
-    const outgoing = await prisma.transaction.aggregate({
-      where: {
-        itemId: item.id,
-        transactionDate: { gte: thirtyDaysAgo },
-        quantity: { lt: 0 },
-      },
-      _sum: { quantity: true },
-    });
-
-    const totalOutgoing = Math.abs(Number(outgoing._sum.quantity ?? 0));
+    const totalOutgoing = burnRateMap[item.id] ?? 0;
     const burnRate = totalOutgoing > 0 ? totalOutgoing / 30 : null;
     const daysRemaining = burnRate !== null && currentStock > 0
       ? Math.floor(currentStock / burnRate)
@@ -94,6 +120,7 @@ router.get('/low-stock', async (req, res) => {
       unitOfMeasure: item.unitOfMeasure,
       currentStock,
       minQuantity: minQty,
+      safetyStock: safety,
       burnRate: burnRate !== null ? Math.round(burnRate * 100) / 100 : null,
       daysRemaining,
     });
@@ -151,32 +178,39 @@ router.get('/dead-stock', async (req, res) => {
   return res.json({ items: deadStockItems });
 });
 
+// Helper: compute weighted average cost per item using raw SQL (no memory bloat)
+async function getWeightedAvgCostMap() {
+  const rows = await prisma.$queryRaw`
+    SELECT "item_id" AS "itemId",
+           SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS "avgCost"
+    FROM transactions
+    WHERE transaction_type IN ('RECEIPT', 'OPENING_BALANCE', 'PRODUCTION')
+      AND unit_cost IS NOT NULL
+      AND quantity > 0
+    GROUP BY "item_id"
+  `;
+
+  const avgCostMap = {};
+  for (const row of rows) {
+    avgCostMap[row.itemId] = Number(row.avgCost ?? 0);
+  }
+  return avgCostMap;
+}
+
 // GET /api/dashboard/valuation
 router.get('/valuation', async (req, res) => {
-  // Get most recent unit cost per item+location from RECEIPTs
-  const receipts = await prisma.transaction.findMany({
-    where: { transactionType: 'RECEIPT', unitCost: { not: null } },
-    orderBy: { transactionDate: 'desc' },
-    select: { itemId: true, location: true, unitCost: true },
-  });
-
-  // Build last cost map: first encountered per key = most recent
-  const lastCostMap = {};
-  for (const r of receipts) {
-    const key = `${r.itemId}_${r.location}`;
-    if (!(key in lastCostMap)) {
-      lastCostMap[key] = Number(r.unitCost);
-    }
-  }
-
-  const stockMap = await getStockMap();
+  const [avgCostMap, stockMap] = await Promise.all([
+    getWeightedAvgCostMap(),
+    getStockMap(),
+  ]);
 
   let adel = 0;
   let calhoun = 0;
 
   for (const [key, qty] of Object.entries(stockMap)) {
     if (qty <= 0) continue;
-    const cost = lastCostMap[key] ?? 0;
+    const itemId = key.split('_')[0];
+    const cost = avgCostMap[itemId] ?? 0;
     const value = qty * cost;
     if (key.endsWith('_ADEL')) {
       adel += value;
@@ -195,7 +229,7 @@ router.get('/valuation', async (req, res) => {
 // GET /api/dashboard/activity — last 20 transactions, human-readable
 router.get('/activity', async (req, res) => {
   const transactions = await prisma.transaction.findMany({
-    take: 20,
+    take: 40, // fetch extra to account for filtered-out outbound transfer legs
     orderBy: { createdAt: 'desc' },
     include: {
       item: { select: { description: true } },
@@ -204,7 +238,15 @@ router.get('/activity', async (req, res) => {
     },
   });
 
-  const activity = transactions.map((t) => {
+  const activity = [];
+  for (const t of transactions) {
+    if (activity.length >= 20) break;
+
+    // Skip outbound transfer legs (negative qty) to avoid duplicate entries
+    if (t.transactionType === 'TRANSFER' && Number(t.quantity) < 0) continue;
+    // Skip consumption legs — production entry covers the kitting event
+    if (t.transactionType === 'CONSUMPTION') continue;
+
     const qty = Math.abs(Number(t.quantity));
     const name = t.user.fullName;
     const item = t.item.description;
@@ -216,28 +258,34 @@ router.get('/activity', async (req, res) => {
       case 'RECEIPT':
         description = `${name} received ${qty} × ${item} from ${vendor ?? 'unknown vendor'} at ${loc}`;
         break;
-      case 'ADJUSTMENT':
-        description = `${name} adjusted ${item} by ${Number(t.quantity) >= 0 ? '+' : ''}${Number(t.quantity)} at ${loc}`;
+      case 'ADJUSTMENT': {
+        const reason = t.notes?.match(/^\[(.+?)\]/)?.[1] ?? '';
+        const reasonText = reason ? ` (${reason})` : '';
+        description = `${name} adjusted ${item} by ${Number(t.quantity) >= 0 ? '+' : ''}${Number(t.quantity)} at ${loc}${reasonText}`;
         break;
+      }
       case 'TRANSFER':
         description = `${name} transferred ${qty} × ${item} to ${loc}`;
         break;
       case 'OPENING_BALANCE':
         description = `${name} set opening balance of ${qty} × ${item} at ${loc}`;
         break;
+      case 'PRODUCTION':
+        description = `${name} produced ${qty} × ${item} at ${loc}`;
+        break;
       default:
         description = `${name} recorded ${qty} × ${item} at ${loc}`;
     }
 
-    return {
+    activity.push({
       id: t.id,
       description,
       transactionType: t.transactionType,
       location: t.location,
       transactionDate: t.transactionDate,
       createdAt: t.createdAt,
-    };
-  });
+    });
+  }
 
   return res.json({ activity });
 });

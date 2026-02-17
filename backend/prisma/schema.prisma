@@ -23,7 +23,12 @@ model User {
   createdAt     DateTime  @default(now()) @map("created_at")
   lastLoginAt   DateTime? @map("last_login_at")
 
-  transactions  Transaction[]
+  transactions          Transaction[]
+  cycleCountsCreated    CycleCount[] @relation("cycleCountCreator")
+  cycleCountsAssigned   CycleCount[] @relation("cycleCountAssignee")
+  cycleCountsPosted     CycleCount[] @relation("cycleCountPoster")
+  bomsCreated           Bom[]             @relation("bomCreator")
+  productionOrders      ProductionOrder[] @relation("productionCreator")
 
   @@map("users")
 }
@@ -41,6 +46,7 @@ model Vendor {
   createdAt     DateTime  @default(now()) @map("created_at")
 
   transactions  Transaction[]
+  defaultItems  Item[] @relation("defaultVendorItems")
 
   @@map("vendors")
 }
@@ -53,20 +59,27 @@ model Item {
   unitOfMeasure   String    @default("EA") @map("unit_of_measure") @db.VarChar(20)
   minQuantity     Decimal?  @map("min_quantity") @db.Decimal(10, 2)
   maxQuantity     Decimal?  @map("max_quantity") @db.Decimal(10, 2)
-  leadTimeDays    Int       @default(14) @map("lead_time_days") // Default 2 weeks
   safetyStock     Decimal   @default(0) @map("safety_stock") @db.Decimal(10, 2)
+  standardCost    Decimal?  @map("standard_cost") @db.Decimal(10, 2)
+  lastPurchaseCost Decimal? @map("last_purchase_cost") @db.Decimal(10, 2)
+  defaultVendorId Int?      @map("default_vendor_id")
   isActive        Boolean   @default(true) @map("is_active")
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")
 
+  defaultVendor   Vendor?   @relation("defaultVendorItems", fields: [defaultVendorId], references: [id])
   transactions    Transaction[]
+  cycleCountLines CycleCountLine[]
+  bomsAsFinishedGood             Bom[]             @relation("bomFinishedGood")
+  bomLinesAsComponent            BomLine[]         @relation("bomLineItem")
+  productionOrdersAsFinishedGood ProductionOrder[] @relation("productionFinishedGood")
 
   @@map("items")
 }
 
 model Transaction {
   id              Int       @id @default(autoincrement())
-  transactionType String    @map("transaction_type") @db.VarChar(20) // 'RECEIPT', 'ADJUSTMENT', 'TRANSFER', 'OPENING_BALANCE'
+  transactionType String    @map("transaction_type") @db.VarChar(20) // 'RECEIPT', 'ADJUSTMENT', 'TRANSFER', 'OPENING_BALANCE', 'CONSUMPTION', 'PRODUCTION'
   itemId          Int       @map("item_id")
   vendorId        Int?      @map("vendor_id")
   location        String    @db.VarChar(50) // 'ADEL' or 'CALHOUN'
@@ -79,12 +92,121 @@ model Transaction {
   createdBy       Int       @map("created_by")
   createdAt       DateTime  @default(now()) @map("created_at")
 
-  item            Item      @relation(fields: [itemId], references: [id])
-  vendor          Vendor?   @relation(fields: [vendorId], references: [id])
-  user            User      @relation(fields: [createdBy], references: [id])
+  productionOrderId Int?   @map("production_order_id")
+
+  item              Item              @relation(fields: [itemId], references: [id])
+  vendor            Vendor?           @relation(fields: [vendorId], references: [id])
+  user              User              @relation(fields: [createdBy], references: [id])
+  cycleCountLine    CycleCountLine?
+  productionOrder   ProductionOrder?  @relation(fields: [productionOrderId], references: [id])
 
   @@index([itemId])
   @@index([transactionDate])
   @@index([transactionType])
   @@map("transactions")
+}
+
+model CycleCount {
+  id          Int       @id @default(autoincrement())
+  countNumber String    @unique @map("count_number") @db.VarChar(20)
+  location    String    @db.VarChar(50)
+  status      String    @default("DRAFT") @db.VarChar(20)
+  blindCount  Boolean   @default(false) @map("blind_count")
+  notes       String?
+  createdBy   Int       @map("created_by")
+  assignedTo  Int?      @map("assigned_to")
+  postedBy    Int?      @map("posted_by")
+  postedAt    DateTime? @map("posted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  creator     User      @relation("cycleCountCreator", fields: [createdBy], references: [id])
+  assignee    User?     @relation("cycleCountAssignee", fields: [assignedTo], references: [id])
+  poster      User?     @relation("cycleCountPoster", fields: [postedBy], references: [id])
+  lines       CycleCountLine[]
+
+  @@index([status])
+  @@index([location])
+  @@map("cycle_counts")
+}
+
+model CycleCountLine {
+  id            Int       @id @default(autoincrement())
+  cycleCountId  Int       @map("cycle_count_id")
+  itemId        Int       @map("item_id")
+  systemQty     Decimal   @map("system_qty") @db.Decimal(10, 2)
+  countedQty    Decimal?  @map("counted_qty") @db.Decimal(10, 2)
+  unitCost      Decimal?  @map("unit_cost") @db.Decimal(10, 2)
+  variance      Decimal?  @db.Decimal(10, 2)
+  varianceValue Decimal?  @map("variance_value") @db.Decimal(10, 2)
+  adjustmentId  Int?      @unique @map("adjustment_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  cycleCount    CycleCount  @relation(fields: [cycleCountId], references: [id])
+  item          Item        @relation(fields: [itemId], references: [id])
+  adjustment    Transaction? @relation(fields: [adjustmentId], references: [id])
+
+  @@unique([cycleCountId, itemId])
+  @@index([cycleCountId])
+  @@index([itemId])
+  @@map("cycle_count_lines")
+}
+
+model Bom {
+  id              Int       @id @default(autoincrement())
+  bomCode         String    @unique @map("bom_code") @db.VarChar(50)
+  name            String    @db.VarChar(200)
+  finishedGoodId  Int       @map("finished_good_id")
+  status          String    @default("DRAFT") @map("status") @db.VarChar(20) // 'DRAFT', 'ACTIVE', 'RETIRED'
+  notes           String?
+  createdBy       Int       @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  finishedGood     Item              @relation("bomFinishedGood", fields: [finishedGoodId], references: [id])
+  creator          User              @relation("bomCreator", fields: [createdBy], references: [id])
+  lines            BomLine[]
+  productionOrders ProductionOrder[]
+
+  @@index([status])
+  @@index([finishedGoodId])
+  @@map("boms")
+}
+
+model BomLine {
+  id          Int     @id @default(autoincrement())
+  bomId       Int     @map("bom_id")
+  itemId      Int     @map("item_id")
+  quantityPer Decimal @map("quantity_per") @db.Decimal(10, 4)
+  notes       String?
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  bom         Bom     @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  item        Item    @relation("bomLineItem", fields: [itemId], references: [id])
+
+  @@unique([bomId, itemId])
+  @@index([bomId])
+  @@map("bom_lines")
+}
+
+model ProductionOrder {
+  id               Int       @id @default(autoincrement())
+  orderNumber      String    @unique @map("order_number") @db.VarChar(20)
+  bomId            Int?      @map("bom_id")
+  finishedGoodId   Int       @map("finished_good_id")
+  location         String    @db.VarChar(50)
+  quantityProduced Decimal   @map("quantity_produced") @db.Decimal(10, 2)
+  totalCost        Decimal   @map("total_cost") @db.Decimal(12, 2)
+  notes            String?
+  createdBy        Int       @map("created_by")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  bom              Bom?      @relation(fields: [bomId], references: [id])
+  finishedGood     Item      @relation("productionFinishedGood", fields: [finishedGoodId], references: [id])
+  creator          User      @relation("productionCreator", fields: [createdBy], references: [id])
+  transactions     Transaction[]
+
+  @@index([finishedGoodId])
+  @@index([location])
+  @@map("production_orders")
 }

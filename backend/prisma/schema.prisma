@@ -53,6 +53,8 @@ model Item {
   unitOfMeasure   String    @default("EA") @map("unit_of_measure") @db.VarChar(20)
   minQuantity     Decimal?  @map("min_quantity") @db.Decimal(10, 2)
   maxQuantity     Decimal?  @map("max_quantity") @db.Decimal(10, 2)
+  leadTimeDays    Int       @default(14) @map("lead_time_days") // Default 2 weeks
+  safetyStock     Decimal   @default(0) @map("safety_stock") @db.Decimal(10, 2)
   isActive        Boolean   @default(true) @map("is_active")
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")

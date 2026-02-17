@@ -1,0 +1,141 @@
+version: "2"
+type: backend
+tech_stack:
+  - Node.js
+  - Express.js v5
+  - PostgreSQL
+  - Prisma ORM
+  - JWT (jsonwebtoken)
+  - bcrypt
+  - express-validator
+  - dotenv
+features:
+  - name: Health Check API
+    description: Basic health check endpoint to verify the API server is running
+    files:
+      - backend/src/index.js
+    endpoints:
+      - method: GET
+        path: /api/health
+        description: Returns server status and timestamp
+        auth_required: false
+        response_schema:
+          "200":
+            status: string
+            message: string
+            timestamp: string
+    depends_on: []
+
+  - name: Authentication API
+    description: JWT-based login and session management
+    files:
+      - backend/src/routes/auth.js
+      - backend/src/middleware/auth.js
+      - backend/src/lib/prisma.js
+    endpoints:
+      - method: POST
+        path: /api/auth/login
+        description: Authenticate with username and password, returns JWT token and user object
+        auth_required: false
+        request_schema:
+          body:
+            username: string
+            password: string
+        response_schema:
+          "200":
+            token: string
+            user:
+              id: number
+              username: string
+              fullName: string
+              role: string
+          "400": Validation error array
+          "401": Invalid credentials
+      - method: GET
+        path: /api/auth/me
+        description: Returns the currently authenticated user based on the JWT token
+        auth_required: true
+        response_schema:
+          "200":
+            user:
+              id: number
+              username: string
+              fullName: string
+              role: string
+          "401": No token or invalid token
+      - method: POST
+        path: /api/auth/logout
+        description: Acknowledges logout — token removal is handled client-side
+        auth_required: true
+        response_schema:
+          "200":
+            message: string
+          "401": No token or invalid token
+    depends_on: []
+
+  - name: User Management API
+    description: Admin-only CRUD operations for managing user accounts
+    files:
+      - backend/src/routes/users.js
+      - backend/src/middleware/auth.js
+    endpoints:
+      - method: GET
+        path: /api/users
+        description: List all users, no password hash returned
+        auth_required: true
+        response_schema:
+          "200":
+            users: User[]
+          "401": Unauthorized
+          "403": Admin access required
+      - method: POST
+        path: /api/users
+        description: Create a new user account
+        auth_required: true
+        request_schema:
+          body:
+            username: string
+            password: string
+            fullName: string
+            role: "admin | user"
+        response_schema:
+          "201": User
+          "400": Validation error
+          "401": Unauthorized
+          "403": Admin access required
+          "409": Username already taken
+      - method: PUT
+        path: /api/users/:id
+        description: Update a user's fullName, role, or password — all fields optional
+        auth_required: true
+        request_schema:
+          body:
+            fullName: string (optional)
+            role: "admin | user (optional)"
+            password: string (optional)
+        response_schema:
+          "200": User
+          "400": Validation error or no fields to update
+          "401": Unauthorized
+          "403": Admin access required
+          "404": User not found
+      - method: PATCH
+        path: /api/users/:id/status
+        description: Activate or deactivate a user account. Cannot deactivate own account.
+        auth_required: true
+        request_schema:
+          body:
+            isActive: boolean
+        response_schema:
+          "200": User
+          "400": Cannot deactivate own account
+          "401": Unauthorized
+          "403": Admin access required
+          "404": User not found
+    depends_on:
+      - Authentication API
+
+known_limitations:
+  - issue: No rate limiting on login endpoint
+    location: backend/src/routes/auth.js
+    impact: Brute force possible, acceptable for internal tool at this stage

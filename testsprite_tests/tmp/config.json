@@ -1,0 +1,18 @@
+{
+  "status": "commited",
+  "type": "backend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "backendAuthType": "public",
+  "executionArgs": {
+    "projectName": "AWT Inventory Tracking V2",
+    "projectPath": "/Users/josejuarez/Documents/All World Trailers/AWT Inventory Tracking V2",
+    "testIds": [],
+    "additionalInstruction": "CRITICAL API CONTRACT — read before writing any test code: (1) Admin login: username=\"jose\" password=\"password123\". Standard user: username=\"alix\" password=\"password123\". (2) POST /api/users returns HTTP 201 with body {\"user\": {id, username, fullName, role, isActive, createdAt, lastLoginAt}}. ALWAYS unwrap: data = response.json(); user = data[\"user\"]. DO NOT do data.get(\"id\") — the id is at data[\"user\"][\"id\"]. (3) PUT /api/users/:id returns HTTP 200 with body {\"user\": {...}}. Same unwrapping required. (4) PATCH /api/users/:id/status returns HTTP 200 with body {\"user\": {...}}. Same unwrapping required. (5) PATCH /api/users/:id/status with own admin account returns HTTP 400 with body {\"error\": \"Cannot deactivate your own account\"}. Check the \"error\" key, not \"message\". (6) For TC008 specifically: use a random suffix on the username each run to avoid 409 conflicts. DO NOT use a hardcoded username like \"testuser_tc008\".",
+    "envs": {
+      "API_KEY": "sk-user-f2SeR--HdRiSE9e_M8xOISPxGteF-Uv2IJnMWp2RVdPupD3grJjb5mz3n1l4EjES7e1dFLU2GDPS9Hkm0SiTTe3vBeyV9tQIi14p71JeSAZIerGNj0l1ziF0VzJCW84wapE"
+    }
+  },
+  "serverPort": 55158,
+  "proxy": "http://272dd5f9-3f02-4397-b425-41d85f667bf5:KwS49VJxKCQd4gL1LWK5kHDpuGlA4le8@tun.testsprite.com:8080"
+}

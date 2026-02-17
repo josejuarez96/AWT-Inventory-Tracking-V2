@@ -91,7 +91,7 @@ features:
           "403": Admin access required
       - method: POST
         path: /api/users
-        description: Create a new user account, returns HTTP 201 with body wrapped in user envelope
+        description: "Create a new user account. IMPORTANT: response body is always wrapped in a 'user' key — { \"user\": { id, username, fullName, role, isActive } }. To get the user id, always do resp.json()[\"user\"][\"id\"], NOT resp.json()[\"id\"]."
         auth_required: true
         request_schema:
           body:
@@ -101,14 +101,22 @@ features:
             role: "admin | user"
         response_schema:
           "201":
-            user: User
+            user:
+              id: number
+              username: string
+              fullName: string
+              role: string
+              isActive: boolean
+        example_response_201: '{"user": {"id": 5, "username": "alice", "fullName": "Alice Smith", "role": "user", "isActive": true}}'
+        notes: "Always unwrap the 'user' key from response: data = resp.json(); user_id = data['user']['id']"
+        error_responses:
           "400": Validation error
           "401": Unauthorized
           "403": Admin access required
           "409": Username already taken
       - method: PUT
         path: /api/users/:id
-        description: Update a user's fullName, role, or password — all fields optional. Returns HTTP 200 with body wrapped in user envelope.
+        description: "Update a user's fullName, role, or password. IMPORTANT: response body is always wrapped in a 'user' key — { \"user\": { id, username, fullName, role } }. Always do resp.json()[\"user\"] to get the user object."
         auth_required: true
         request_schema:
           body:
@@ -117,21 +125,33 @@ features:
             password: "string (optional)"
         response_schema:
           "200":
-            user: User
+            user:
+              id: number
+              username: string
+              fullName: string
+              role: string
+        example_response_200: '{"user": {"id": 5, "username": "alice", "fullName": "Alice Updated", "role": "admin"}}'
+        notes: "Always unwrap the 'user' key from response: data = resp.json(); updated_user = data['user']"
+        error_responses:
           "400": Validation error or no fields to update
           "401": Unauthorized
           "403": Admin access required
           "404": User not found
       - method: PATCH
         path: /api/users/:id/status
-        description: Activate or deactivate a user account. Cannot deactivate own account. Returns HTTP 200 with body wrapped in user envelope.
+        description: "Activate or deactivate a user account. Cannot deactivate own account (returns 400). IMPORTANT: response body is always wrapped in a 'user' key — { \"user\": { id, isActive, ... } }. Always do resp.json()[\"user\"] to get the user object."
         auth_required: true
         request_schema:
           body:
             isActive: boolean
         response_schema:
           "200":
-            user: User
+            user:
+              id: number
+              isActive: boolean
+        example_response_200: '{"user": {"id": 5, "username": "alice", "fullName": "Alice Smith", "role": "user", "isActive": false}}'
+        notes: "Always unwrap the 'user' key: data = resp.json(); assert data['user']['isActive'] == False"
+        error_responses:
           "400": Cannot deactivate own account
           "401": Unauthorized
           "403": Admin access required

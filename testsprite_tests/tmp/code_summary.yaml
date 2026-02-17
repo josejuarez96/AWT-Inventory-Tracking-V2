@@ -2,18 +2,18 @@ version: "2"
 type: backend
 tech_stack:
   - Node.js
-  - Express.js v5
+  - Express.js 5
   - PostgreSQL
   - Prisma ORM
-  - JWT (jsonwebtoken)
+  - JSON Web Tokens (jsonwebtoken)
   - bcrypt
-  - express-validator
-  - multer
+  - multer (CSV file uploads)
   - csv-parse
+  - express-rate-limit
   - dotenv
 features:
   - name: Health Check API
-    description: Basic health check endpoint to verify the API server is running
+    description: Basic health endpoint to verify server is running
     files:
       - backend/src/index.js
     endpoints:
@@ -23,20 +23,20 @@ features:
         auth_required: false
         response_schema:
           "200":
-            status: string
+            status: "ok"
             message: string
-            timestamp: string
+            timestamp: "ISO 8601 datetime"
     depends_on: []
 
   - name: Authentication API
-    description: JWT-based login and session management
+    description: JWT-based authentication with login, logout, session check, and password change
     files:
       - backend/src/routes/auth.js
-      - backend/src/middleware/auth.js
+      - backend/src/lib/validatePassword.js
     endpoints:
       - method: POST
         path: /api/auth/login
-        description: Authenticate with username and password, returns JWT token and user object
+        description: Authenticate with username and password, returns JWT token and user object. Rate limited to 10 requests per 15 seconds per IP.
         auth_required: false
         request_schema:
           body:
@@ -52,6 +52,7 @@ features:
               role: string
           "400": Validation error array
           "401": Invalid credentials
+          "429": Too many login attempts
       - method: GET
         path: /api/auth/me
         description: Returns the currently authenticated user based on the JWT token
@@ -64,6 +65,19 @@ features:
               fullName: string
               role: string
           "401": No token or invalid token
+      - method: POST
+        path: /api/auth/change-password
+        description: "Self-service password change. Requires valid JWT. Verifies current password, validates new password strength (8+ chars, 1 uppercase, 1 lowercase, 1 number)."
+        auth_required: true
+        request_schema:
+          body:
+            currentPassword: string
+            newPassword: string
+        response_schema:
+          "200":
+            message: "Password changed successfully"
+          "400": "Validation error or weak password"
+          "401": "Current password is incorrect"
       - method: POST
         path: /api/auth/logout
         description: Acknowledges logout — token removal is handled client-side
@@ -78,7 +92,6 @@ features:
     description: Admin-only CRUD operations for managing user accounts
     files:
       - backend/src/routes/users.js
-      - backend/src/middleware/auth.js
     endpoints:
       - method: GET
         path: /api/users
@@ -87,11 +100,10 @@ features:
         response_schema:
           "200":
             users: "User[]"
-          "401": Unauthorized
           "403": Admin access required
       - method: POST
         path: /api/users
-        description: "Create a new user account. IMPORTANT: response body is always wrapped in a 'user' key — { \"user\": { id, username, fullName, role, isActive } }. To get the user id, always do resp.json()[\"user\"][\"id\"], NOT resp.json()[\"id\"]."
+        description: "Create a new user account. Password must meet policy: 8+ chars, 1 uppercase, 1 lowercase, 1 number."
         auth_required: true
         request_schema:
           body:
@@ -101,22 +113,12 @@ features:
             role: "admin | user"
         response_schema:
           "201":
-            user:
-              id: number
-              username: string
-              fullName: string
-              role: string
-              isActive: boolean
-        example_response_201: '{"user": {"id": 5, "username": "alice", "fullName": "Alice Smith", "role": "user", "isActive": true}}'
-        notes: "Always unwrap the 'user' key from response: data = resp.json(); user_id = data['user']['id']"
-        error_responses:
+            user: "User object"
           "400": Validation error
-          "401": Unauthorized
-          "403": Admin access required
           "409": Username already taken
       - method: PUT
         path: /api/users/:id
-        description: "Update a user's fullName, role, or password. IMPORTANT: response body is always wrapped in a 'user' key — { \"user\": { id, username, fullName, role } }. Always do resp.json()[\"user\"] to get the user object."
+        description: "Update user fullName, role, or password (admin reset)."
         auth_required: true
         request_schema:
           body:
@@ -125,182 +127,381 @@ features:
             password: "string (optional)"
         response_schema:
           "200":
-            user:
-              id: number
-              username: string
-              fullName: string
-              role: string
-        example_response_200: '{"user": {"id": 5, "username": "alice", "fullName": "Alice Updated", "role": "admin"}}'
-        notes: "Always unwrap the 'user' key from response: data = resp.json(); updated_user = data['user']"
-        error_responses:
-          "400": Validation error or no fields to update
-          "401": Unauthorized
-          "403": Admin access required
+            user: "User object"
+          "400": Validation error
           "404": User not found
       - method: PATCH
         path: /api/users/:id/status
-        description: "Activate or deactivate a user account. Cannot deactivate own account (returns 400). IMPORTANT: response body is always wrapped in a 'user' key — { \"user\": { id, isActive, ... } }. Always do resp.json()[\"user\"] to get the user object."
+        description: "Activate or deactivate user. Cannot deactivate own account."
         auth_required: true
         request_schema:
           body:
             isActive: boolean
         response_schema:
           "200":
-            user:
-              id: number
-              isActive: boolean
-        example_response_200: '{"user": {"id": 5, "username": "alice", "fullName": "Alice Smith", "role": "user", "isActive": false}}'
-        notes: "Always unwrap the 'user' key: data = resp.json(); assert data['user']['isActive'] == False"
-        error_responses:
+            user: "User object"
           "400": Cannot deactivate own account
-          "401": Unauthorized
-          "403": Admin access required
           "404": User not found
     depends_on:
       - Authentication API
 
-  - name: Vendor Management API
-    description: List vendors and bulk CSV import (admin only for imports)
-    files:
-      - backend/src/routes/vendors.js
-    endpoints:
-      - method: GET
-        path: /api/vendors
-        description: List all active vendors
-        auth_required: true
-        response_schema:
-          "200":
-            vendors: "Vendor[]"
-          "401": Unauthorized
-      - method: POST
-        path: /api/vendors/import/preview
-        description: Parse uploaded CSV file and return rows with validation errors. No DB writes. Multipart/form-data with field named 'file'.
-        auth_required: true
-        request_schema:
-          body:
-            file: "CSV file (multipart/form-data, field name: file)"
-        response_schema:
-          "200":
-            rows: "array of parsed row objects (normalized headers)"
-            errors: "array of {rowNumber, field, message}"
-          "400": No file or parse error
-          "401": Unauthorized
-          "403": Admin access required
-      - method: POST
-        path: /api/vendors/import
-        description: Commit validated vendor rows to database. JSON body. skipDuplicates by vendorCode.
-        auth_required: true
-        request_schema:
-          body:
-            rows: "array of vendor row objects with vendor_code, vendor_name, etc."
-        response_schema:
-          "201":
-            inserted: number
-          "400": Validation error
-          "401": Unauthorized
-          "403": Admin access required
-    depends_on:
-      - Authentication API
-
   - name: Item Management API
-    description: List items and bulk CSV import (admin only for imports)
+    description: CRUD operations for inventory items with CSV import
     files:
       - backend/src/routes/items.js
     endpoints:
       - method: GET
         path: /api/items
-        description: List all active items
+        description: "List items. Active only by default. Admin can pass ?all=true."
         auth_required: true
         response_schema:
           "200":
             items: "Item[]"
-          "401": Unauthorized
-      - method: POST
-        path: /api/items/import/preview
-        description: Parse uploaded items CSV file and return rows with validation errors. No DB writes. Multipart/form-data with field named 'file'.
+      - method: GET
+        path: /api/items/:id
+        description: Get single item detail by ID
         auth_required: true
-        request_schema:
-          body:
-            file: "CSV file (multipart/form-data, field name: file)"
         response_schema:
           "200":
-            rows: "array of parsed row objects"
-            errors: "array of {rowNumber, field, message}"
-          "400": No file or parse error
-          "401": Unauthorized
-          "403": Admin access required
+            item: "Item object"
+          "404": Item not found
       - method: POST
-        path: /api/items/import
-        description: Commit validated item rows to database. JSON body. skipDuplicates by itemCode.
+        path: /api/items
+        description: "Create a new item. Admin only."
         auth_required: true
         request_schema:
           body:
-            rows: "array of item row objects with item_code, description, etc."
+            itemCode: string
+            description: string
+            category: string
+            unitOfMeasure: string
+            minQuantity: number
+            maxQuantity: number
+            standardCost: number
+            defaultVendorId: number
+            notes: string
+        response_schema:
+          "201":
+            item: "Item object"
+          "400": Validation error
+          "409": "Item code already exists"
+      - method: PUT
+        path: /api/items/:id
+        description: "Update item fields. Admin only."
+        auth_required: true
+        response_schema:
+          "200":
+            item: "Item object"
+          "404": Item not found
+      - method: PATCH
+        path: /api/items/:id/status
+        description: "Toggle item active/inactive. Admin only."
+        auth_required: true
+        request_schema:
+          body:
+            isActive: boolean
+        response_schema:
+          "200":
+            item: "Item object"
+      - method: POST
+        path: /api/items/import/preview
+        description: "Parse CSV file upload, return normalized rows and validation errors. No DB writes. Admin only."
+        auth_required: true
+        request_schema:
+          body:
+            file: "multipart/form-data CSV file"
+        response_schema:
+          "200":
+            rows: "array of normalized row objects"
+            errors: "array of { rowNumber, field, message }"
+          "400": "No file uploaded or CSV parse error"
+      - method: POST
+        path: /api/items/import
+        description: "Commit validated item rows from JSON body. Admin only."
+        auth_required: true
+        request_schema:
+          body:
+            rows: "array of item objects"
         response_schema:
           "201":
             inserted: number
           "400": Validation error
-          "401": Unauthorized
-          "403": Admin access required
+    depends_on:
+      - Authentication API
+      - Vendor Management API
+
+  - name: Vendor Management API
+    description: CRUD operations for vendors with CSV import
+    files:
+      - backend/src/routes/vendors.js
+    endpoints:
+      - method: GET
+        path: /api/vendors
+        description: "List vendors. Active only by default."
+        auth_required: true
+        response_schema:
+          "200":
+            vendors: "Vendor[]"
+      - method: GET
+        path: /api/vendors/:id
+        description: Get single vendor detail
+        auth_required: true
+        response_schema:
+          "200":
+            vendor: "Vendor object"
+          "404": Vendor not found
+      - method: POST
+        path: /api/vendors
+        description: "Create vendor. Admin only."
+        auth_required: true
+        response_schema:
+          "201":
+            vendor: "Vendor object"
+          "409": "Vendor code already exists"
+      - method: PUT
+        path: /api/vendors/:id
+        description: "Update vendor. Admin only."
+        auth_required: true
+        response_schema:
+          "200":
+            vendor: "Vendor object"
+      - method: PATCH
+        path: /api/vendors/:id/status
+        description: "Toggle vendor active/inactive. Admin only."
+        auth_required: true
+        request_schema:
+          body:
+            isActive: boolean
+        response_schema:
+          "200":
+            vendor: "Vendor object"
+      - method: POST
+        path: /api/vendors/import/preview
+        description: Preview CSV import (admin only)
+        auth_required: true
+        response_schema:
+          "200":
+            rows: "array"
+            errors: "array"
+      - method: POST
+        path: /api/vendors/import
+        description: Commit validated vendor rows (admin only)
+        auth_required: true
+        response_schema:
+          "201":
+            inserted: number
     depends_on:
       - Authentication API
 
-  - name: Transaction API
-    description: Create receipts, view stock position, and query transaction history
+  - name: Receipt Transaction API
+    description: Create receipt transactions when receiving inventory from vendors
     files:
       - backend/src/routes/transactions.js
     endpoints:
       - method: POST
         path: /api/transactions/receipts
-        description: Create a RECEIPT transaction. Returns created transaction and lastPaidPrice for the item.
+        description: "Create a single RECEIPT transaction. Auto-updates item.lastPurchaseCost."
         auth_required: true
         request_schema:
           body:
-            itemId: "integer"
-            vendorId: "integer"
+            itemId: "integer (positive)"
+            vendorId: "integer (positive)"
             location: "ADEL | CALHOUN"
-            quantity: "number (positive float)"
-            unitCost: "number (positive float)"
-            transactionDate: "ISO 8601 date string e.g. 2026-02-17"
+            quantity: "number (> 0)"
+            unitCost: "number (> 0)"
+            transactionDate: "ISO 8601 date string"
             invoiceNumber: "string (optional)"
             notes: "string (optional)"
         response_schema:
           "201":
-            transaction: Transaction
+            transaction: "Transaction object with item, vendor, user relations"
             lastPaidPrice: "number | null"
           "400": Validation error
-          "401": Unauthorized
-          "404": Item or Vendor not found
-      - method: GET
-        path: /api/transactions/stock-position
-        description: Current qty on hand per item per location, calculated from SUM of all transaction quantities grouped by itemId and location
+          "404": "Item not found or Vendor not found"
+      - method: POST
+        path: /api/transactions/receipts/batch
+        description: "Create multiple RECEIPT transactions atomically."
         auth_required: true
+        request_schema:
+          body:
+            vendorId: "integer (positive)"
+            location: "ADEL | CALHOUN"
+            transactionDate: "ISO 8601 date string"
+            invoiceNumber: "string (optional)"
+            notes: "string (optional)"
+            lineItems: "array of { itemId: integer, quantity: number (> 0), unitCost: number (> 0) }"
         response_schema:
-          "200":
-            positions: "array of {item: {id, itemCode, description, category, unitOfMeasure, minQuantity}, adelQty, calhounQty, totalQty}"
-          "401": Unauthorized
-      - method: GET
-        path: /api/transactions
-        description: Transaction history. Supports optional query params: itemId (int), location (ADEL|CALHOUN), type (RECEIPT|ADJUSTMENT|TRANSFER|OPENING_BALANCE), from (date), to (date).
-        auth_required: true
-        response_schema:
-          "200":
-            transactions: "Transaction[] with item, vendor, user included"
-          "400": Validation error on filter params
-          "401": Unauthorized
+          "201":
+            transactions: "Transaction[] with item, vendor, user relations"
+            lastPaidPrices: "object { itemId: number | null }"
+          "400": Validation error
+          "404": "Vendor not found or some items not found"
     depends_on:
       - Authentication API
+      - Item Management API
       - Vendor Management API
+
+  - name: Opening Balance Transaction API
+    description: Set initial stock counts with CSV import support. Admin only.
+    files:
+      - backend/src/routes/transactions.js
+    endpoints:
+      - method: POST
+        path: /api/transactions/opening-balances
+        description: "Create a single OPENING_BALANCE transaction. Admin only."
+        auth_required: true
+        request_schema:
+          body:
+            itemId: "integer (positive)"
+            location: "ADEL | CALHOUN"
+            quantity: "number (> 0)"
+            unitCost: "number (optional, > 0)"
+            transactionDate: "ISO 8601 date (optional)"
+            notes: "string (optional)"
+        response_schema:
+          "201":
+            transaction: "Transaction object"
+          "400": Validation error
+          "404": Item not found or inactive
+      - method: POST
+        path: /api/transactions/opening-balances/import/preview
+        description: "Preview opening balance CSV upload. Admin only."
+        auth_required: true
+        request_schema:
+          body:
+            file: "multipart/form-data CSV file"
+        response_schema:
+          "200":
+            rows: "array of normalized row objects"
+            errors: "array of { rowNumber, field, message }"
+          "400": "No file uploaded or CSV parse error"
+      - method: POST
+        path: /api/transactions/opening-balances/import
+        description: "Commit opening balance CSV rows. Admin only."
+        auth_required: true
+        request_schema:
+          body:
+            rows: "array of { item_code, location, quantity, unit_cost }"
+        response_schema:
+          "201":
+            inserted: number
+          "400": Validation error
+    depends_on:
+      - Authentication API
       - Item Management API
 
+  - name: Adjustment Transaction API
+    description: Record inventory corrections with reason codes
+    files:
+      - backend/src/routes/transactions.js
+    endpoints:
+      - method: POST
+        path: /api/transactions/adjustments
+        description: "Create an ADJUSTMENT transaction. Quantity can be positive or negative but not zero."
+        auth_required: true
+        request_schema:
+          body:
+            itemId: "integer (positive)"
+            location: "ADEL | CALHOUN"
+            quantity: "number (non-zero)"
+            reason: "Damage | Shrinkage | Cycle Count | Correction | Other"
+            notes: "string (optional)"
+        response_schema:
+          "201":
+            transaction: "Transaction object"
+          "400": "Validation error or quantity is zero"
+          "404": Item not found or inactive
+    depends_on:
+      - Authentication API
+      - Item Management API
+
+  - name: Transfer Transaction API
+    description: Move inventory between locations atomically
+    files:
+      - backend/src/routes/transactions.js
+    endpoints:
+      - method: POST
+        path: /api/transactions/transfers
+        description: "Create atomic TRANSFER pair (outbound + inbound). Validates sufficient stock."
+        auth_required: true
+        request_schema:
+          body:
+            itemId: "integer (positive)"
+            fromLocation: "ADEL | CALHOUN"
+            toLocation: "ADEL | CALHOUN"
+            quantity: "number (> 0)"
+            notes: "string (optional)"
+        response_schema:
+          "201":
+            transfer:
+              outbound: "Transaction (negative quantity)"
+              inbound: "Transaction (positive quantity)"
+          "400": "Same locations or insufficient stock"
+          "404": Item not found or inactive
+    depends_on:
+      - Authentication API
+      - Item Management API
+
+  - name: Stock Position API
+    description: Aggregated inventory position by item and location with weighted average cost valuation
+    files:
+      - backend/src/routes/transactions.js
+    endpoints:
+      - method: GET
+        path: /api/transactions/stock-position
+        description: "Paginated stock position with search, weighted average cost."
+        auth_required: true
+        request_schema:
+          query:
+            search: "string (optional)"
+            page: "integer (optional, default 1)"
+            limit: "integer (optional, default 50)"
+        response_schema:
+          "200":
+            positions: "array of { item, adelQty, calhounQty, totalQty, avgCost, totalValue }"
+            total: number
+            page: number
+            limit: number
+            totalPages: number
+    depends_on:
+      - Authentication API
+
+  - name: Transaction History API
+    description: Filtered, paginated audit trail of all transactions
+    files:
+      - backend/src/routes/transactions.js
+    endpoints:
+      - method: GET
+        path: /api/transactions
+        description: "List transactions with filters by type, location, date range"
+        auth_required: true
+        request_schema:
+          query:
+            itemId: "integer (optional)"
+            location: "ADEL | CALHOUN (optional)"
+            type: "RECEIPT | ADJUSTMENT | TRANSFER | OPENING_BALANCE | CONSUMPTION | PRODUCTION (optional)"
+            from: "ISO 8601 date (optional)"
+            to: "ISO 8601 date (optional)"
+            page: "integer (optional, default 1)"
+            limit: "integer (optional, default 50, max 200)"
+        response_schema:
+          "200":
+            transactions: "Transaction[]"
+            total: number
+            page: number
+            limit: number
+            totalPages: number
+    depends_on:
+      - Authentication API
+
   - name: Dashboard API
-    description: Aggregated metrics and alerts for the operations dashboard
+    description: Aggregated dashboard stats, low stock, dead stock, valuation, activity
     files:
       - backend/src/routes/dashboard.js
     endpoints:
       - method: GET
         path: /api/dashboard/stats
-        description: Live counts for stat cards
+        description: "Aggregated counts including overstock"
         auth_required: true
         response_schema:
           "200":
@@ -308,52 +509,287 @@ features:
             transactionsMTD: number
             activeVendors: number
             teamMembers: number
-          "401": Unauthorized
+            overstockCount: number
       - method: GET
         path: /api/dashboard/low-stock
-        description: Items at or below min_quantity. burnRate is units/day from last 30 days outgoing transactions (null if no outgoing). daysRemaining is currentStock/burnRate (null if no burn rate).
+        description: "Items below threshold with burn rate and daysRemaining"
         auth_required: true
         response_schema:
           "200":
-            items: "array of {id, itemCode, description, category, unitOfMeasure, currentStock, minQuantity, burnRate, daysRemaining}"
-          "401": Unauthorized
+            items: "LowStockItem[]"
       - method: GET
         path: /api/dashboard/dead-stock
-        description: Items with stock on hand but zero transaction activity in the last 90 days
+        description: Items with stock but no activity in 90 days
         auth_required: true
         response_schema:
           "200":
-            items: "array of {id, itemCode, description, category, currentStock}"
-          "401": Unauthorized
+            items: "DeadStockItem[]"
       - method: GET
         path: /api/dashboard/valuation
-        description: On-hand inventory value by location using last known unit cost per item per location
+        description: "Inventory valuation by location"
         auth_required: true
         response_schema:
           "200":
             adel: number
             calhoun: number
             total: number
-          "401": Unauthorized
       - method: GET
         path: /api/dashboard/activity
-        description: Last 20 transactions as human-readable strings, newest first
+        description: "Last 20 transactions as human-readable activity feed"
         auth_required: true
         response_schema:
           "200":
-            activity: "array of {id, description, transactionType, location, transactionDate, createdAt}"
-          "401": Unauthorized
+            activity: "ActivityItem[]"
     depends_on:
       - Authentication API
-      - Transaction API
+
+  - name: Cycle Count API
+    description: Physical inventory cycle counting workflow with variance tracking and adjustment posting
+    files:
+      - backend/src/routes/cycleCounts.js
+    endpoints:
+      - method: POST
+        path: /api/cycle-counts
+        description: "Create a new cycle count. Admin only."
+        auth_required: true
+        request_schema:
+          body:
+            location: "ADEL | CALHOUN"
+            itemSelection: "all | category | manual"
+            category: "string (if category selection)"
+            itemIds: "integer[] (if manual selection)"
+            blindCount: "boolean (optional)"
+            assignedTo: "integer (optional, user ID)"
+            notes: "string (optional)"
+        response_schema:
+          "201":
+            cycleCount: "CycleCount object with lines"
+            lineCount: number
+          "400": Validation error
+      - method: GET
+        path: /api/cycle-counts
+        description: "List cycle counts with filters"
+        auth_required: true
+        request_schema:
+          query:
+            status: "DRAFT | IN_PROGRESS | COMPLETED | POSTED | VOID (optional)"
+            location: "ADEL | CALHOUN (optional)"
+            page: "integer (optional)"
+            limit: "integer (optional)"
+        response_schema:
+          "200":
+            cycleCounts: "CycleCount[]"
+            total: number
+            page: number
+            limit: number
+            totalPages: number
+      - method: GET
+        path: /api/cycle-counts/:id
+        description: "Get cycle count detail with lines"
+        auth_required: true
+        response_schema:
+          "200":
+            cycleCount: "CycleCountDetail"
+            summary: "object"
+      - method: PUT
+        path: /api/cycle-counts/:id/lines
+        description: "Update counted quantities. Auto-transitions status."
+        auth_required: true
+        request_schema:
+          body:
+            lines: "array of {lineId, countedQty}"
+        response_schema:
+          "200":
+            message: string
+            linesUpdated: number
+            status: string
+      - method: POST
+        path: /api/cycle-counts/:id/post
+        description: "Post adjustments from completed count"
+        auth_required: true
+        response_schema:
+          "200":
+            message: string
+            adjustmentsCreated: number
+      - method: POST
+        path: /api/cycle-counts/:id/void
+        description: "Void a cycle count. Admin only."
+        auth_required: true
+        response_schema:
+          "200":
+            message: string
+            status: "VOID"
+      - method: GET
+        path: /api/cycle-counts/variance-history
+        description: "Variance report for posted counts. Admin only."
+        auth_required: true
+        response_schema:
+          "200":
+            lines: "array"
+            totals: "object"
+      - method: GET
+        path: /api/cycle-counts/variance-history/export
+        description: "Download variance history as CSV. Admin only."
+        auth_required: true
+        response_schema:
+          "200": "CSV file"
+    depends_on:
+      - Authentication API
+      - Item Management API
+
+  - name: BOM Management API
+    description: Bill of Materials CRUD for defining trailer component recipes. Admin only. Supports status lifecycle (DRAFT -> ACTIVE -> RETIRED), cloning, and one ACTIVE BOM per finished good.
+    files:
+      - backend/src/routes/boms.js
+    endpoints:
+      - method: GET
+        path: /api/boms
+        description: "List BOMs with search, status filter, pagination. Admin only."
+        auth_required: true
+        request_schema:
+          query:
+            search: "string (optional)"
+            status: "DRAFT | ACTIVE | RETIRED (optional)"
+            finishedGoodId: "integer (optional)"
+            page: "integer (optional, default 1)"
+            limit: "integer (optional, default 20)"
+        response_schema:
+          "200":
+            boms: "Bom[] with finishedGood info and line count"
+            total: number
+            page: number
+            limit: number
+            totalPages: number
+      - method: GET
+        path: /api/boms/:id
+        description: "Get BOM detail with component lines. Admin only."
+        auth_required: true
+        response_schema:
+          "200":
+            bom: "BomDetail with lines[].item details"
+          "404": "BOM not found"
+      - method: POST
+        path: /api/boms
+        description: "Create new BOM with component lines. Validates unique bomCode, active finishedGood, no self-referencing, no duplicate components. Admin only."
+        auth_required: true
+        request_schema:
+          body:
+            bomCode: "string (required, max 50)"
+            name: "string (required, max 200)"
+            finishedGoodId: "integer (required)"
+            notes: "string (optional)"
+            lines: "array of { itemId: integer, quantityPer: number (> 0), notes: string (optional) }"
+        response_schema:
+          "201":
+            bom: "Bom object with lines"
+          "400": "Validation error, inactive items, self-referencing, or duplicate components"
+          "409": "BOM code already exists"
+      - method: PUT
+        path: /api/boms/:id
+        description: "Update BOM. DRAFT status only. Admin only. Replaces lines if provided."
+        auth_required: true
+        request_schema:
+          body:
+            bomCode: "string (optional)"
+            name: "string (optional)"
+            finishedGoodId: "integer (optional)"
+            notes: "string (optional)"
+            lines: "array of { itemId, quantityPer, notes } (optional)"
+        response_schema:
+          "200":
+            bom: "Updated Bom object"
+          "400": "Not in DRAFT status, validation errors"
+          "404": "BOM not found"
+          "409": "BOM code already exists"
+      - method: PATCH
+        path: /api/boms/:id/status
+        description: "Change BOM status. Valid transitions: DRAFT->ACTIVE (requires >=1 line), ACTIVE->RETIRED, RETIRED->ACTIVE. Activating auto-retires existing ACTIVE BOM for same finishedGoodId. Admin only."
+        auth_required: true
+        request_schema:
+          body:
+            status: "DRAFT | ACTIVE | RETIRED"
+        response_schema:
+          "200":
+            message: "BOM status changed to {status}"
+            status: string
+          "400": "Invalid status transition or no lines"
+      - method: POST
+        path: /api/boms/:id/duplicate
+        description: "Clone BOM with '-COPY' suffix on bomCode. Creates in DRAFT status. Admin only."
+        auth_required: true
+        response_schema:
+          "201":
+            bom: "Cloned Bom object"
+          "404": "BOM not found"
+    depends_on:
+      - Authentication API
+      - Item Management API
+
+  - name: Production / Kitting API
+    description: Record production orders that consume components and produce finished goods atomically. Creates CONSUMPTION transactions for components and PRODUCTION transaction for finished good.
+    files:
+      - backend/src/routes/production.js
+    endpoints:
+      - method: POST
+        path: /api/production/kit
+        description: "Execute kitting order. Validates stock, calculates cost rollup from weighted avg cost (falls back to standardCost). Creates ProductionOrder + CONSUMPTION + PRODUCTION transactions. Returns 400 with insufficientItems if stock insufficient."
+        auth_required: true
+        request_schema:
+          body:
+            finishedGoodId: "integer (required)"
+            location: "ADEL | CALHOUN"
+            quantityProduced: "number (> 0)"
+            bomId: "integer (optional)"
+            components: "array of { itemId: integer, quantityPer: number (> 0) }"
+            notes: "string (optional)"
+        response_schema:
+          "201":
+            order: "ProductionOrder with orderNumber (KIT-{id}), totalCost, transactions"
+          "400": "Validation error, insufficient stock, inactive items, self-referencing"
+      - method: GET
+        path: /api/production
+        description: "List production orders with filters and pagination"
+        auth_required: true
+        request_schema:
+          query:
+            location: "ADEL | CALHOUN (optional)"
+            from: "ISO 8601 date (optional)"
+            to: "ISO 8601 date (optional)"
+            page: "integer (optional, default 1)"
+            limit: "integer (optional, default 20)"
+        response_schema:
+          "200":
+            orders: "ProductionOrder[] with finishedGood, bom, creator"
+            total: number
+            page: number
+            limit: number
+            totalPages: number
+      - method: GET
+        path: /api/production/:id
+        description: "Get production order detail with linked transactions"
+        auth_required: true
+        response_schema:
+          "200":
+            order: "ProductionOrder with transactions[].item details"
+          "404": "Production order not found"
+    depends_on:
+      - Authentication API
+      - Item Management API
+      - BOM Management API
 
 known_limitations:
-  - issue: No rate limiting on login endpoint
-    location: backend/src/routes/auth.js
-    impact: Brute force possible, acceptable for internal tool at this stage
+  - issue: Rate limiter shared across all test clients using same proxy IP
+    location: backend/src/index.js
+    impact: Concurrent test runs may trigger rate limiting on login endpoint
+  - issue: BOM update only allowed in DRAFT status
+    location: backend/src/routes/boms.js
+    impact: Active BOMs must be duplicated and the copy edited
   - issue: No DELETE endpoint for users, vendors, or items
-    location: backend/src/routes/users.js
-    impact: Soft-delete only via isActive flag; test cleanup falls back to deactivation
-  - issue: No token revocation/blacklist
-    location: backend/src/routes/auth.js
-    impact: JWT remains valid until 7-day expiry after logout; mitigated by isActive check on every request
+    location: backend/src/routes/
+    impact: Soft-delete only via isActive flag
+  - issue: Transfer stock check is not serialized
+    location: backend/src/routes/transactions.js
+    impact: Concurrent transfer requests could theoretically overdraw stock
+  - issue: Only one ACTIVE BOM per finished good enforced at activation time
+    location: backend/src/routes/boms.js
+    impact: Activating a BOM auto-retires the previous active BOM for the same finished good

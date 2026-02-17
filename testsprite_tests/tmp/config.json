@@ -2,17 +2,17 @@
   "status": "commited",
   "type": "backend",
   "scope": "codebase",
-  "localEndpoint": "http://localhost:3000",
+  "localEndpoint": "http://localhost:3002",
   "backendAuthType": "public",
   "executionArgs": {
     "projectName": "AWT Inventory Tracking V2",
     "projectPath": "/Users/josejuarez/Documents/All World Trailers/AWT Inventory Tracking V2",
     "testIds": [],
-    "additionalInstruction": "CRITICAL: All POST /api/users, PUT /api/users/:id, and PATCH /api/users/:id/status responses wrap the user object in a 'user' key. Example: POST /api/users returns {\"user\": {\"id\": 5, \"username\": \"alice\", ...}}. Always extract the id as resp.json()[\"user\"][\"id\"] — never as resp.json()[\"id\"]. Same for update and status patch responses. Also generate tests for Phase 2 endpoints: GET /api/vendors, POST /api/vendors/import/preview (multipart CSV), POST /api/vendors/import (JSON), GET /api/items, POST /api/items/import/preview, POST /api/items/import, POST /api/transactions/receipts, GET /api/transactions/stock-position, GET /api/transactions, GET /api/dashboard/stats, GET /api/dashboard/low-stock, GET /api/dashboard/dead-stock, GET /api/dashboard/valuation, GET /api/dashboard/activity. For receipt tests create a vendor and item first via the import endpoints. All endpoints require Bearer token from admin login (jose / password123).",
+    "additionalInstruction": "IMPORTANT: The backend server is already running at http://localhost:3002. Admin credentials: username=jose, password=Password1. Standard user credentials: username=alix, password=Password1. The rate limiter is 10 requests per 15 seconds per IP. For the production/kitting test (TC010), seeded items include AX-7K-STD, BR-10-DRUM, LT-LED-TAIL, LT-MARKER, FT-BOLT-KIT, CP-2-516 with stock at ADEL location. Finished goods: TR-7K-UTIL, TR-12K-FLAT. Active BOMs: BOM-7K-UTIL (id likely 1), BOM-12K-FLAT (id likely 2). You may need to create opening balance transactions for components before testing kitting to ensure sufficient stock.",
     "envs": {
       "API_KEY": "sk-user-f2SeR--HdRiSE9e_M8xOISPxGteF-Uv2IJnMWp2RVdPupD3grJjb5mz3n1l4EjES7e1dFLU2GDPS9Hkm0SiTTe3vBeyV9tQIi14p71JeSAZIerGNj0l1ziF0VzJCW84wapE"
     }
   },
-  "serverPort": 57990,
-  "proxy": "http://13defc9f-078a-4db3-bf9a-234dbbb46cc3:dTZluiCWYHdcoQDyU7hP8DVdezGH1kqx@tun.testsprite.com:8080"
+  "serverPort": 61823,
+  "proxy": "http://d65aab89-f538-4dd5-9970-a7efdcdb9ced:zdyuSCZXSzCEu85l44qHlOam9SmwX3dW@tun.testsprite.com:8080"
 }

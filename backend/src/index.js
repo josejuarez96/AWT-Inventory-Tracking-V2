@@ -27,7 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 // Login rate limiting — short window so it resets quickly between automated test runs
 const loginLimiter = rateLimit({
   windowMs: 15 * 1000, // 15 seconds
-  max: 10, // 10 login attempts per 15-second window
+  max: process.env.LOGIN_RATE_LIMIT ? parseInt(process.env.LOGIN_RATE_LIMIT) : 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many login attempts. Please try again in a moment.' },

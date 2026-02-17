@@ -1,122 +1,52 @@
 [
   {
     "id": "TC001",
-    "title": "health check api returns server status and timestamp",
-    "description": "Test GET /api/health endpoint to verify it returns a 200 status with a JSON object containing status, message, and timestamp fields indicating the server is running."
+    "title": "get api health returns server status and timestamp",
+    "description": "Test the GET /api/health endpoint to verify it returns a 200 status with a JSON body containing status 'ok', a message string, and a valid ISO 8601 timestamp when the server is running normally."
   },
   {
     "id": "TC002",
-    "title": "authentication api login with valid credentials",
-    "description": "Test POST /api/auth/login with valid username and password to ensure it returns a 200 status with a JWT token and user object containing id, username, fullName, and role."
+    "title": "post api auth login with valid credentials returns token and user",
+    "description": "Test the POST /api/auth/login endpoint with valid username and password to ensure it returns a 200 status with a JWT token and user object containing id, username, fullName, and role."
   },
   {
     "id": "TC003",
-    "title": "authentication api login with invalid credentials returns 401",
-    "description": "Test POST /api/auth/login with invalid username or password to verify it returns a 401 status with an error message."
+    "title": "post api auth login rate limits excessive attempts",
+    "description": "Test the POST /api/auth/login endpoint by sending more than 10 login attempts within 15 seconds from the same IP to verify it returns a 429 Too many login attempts response."
   },
   {
     "id": "TC004",
-    "title": "authentication api get current user with valid token",
-    "description": "Test GET /api/auth/me with a valid Authorization Bearer token to confirm it returns a 200 status with the authenticated user object containing id, username, fullName, role."
+    "title": "post api auth change password with valid current and strong new password",
+    "description": "Test the POST /api/auth/change-password endpoint with a valid JWT token, correct current password, and a new password that meets the strength policy (8+ chars, uppercase, lowercase, number) to verify it returns 200 with a success message."
   },
   {
     "id": "TC005",
-    "title": "authentication api get current user without token returns 401",
-    "description": "Test GET /api/auth/me without Authorization header to verify it returns a 401 status."
+    "title": "post api users create new user with valid data as admin",
+    "description": "Test the POST /api/users endpoint with admin authorization and valid user data to create a new user, expecting a 201 response with the created user object."
   },
   {
     "id": "TC006",
-    "title": "authentication api logout with valid token",
-    "description": "Test POST /api/auth/logout with a valid Authorization Bearer token to ensure it returns a 200 status with a logout acknowledgement message."
+    "title": "post api items import preview with valid csv file",
+    "description": "Test the POST /api/items/import/preview endpoint with a valid CSV file upload to verify it returns 200 with normalized rows and any validation errors without writing to the database."
   },
   {
     "id": "TC007",
-    "title": "user management list users with admin token",
-    "description": "Test GET /api/users with a valid admin Authorization Bearer token to verify it returns a 200 status with { users: [...] } array, no password hashes in any user object."
+    "title": "post api transactions receipts create single receipt transaction",
+    "description": "Test the POST /api/transactions/receipts endpoint with valid data to create a single receipt transaction, verifying it returns 201 with the transaction object and lastPaidPrice, and that the item's lastPurchaseCost is updated."
   },
   {
     "id": "TC008",
-    "title": "user management create user with admin token",
-    "description": "Test POST /api/users with admin token and body { username, password, fullName, role }. THE RESPONSE IS ALWAYS WRAPPED: { 'user': { id, username, fullName, role, isActive } }. Python code to get id: data = resp.json(); user_obj = data['user']; user_id = user_obj['id']. Do NOT do resp.json()['id'] — that will fail. Expect 201. Clean up by deleting the created user."
+    "title": "post api transactions transfers create atomic transfer pair",
+    "description": "Test the POST /api/transactions/transfers endpoint with valid data and sufficient stock to create an atomic transfer pair (outbound and inbound transactions), expecting a 201 response with transfer details."
   },
   {
     "id": "TC009",
-    "title": "user management update user fields with admin token",
-    "description": "Step 1: POST /api/users to create test user. RESPONSE IS WRAPPED: data = create_resp.json(); user_obj = data['user']; user_id = user_obj['id']. Step 2: PUT /api/users/:id with { fullName, role }. RESPONSE IS ALSO WRAPPED: data = update_resp.json(); updated = data['user']; assert updated['fullName'] == new_name. Step 3: DELETE test user. NEVER call resp.json()['id'] — ALWAYS go through resp.json()['user']['id']."
+    "title": "get api transactions stock position returns paginated inventory",
+    "description": "Test the GET /api/transactions/stock-position endpoint with valid authorization to verify it returns 200 with paginated aggregated inventory positions including item details, quantities per location, average cost, and total value."
   },
   {
     "id": "TC010",
-    "title": "user management deactivate and reactivate user account with admin token",
-    "description": "Step 1: POST /api/users. RESPONSE WRAPPED: user_id = create_resp.json()['user']['id']. Step 2: PATCH /api/users/:id/status with { isActive: False }. RESPONSE WRAPPED: patched = patch_resp.json()['user']; assert patched['isActive'] == False. Step 3: PATCH again with { isActive: True }; assert patch2_resp.json()['user']['isActive'] == True. Step 4: DELETE user. Always use .json()['user'] to unwrap."
-  },
-  {
-    "id": "TC011",
-    "title": "vendor management list active vendors returns vendors array",
-    "description": "Test GET /api/vendors with a valid Bearer token. Expect 200 with { vendors: [...] }. An empty array is acceptable. If vendors exist, each should have id, vendorCode, vendorName fields."
-  },
-  {
-    "id": "TC012",
-    "title": "vendor csv import preview returns rows and errors array without db write",
-    "description": "Test POST /api/vendors/import/preview with admin Bearer token. Multipart/form-data, field name must be 'file'. Build CSV in Python: csv_content = 'vendor_code,vendor_name,contact_person,phone,email,payment_terms,notes\\nVC001,Test Vendor,,,,,' and send as files={'file': ('v.csv', csv_content.encode(), 'text/csv')}. Expect 200 with EXACTLY these two keys: { 'rows': [...], 'errors': [] }. The key is 'errors' NOT 'validationErrors'. There is NO 'previewId' field. Do not assert previewId exists."
-  },
-  {
-    "id": "TC013",
-    "title": "vendor csv import commit inserts vendors and returns inserted count",
-    "description": "Test POST /api/vendors/import with admin Bearer token. This endpoint takes a JSON body (NOT multipart, NO previewId). EXACT Python code: payload = {'rows': [{'vendor_code': 'TEST_V_TC013', 'vendor_name': 'Test Vendor TC013', 'contact_person': '', 'phone': '', 'email': '', 'payment_terms': '', 'notes': ''}]}; resp = requests.post(url, json=payload, headers=headers). Expect 200 with {'inserted': N}. Assert 'inserted' in resp.json() and isinstance(resp.json()['inserted'], int)."
-  },
-  {
-    "id": "TC014",
-    "title": "item management list active items returns items array",
-    "description": "Test GET /api/items with a valid Bearer token. Expect 200 with { items: [...] }. An empty array is acceptable. If items exist, each should have id, itemCode, description fields."
-  },
-  {
-    "id": "TC015",
-    "title": "item csv import preview returns rows and errors array without db write",
-    "description": "Test POST /api/items/import/preview with admin Bearer token. Multipart/form-data, field name 'file'. CSV: 'item_code,description,category,unit_of_measure,min_quantity,max_quantity,lead_time_days,safety_stock,notes\\nITEM001,Test Item,Cat,EA,5,100,14,2,'. Expect 200 with { 'rows': [...], 'errors': [] }. The key is 'errors' NOT 'validationErrors'. There is NO previewId field."
-  },
-  {
-    "id": "TC016",
-    "title": "item csv import commit inserts items and returns inserted count",
-    "description": "Test POST /api/items/import with admin Bearer token. WARNING: This endpoint does NOT use previewId. Send a JSON body directly. EXACT Python code to use: payload = {'rows': [{'item_code': 'TEST_ITEM_TC016', 'description': 'Test Item TC016', 'category': 'Test', 'unit_of_measure': 'EA', 'min_quantity': '5', 'max_quantity': '100', 'lead_time_days': '14', 'safety_stock': '2', 'notes': ''}]}; resp = requests.post(url, json=payload, headers=headers); assert resp.status_code == 200; data = resp.json(); assert 'inserted' in data; assert isinstance(data['inserted'], int). Do NOT send previewId or confirm fields."
-  },
-  {
-    "id": "TC017",
-    "title": "transaction receipt create stores receipt and returns transaction with last paid price",
-    "description": "Test POST /api/transactions/receipts. IMPORTANT STEPS: Step 1 — commit vendor: POST /api/vendors/import with json={'rows': [{'vendor_code': 'RCPT_VND_TC017', 'vendor_name': 'Vendor TC017', 'contact_person': '', 'phone': '', 'email': '', 'payment_terms': '', 'notes': ''}]}, expect 200. Step 2 — commit item: POST /api/items/import with json={'rows': [{'item_code': 'RCPT_ITM_TC017', 'description': 'Item TC017', 'category': 'Test', 'unit_of_measure': 'EA', 'min_quantity': '0', 'max_quantity': '999', 'lead_time_days': '14', 'safety_stock': '0', 'notes': ''}]}, expect 200. Step 3 — get IDs: GET /api/vendors find vendorCode=='RCPT_VND_TC017'; GET /api/items find itemCode=='RCPT_ITM_TC017'. Step 4 — POST /api/transactions/receipts with EXACTLY these camelCase fields: {'itemId': item_id, 'vendorId': vendor_id, 'location': 'ADEL', 'quantity': 5, 'unitCost': 10.00, 'transactionDate': '2026-01-15T00:00:00.000Z'}. Expect 200 (NOT 201) with {'transaction': {id, transactionType: 'RECEIPT'}, 'lastPaidPrice': null or number}."
-  },
-  {
-    "id": "TC018",
-    "title": "transaction stock position returns aggregated quantities by item and location",
-    "description": "Test GET /api/transactions/stock-position with Bearer token. Expect 200 with { positions: [...] }. Each position has: item (object with id, itemCode), adelQty (number), calhounQty (number), totalQty (number). An empty array is valid."
-  },
-  {
-    "id": "TC019",
-    "title": "transaction history returns filtered list of transactions",
-    "description": "Test GET /api/transactions with Bearer token. Call without filters: expect 200 with { transactions: [...] }. Then call with ?location=ADEL: expect 200. Then call with ?type=RECEIPT: expect 200. Each transaction object has a nested item object. An empty array is valid."
-  },
-  {
-    "id": "TC020",
-    "title": "dashboard stats returns aggregated counts",
-    "description": "Test GET /api/dashboard/stats with Bearer token. Expect 200 with { totalItems: number, transactionsMTD: number, activeVendors: number, teamMembers: number }. All values must be non-negative integers (or 0)."
-  },
-  {
-    "id": "TC021",
-    "title": "dashboard low stock returns flat items below minimum quantity",
-    "description": "Test GET /api/dashboard/low-stock with Bearer token. Expect 200 with { items: [...] }. An empty array is valid. IMPORTANT: Each entry is a FLAT object — there is NO nested 'item' sub-object. Fields are directly on the entry: id (number), itemCode (string), description (string), category (string), currentStock (number), minQuantity (number), burnRate (number or null), daysRemaining (number or null). Assert entry['id'] and entry['itemCode'] directly, NOT entry['item']['id']."
-  },
-  {
-    "id": "TC022",
-    "title": "dashboard dead stock returns flat items with no recent activity",
-    "description": "Test GET /api/dashboard/dead-stock with Bearer token. Expect 200 with { items: [...] }. An empty array is valid. Each entry is a FLAT object: id (number), itemCode (string), description (string), category (string), currentStock (number). No nested 'item' sub-object."
-  },
-  {
-    "id": "TC023",
-    "title": "dashboard valuation returns inventory value by location",
-    "description": "Test GET /api/dashboard/valuation with Bearer token. Expect 200 with { adel: number, calhoun: number, total: number }. All values non-negative. total must equal adel + calhoun within 0.01 tolerance."
-  },
-  {
-    "id": "TC024",
-    "title": "dashboard activity feed returns recent transactions with human readable descriptions",
-    "description": "Test GET /api/dashboard/activity with Bearer token. Expect 200 with { activity: [...] }. Array length <= 20. An empty array is valid. IMPORTANT: Each entry has these exact fields: id (number), description (non-empty string), transactionType (string — NOT 'type'), location (string), transactionDate (string), createdAt (string). Assert entry['transactionType'] NOT entry['type']."
+    "title": "post api production kit executes kitting order with stock validation",
+    "description": "Test the POST /api/production/kit endpoint with valid data including finishedGoodId, location, quantityProduced, and components or bomId, ensuring it validates stock availability, calculates cost rollup, creates production order and related transactions, and returns 201 with order details."
   }
 ]

@@ -310,7 +310,14 @@ export function CycleCountsPage() {
           ) : cycleCounts.length === 0 ? (
             <div className="py-12 text-center">
               <ClipboardCheck className="mx-auto h-10 w-10 text-gray-300" />
-              <p className="mt-2 text-sm text-gray-500">No cycle counts found.</p>
+              <p className="mt-2 text-sm text-gray-500">
+                {isAdmin ? 'No cycle counts found.' : 'No cycle counts assigned to you yet.'}
+              </p>
+              {!isAdmin && (
+                <p className="mt-1 text-xs text-gray-400">
+                  An admin will assign counts to you when a physical inventory is scheduled.
+                </p>
+              )}
             </div>
           ) : (
             <Table>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
+import { useAuthContext } from '@/context/AuthContext';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -80,6 +81,9 @@ const EMPTY_FORM: ItemForm = {
 };
 
 export function ItemsPage() {
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === 'admin';
+
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -191,12 +195,14 @@ export function ItemsPage() {
           <p className="mt-1 text-sm text-gray-500">Manage inventory item master data</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" onClick={openCreate}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Item
-            </Button>
-          </DialogTrigger>
+          {isAdmin && (
+            <DialogTrigger asChild>
+              <Button size="sm" onClick={openCreate}>
+                <Plus className="mr-2 h-4 w-4" />
+                New Item
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Item' : 'Create New Item'}</DialogTitle>
@@ -361,7 +367,7 @@ export function ItemsPage() {
                 <TableHead className="text-right">Last Cost</TableHead>
                 <TableHead>Default Vendor</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-10" />
+                {isAdmin && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -387,25 +393,27 @@ export function ItemsPage() {
                       {item.isActive !== false ? 'Active' : 'Inactive'}
                     </Badge>
                   </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(item)}>
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => void handleToggleStatus(item.id, item.isActive !== false)}
-                        >
-                          {item.isActive !== false ? 'Deactivate' : 'Activate'}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEdit(item)}>
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => void handleToggleStatus(item.id, item.isActive !== false)}
+                          >
+                            {item.isActive !== false ? 'Deactivate' : 'Activate'}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

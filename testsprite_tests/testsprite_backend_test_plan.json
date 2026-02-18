@@ -1,52 +1,42 @@
 [
   {
     "id": "TC001",
-    "title": "get api health returns server status and timestamp",
-    "description": "Test the GET /api/health endpoint to verify it returns a 200 status with a JSON body containing status 'ok', a message string, and a valid ISO 8601 timestamp when the server is running normally."
+    "title": "receipt with future date is rejected for all users",
+    "description": "Login as admin (username=jose, password=Password1). POST /api/transactions/receipts with transactionDate set to tomorrow's date (future). Expect 400 response with error message 'Transaction date cannot be in the future'. Then login as standard user (username=alix, password=Password1) and repeat — also expect 400 with same message."
   },
   {
     "id": "TC002",
-    "title": "post api auth login with valid credentials returns token and user",
-    "description": "Test the POST /api/auth/login endpoint with valid username and password to ensure it returns a 200 status with a JWT token and user object containing id, username, fullName, and role."
+    "title": "receipt with date older than 30 days is rejected for all users",
+    "description": "Login as admin (username=jose, password=Password1). POST /api/transactions/receipts with transactionDate set to 35 days ago. Expect 400 response with error containing 'cannot be more than 30 days in the past'. Then login as standard user (username=alix, password=Password1) and repeat — also expect 400."
   },
   {
     "id": "TC003",
-    "title": "post api auth login rate limits excessive attempts",
-    "description": "Test the POST /api/auth/login endpoint by sending more than 10 login attempts within 15 seconds from the same IP to verify it returns a 429 Too many login attempts response."
+    "title": "standard user blocked from posting receipt older than 7 days",
+    "description": "Login as standard user (username=alix, password=Password1). POST /api/transactions/receipts with transactionDate set to 10 days ago, itemId for an existing item (use GET /api/items to find one), location='ADEL', quantity=1, unitCost=10. Expect 400 response with error containing 'must be posted by an admin'."
   },
   {
     "id": "TC004",
-    "title": "post api auth change password with valid current and strong new password",
-    "description": "Test the POST /api/auth/change-password endpoint with a valid JWT token, correct current password, and a new password that meets the strength policy (8+ chars, uppercase, lowercase, number) to verify it returns 200 with a success message."
+    "title": "admin can post receipt between 8-30 days in the past",
+    "description": "Login as admin (username=jose, password=Password1). POST /api/transactions/receipts with transactionDate set to 10 days ago, a valid itemId (use GET /api/items to find one), location='ADEL', quantity=1, unitCost=10. Expect 201 success response with the created transaction."
   },
   {
     "id": "TC005",
-    "title": "post api users create new user with valid data as admin",
-    "description": "Test the POST /api/users endpoint with admin authorization and valid user data to create a new user, expecting a 201 response with the created user object."
+    "title": "standard user can post receipt within 7 days",
+    "description": "Login as standard user (username=alix, password=Password1). POST /api/transactions/receipts with transactionDate set to 3 days ago, a valid itemId (use GET /api/items to find one), location='ADEL', quantity=1, unitCost=5. Expect 201 success response with the created transaction."
   },
   {
     "id": "TC006",
-    "title": "post api items import preview with valid csv file",
-    "description": "Test the POST /api/items/import/preview endpoint with a valid CSV file upload to verify it returns 200 with normalized rows and any validation errors without writing to the database."
+    "title": "standard user can read BOMs list",
+    "description": "Login as standard user (username=alix, password=Password1). GET /api/boms with the auth token. Expect 200 response with an array of BOM objects. This verifies that BOM read access is no longer restricted to admin only."
   },
   {
     "id": "TC007",
-    "title": "post api transactions receipts create single receipt transaction",
-    "description": "Test the POST /api/transactions/receipts endpoint with valid data to create a single receipt transaction, verifying it returns 201 with the transaction object and lastPaidPrice, and that the item's lastPurchaseCost is updated."
+    "title": "standard user can read single BOM by id",
+    "description": "Login as standard user (username=alix, password=Password1). First GET /api/boms to get the list and pick the first BOM id. Then GET /api/boms/:id with that id. Expect 200 response with BOM object including components array. This verifies single BOM read access works for non-admin."
   },
   {
     "id": "TC008",
-    "title": "post api transactions transfers create atomic transfer pair",
-    "description": "Test the POST /api/transactions/transfers endpoint with valid data and sufficient stock to create an atomic transfer pair (outbound and inbound transactions), expecting a 201 response with transfer details."
-  },
-  {
-    "id": "TC009",
-    "title": "get api transactions stock position returns paginated inventory",
-    "description": "Test the GET /api/transactions/stock-position endpoint with valid authorization to verify it returns 200 with paginated aggregated inventory positions including item details, quantities per location, average cost, and total value."
-  },
-  {
-    "id": "TC010",
-    "title": "post api production kit executes kitting order with stock validation",
-    "description": "Test the POST /api/production/kit endpoint with valid data including finishedGoodId, location, quantityProduced, and components or bomId, ensuring it validates stock availability, calculates cost rollup, creates production order and related transactions, and returns 201 with order details."
+    "title": "standard user cannot create or modify BOMs",
+    "description": "Login as standard user (username=alix, password=Password1). POST /api/boms with body {name:'Test BOM', code:'TEST-BOM', finishedGoodId:1, components:[{itemId:1, quantityPer:1}]}. Expect 403 Forbidden. This verifies write operations on BOMs still require admin."
   }
 ]

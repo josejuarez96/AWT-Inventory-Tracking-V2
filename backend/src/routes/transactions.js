@@ -21,27 +21,33 @@ router.use(authenticate);
 const WARN_BACKDATE_DAYS = 7;
 const MAX_BACKDATE_DAYS = 30;
 
+function toDateStr(d) {
+  return d.toISOString().slice(0, 10); // "YYYY-MM-DD"
+}
+
 function validateTransactionDate(dateStr, userRole) {
-  const txDate = new Date(dateStr);
-  const today = new Date();
-  today.setHours(23, 59, 59, 999); // end of today
-  if (txDate > today) {
+  // Compare as plain date strings to avoid timezone ambiguity
+  const txDateStr = dateStr.slice(0, 10); // input is "YYYY-MM-DD"
+  const now = new Date();
+  const todayStr = toDateStr(now);
+
+  if (txDateStr > todayStr) {
     return 'Transaction date cannot be in the future';
   }
 
   const hardCutoff = new Date();
   hardCutoff.setDate(hardCutoff.getDate() - MAX_BACKDATE_DAYS);
-  hardCutoff.setHours(0, 0, 0, 0);
-  if (txDate < hardCutoff) {
+  const hardCutoffStr = toDateStr(hardCutoff);
+  if (txDateStr < hardCutoffStr) {
     return `Transaction date cannot be more than ${MAX_BACKDATE_DAYS} days in the past`;
   }
 
   if (userRole !== 'admin') {
     const userCutoff = new Date();
     userCutoff.setDate(userCutoff.getDate() - WARN_BACKDATE_DAYS);
-    userCutoff.setHours(0, 0, 0, 0);
-    if (txDate < userCutoff) {
-      return `Dates older than ${WARN_BACKDATE_DAYS} days require admin approval. Contact your administrator.`;
+    const userCutoffStr = toDateStr(userCutoff);
+    if (txDateStr < userCutoffStr) {
+      return `Dates older than ${WARN_BACKDATE_DAYS} days must be posted by an admin.`;
     }
   }
 

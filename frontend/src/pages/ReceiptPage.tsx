@@ -29,7 +29,7 @@ import { AlertTriangle, CheckCircle, Plus, X, Clock } from 'lucide-react';
 import { Combobox } from '@/components/ui/combobox';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
-type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; lastPurchaseCost: number | null };
+type Item = { id: number; itemCode: string; description: string; category?: string; unitOfMeasure: string; lastPurchaseCost: number | null };
 
 const lineItemSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -146,6 +146,20 @@ export function ReceiptPage() {
 
   // Compute line totals and receipt total
   const watchedLines = watch('lineItems');
+
+  // Build item lookup map for UOM checks
+  const itemMap = useMemo(() => {
+    const map = new Map<string, Item>();
+    for (const item of items) map.set(String(item.id), item);
+    return map;
+  }, [items]);
+
+  function isWholeUnitItem(index: number): boolean {
+    const itemId = watchedLines[index]?.itemId;
+    if (!itemId) return false;
+    const uom = itemMap.get(itemId)?.unitOfMeasure;
+    return uom === 'EA' || uom === 'SET' || uom === 'PAIR';
+  }
   const lineTotals = watchedLines.map((li) => {
     const qty = Number(li.quantity) || 0;
     const cost = Number(li.unitCost) || 0;
@@ -295,7 +309,7 @@ export function ReceiptPage() {
               )}
               {dateStatus === 'blocked-role' && (
                 <p className="text-xs text-red-600">
-                  Dates older than {WARN_DAYS} days require an admin. Contact your administrator.
+                  Dates older than {WARN_DAYS} days must be posted by an admin. Ask your admin to log in and enter this receipt.
                 </p>
               )}
               {dateStatus === 'warn' && (
@@ -376,19 +390,31 @@ export function ReceiptPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          placeholder="0"
-                          className="h-9"
-                          {...register(`lineItems.${index}.quantity`)}
-                        />
+                        {(() => {
+                          const wholeUnit = isWholeUnitItem(index);
+                          return (
+                            <Input
+                              type="number"
+                              step={wholeUnit ? '1' : '0.01'}
+                              min={wholeUnit ? '1' : '0.01'}
+                              placeholder={wholeUnit ? '0' : '0.00'}
+                              className="h-9"
+                              {...register(`lineItems.${index}.quantity`, {
+                                validate: (v) => {
+                                  if (wholeUnit && v !== undefined && v % 1 !== 0) {
+                                    return 'Whole numbers only for this item';
+                                  }
+                                  return true;
+                                },
+                              })}
+                            />
+                          );
+                        })()}
                         {errors.lineItems?.[index]?.quantity && (
                           <p className="text-xs text-red-600 mt-0.5">{errors.lineItems[index].quantity?.message}</p>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         <Input
                           type="number"
                           step="0.01"
@@ -400,7 +426,7 @@ export function ReceiptPage() {
                         {(() => {
                           const lp = getLastPaid(index);
                           return lp !== null ? (
-                            <p className="text-xs text-gray-500 mt-0.5">Last paid: {formatCurrency(lp)}</p>
+                            <p className="text-xs text-gray-400 mt-0.5 leading-none">Last: {formatCurrency(lp)}</p>
                           ) : null;
                         })()}
                         {errors.lineItems?.[index]?.unitCost && (

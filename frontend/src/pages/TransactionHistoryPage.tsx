@@ -46,20 +46,20 @@ type PaginatedResponse = {
 
 const TYPE_LABELS: Record<string, string> = {
   RECEIPT: 'Receipt',
-  ADJUSTMENT: 'Adjustment',
+  ADJUSTMENT: 'Adjust',
   TRANSFER: 'Transfer',
-  OPENING_BALANCE: 'Opening Balance',
-  CONSUMPTION: 'Consumption',
-  PRODUCTION: 'Production',
+  OPENING_BALANCE: 'Opening',
+  CONSUMPTION: 'Consumed',
+  PRODUCTION: 'Produced',
 };
 
-const TYPE_VARIANTS: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
-  RECEIPT: 'default',
-  ADJUSTMENT: 'destructive',
-  TRANSFER: 'secondary',
-  OPENING_BALANCE: 'outline',
-  CONSUMPTION: 'destructive',
-  PRODUCTION: 'default',
+const TYPE_COLORS: Record<string, string> = {
+  RECEIPT: 'bg-blue-50 text-blue-700 border-blue-200',
+  ADJUSTMENT: 'bg-amber-50 text-amber-700 border-amber-200',
+  TRANSFER: 'bg-purple-50 text-purple-700 border-purple-200',
+  OPENING_BALANCE: 'bg-gray-100 text-gray-600 border-gray-200',
+  CONSUMPTION: 'bg-red-50 text-red-700 border-red-200',
+  PRODUCTION: 'bg-green-50 text-green-700 border-green-200',
 };
 
 export function TransactionHistoryPage() {
@@ -113,8 +113,17 @@ export function TransactionHistoryPage() {
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-  const formatCurrency = (val: number | null) =>
-    val !== null ? `$${val.toFixed(2)}` : '—';
+  const formatCurrency = (val: number) =>
+    `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // Extract adjustment reason from notes "[Reason] optional text"
+  function parseNotes(t: Transaction): { reason: string | null; text: string | null } {
+    if (t.transactionType === 'ADJUSTMENT' && t.notes) {
+      const match = t.notes.match(/^\[(.+?)\]\s*(.*)?$/);
+      if (match) return { reason: match[1], text: match[2] || null };
+    }
+    return { reason: null, text: t.notes };
+  }
 
   return (
     <div className="space-y-6">
@@ -188,72 +197,94 @@ export function TransactionHistoryPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Type</TableHead>
+                <TableHead className="w-28">Date</TableHead>
+                <TableHead className="w-24">Type</TableHead>
                 <TableHead>Item</TableHead>
-                <TableHead>Vendor</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Total Cost</TableHead>
-                <TableHead>Invoice #</TableHead>
-                <TableHead>Details</TableHead>
-                <TableHead>Created By</TableHead>
+                <TableHead className="w-20">Loc</TableHead>
+                <TableHead className="w-20 text-right">Qty</TableHead>
+                <TableHead className="w-28 text-right">Value</TableHead>
+                <TableHead className="w-64">Details</TableHead>
+                <TableHead className="w-28">By</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {transactions.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="text-sm">{formatDate(t.transactionDate)}</TableCell>
-                  <TableCell>
-                    <Badge variant={TYPE_VARIANTS[t.transactionType] ?? 'outline'}>
-                      {TYPE_LABELS[t.transactionType] ?? t.transactionType}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-mono text-xs text-gray-500">{t.item.itemCode}</div>
-                    <div className="text-sm">{t.item.description}</div>
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-600">
-                    {t.vendor?.vendorName ?? '—'}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{t.location}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    <span className={t.quantity >= 0 ? 'text-green-600' : 'text-red-600'}>
-                      {t.quantity >= 0 ? '+' : ''}{t.quantity}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right text-sm">
-                    {t.unitCost !== null ? (
-                      <div>
-                        <div className="font-medium">{formatCurrency(Math.abs(t.quantity) * t.unitCost)}</div>
-                        <div className="text-xs text-gray-400">@ {formatCurrency(t.unitCost)}/ea</div>
+              {transactions.map((t) => {
+                const { reason, text } = parseNotes(t);
+                const totalCost = t.unitCost !== null ? Math.abs(t.quantity) * t.unitCost : null;
+                return (
+                  <TableRow key={t.id}>
+                    {/* Date */}
+                    <TableCell className="text-sm text-gray-600 whitespace-nowrap">
+                      {formatDate(t.transactionDate)}
+                    </TableCell>
+
+                    {/* Type badge */}
+                    <TableCell>
+                      <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[t.transactionType] ?? 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                        {TYPE_LABELS[t.transactionType] ?? t.transactionType}
+                      </span>
+                    </TableCell>
+
+                    {/* Item — code + description on one line */}
+                    <TableCell>
+                      <span className="text-sm">
+                        <span className="font-mono text-xs text-gray-400 mr-1.5">{t.item.itemCode}</span>
+                        {t.item.description}
+                      </span>
+                    </TableCell>
+
+                    {/* Location */}
+                    <TableCell className="text-sm text-gray-600">{t.location}</TableCell>
+
+                    {/* Qty — colored +/- */}
+                    <TableCell className="text-right font-mono text-sm font-medium">
+                      <span className={t.quantity >= 0 ? 'text-green-600' : 'text-red-600'}>
+                        {t.quantity >= 0 ? '+' : ''}{t.quantity}
+                      </span>
+                    </TableCell>
+
+                    {/* Value — total + unit cost hint */}
+                    <TableCell className="text-right text-sm">
+                      {totalCost !== null ? (
+                        <>
+                          <span className="font-medium">{formatCurrency(totalCost)}</span>
+                          <span className="text-xs text-gray-400 ml-1">@ {formatCurrency(t.unitCost!)}</span>
+                        </>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </TableCell>
+
+                    {/* Details — consolidated vendor, invoice, reason, notes */}
+                    <TableCell className="text-sm text-gray-600">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        {t.vendor?.vendorName && (
+                          <span className="text-gray-700">{t.vendor.vendorName}</span>
+                        )}
+                        {t.invoiceNumber && (
+                          <span className="text-xs text-gray-400">#{t.invoiceNumber}</span>
+                        )}
+                        {reason && (
+                          <Badge variant="outline" className="text-xs py-0 h-5">{reason}</Badge>
+                        )}
+                        {text && (
+                          <span className="text-xs text-gray-400 truncate max-w-[200px]" title={text}>
+                            {text}
+                          </span>
+                        )}
+                        {!t.vendor?.vendorName && !t.invoiceNumber && !reason && !text && (
+                          <span className="text-gray-300">—</span>
+                        )}
                       </div>
-                    ) : '—'}
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-500">{t.invoiceNumber ?? '—'}</TableCell>
-                  <TableCell className="text-sm text-gray-600 max-w-[220px]">
-                    {t.transactionType === 'ADJUSTMENT' && t.notes ? (
-                      <div className="space-y-1">
-                        <Badge variant="outline" className="text-xs">
-                          {t.notes.match(/^\[(.+?)\]/)?.[1] ?? 'Adjustment'}
-                        </Badge>
-                        {t.notes.replace(/^\[.+?\]\s*/, '') ? (
-                          <p className="text-xs text-gray-500 leading-snug">
-                            {t.notes.replace(/^\[.+?\]\s*/, '')}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : t.notes ? (
-                      <p className="text-xs text-gray-500 truncate" title={t.notes}>{t.notes}</p>
-                    ) : (
-                      '—'
-                    )}
-                  </TableCell>
-                  <TableCell className="text-sm text-gray-600">{t.user.fullName}</TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+
+                    {/* Created By */}
+                    <TableCell className="text-sm text-gray-500 whitespace-nowrap">
+                      {t.user.fullName}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>

@@ -46,12 +46,12 @@ export default function App() {
               <Route path="/cycle-counts" element={<CycleCountsPage />} />
               <Route path="/cycle-counts/:id" element={<CycleCountDetailPage />} />
               <Route path="/kitting" element={<KittingPage />} />
+              <Route path="/items" element={<ItemsPage />} />
               <Route path="/account" element={<AccountSettingsPage />} />
 
               {/* Admin only */}
               <Route element={<ProtectedRoute requiredRole="admin" />}>
                 <Route path="/users" element={<UsersPage />} />
-                <Route path="/items" element={<ItemsPage />} />
                 <Route path="/vendors" element={<VendorsPage />} />
                 <Route path="/import" element={<ImportPage />} />
                 <Route path="/opening-balances" element={<OpeningBalancePage />} />

@@ -45,6 +45,7 @@ type NavGroup = {
 const TOP_ITEMS: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', adminOnly: false, enabled: true },
   { icon: PackageOpen, label: 'Inventory', path: '/inventory', adminOnly: false, enabled: true },
+  { icon: List, label: 'Items', path: '/items', adminOnly: false, enabled: true },
   { icon: ArrowLeftRight, label: 'Transactions', path: '/transactions', adminOnly: false, enabled: true },
 ];
 
@@ -64,7 +65,6 @@ const TRANSACTION_GROUP: NavGroup = {
 const ADMIN_ITEMS: NavItem[] = [
   { icon: Layers, label: 'BOMs', path: '/boms', adminOnly: true, enabled: true },
   { icon: Truck, label: 'Vendors', path: '/vendors', adminOnly: true, enabled: true },
-  { icon: List, label: 'Items', path: '/items', adminOnly: true, enabled: true },
   { icon: Upload, label: 'Import', path: '/import', adminOnly: true, enabled: true },
   { icon: Users, label: 'Users', path: '/users', adminOnly: true, enabled: true },
   { icon: Settings, label: 'Settings', path: '/settings', adminOnly: true, enabled: false },

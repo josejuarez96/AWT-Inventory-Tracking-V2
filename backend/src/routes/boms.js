@@ -5,7 +5,8 @@ const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authenticate);
-router.use(requireAdmin);
+// Note: GET routes are open to all authenticated users (needed for kitting page).
+// Write operations (POST, PUT, PATCH) are admin-only via per-route requireAdmin.
 
 const ITEM_SELECT = { id: true, itemCode: true, description: true, unitOfMeasure: true };
 
@@ -122,10 +123,11 @@ router.get(
 );
 
 // ---------------------------------------------------------------------------
-// POST /api/boms — Create BOM with lines
+// POST /api/boms — Create BOM with lines (admin only)
 // ---------------------------------------------------------------------------
 router.post(
   '/',
+  requireAdmin,
   [
     body('bomCode').trim().notEmpty().withMessage('bomCode is required').isLength({ max: 50 }),
     body('name').trim().notEmpty().withMessage('name is required').isLength({ max: 200 }),
@@ -209,10 +211,11 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
-// PUT /api/boms/:id — Update BOM (DRAFT only)
+// PUT /api/boms/:id — Update BOM (DRAFT only, admin only)
 // ---------------------------------------------------------------------------
 router.put(
   '/:id',
+  requireAdmin,
   [
     param('id').isInt({ gt: 0 }),
     body('bomCode').optional().trim().notEmpty().isLength({ max: 50 }),
@@ -324,10 +327,11 @@ router.put(
 );
 
 // ---------------------------------------------------------------------------
-// PATCH /api/boms/:id/status — Change BOM status
+// PATCH /api/boms/:id/status — Change BOM status (admin only)
 // ---------------------------------------------------------------------------
 router.patch(
   '/:id/status',
+  requireAdmin,
   [
     param('id').isInt({ gt: 0 }),
     body('status').isIn(['DRAFT', 'ACTIVE', 'RETIRED']).withMessage('status must be DRAFT, ACTIVE, or RETIRED'),
@@ -389,10 +393,11 @@ router.patch(
 );
 
 // ---------------------------------------------------------------------------
-// POST /api/boms/:id/duplicate — Clone a BOM
+// POST /api/boms/:id/duplicate — Clone a BOM (admin only)
 // ---------------------------------------------------------------------------
 router.post(
   '/:id/duplicate',
+  requireAdmin,
   [param('id').isInt({ gt: 0 })],
   async (req, res) => {
     const errors = validationResult(req);

@@ -1,18 +1,18 @@
 {
-  "status": "commited",
+  "status": "init",
   "type": "backend",
-  "scope": "codebase",
-  "localEndpoint": "http://localhost:3002",
+  "scope": "diff",
+  "localEndpoint": "http://localhost:3002/",
   "backendAuthType": "public",
   "executionArgs": {
     "projectName": "AWT Inventory Tracking V2",
     "projectPath": "/Users/josejuarez/Documents/All World Trailers/AWT Inventory Tracking V2",
     "testIds": [],
-    "additionalInstruction": "IMPORTANT: The backend server is already running at http://localhost:3002. Admin credentials: username=jose, password=Password1. Standard user credentials: username=alix, password=Password1. The rate limiter is 10 requests per 15 seconds per IP. For the production/kitting test (TC010), seeded items include AX-7K-STD, BR-10-DRUM, LT-LED-TAIL, LT-MARKER, FT-BOLT-KIT, CP-2-516 with stock at ADEL location. Finished goods: TR-7K-UTIL, TR-12K-FLAT. Active BOMs: BOM-7K-UTIL (id likely 1), BOM-12K-FLAT (id likely 2). You may need to create opening balance transactions for components before testing kitting to ensure sufficient stock.",
+    "additionalInstruction": "CRITICAL: The backend server is ALREADY RUNNING at http://localhost:3002 with the latest code changes.\n\nAuth credentials:\n- Admin: username=jose, password=Password1 (role: admin)\n- Standard user: username=alix, password=Password1 (role: user)\n\nLogin: POST /api/auth/login with JSON body {\"username\":\"...\",\"password\":\"...\"} returns {\"token\":\"...\",\"user\":{...}}. Use token as Bearer in Authorization header.\n\nRate limiter: 10 requests per 15 seconds per IP. Add 2-second delays between requests.\n\nTo get valid itemId: GET /api/items returns {\"items\":[...]} — use id from first item.\n\nStock position: GET /api/transactions/stock-position returns {\"positions\":[...]} with adelQty, calhounQty per item.\n\nAdjustment endpoint: POST /api/transactions/adjustments expects JSON body:\n{\"itemId\": number, \"location\": \"ADEL\", \"quantity\": number, \"reason\": \"Damage\"|\"Shrinkage\"|\"Correction\"|\"Other\", \"notes\": \"optional\"}\nNote: \"Cycle Count\" is NOT a valid reason anymore.\n\nTransfer endpoint: POST /api/transactions/transfers expects JSON body:\n{\"itemId\": number, \"fromLocation\": \"ADEL\", \"toLocation\": \"CALHOUN\", \"quantity\": number}\n\nItem deactivation: PATCH /api/items/:id/status with body {\"isActive\": false}\nItem creation: POST /api/items with body {\"itemCode\":\"...\", \"description\":\"...\", \"category\":\"...\", \"unitOfMeasure\":\"EA\"}\n\nBOM endpoints:\n- GET /api/boms (list all BOMs)\n- GET /api/boms/:id (single BOM with components)\n- PATCH /api/boms/:id/status with body {\"status\":\"RETIRED\"|\"ACTIVE\"}\n\nKitting: POST /api/production/kit expects JSON body:\n{\"finishedGoodId\": number, \"location\": \"ADEL\", \"quantityProduced\": 1, \"bomId\": number, \"components\": [{\"itemId\": number, \"quantityPer\": number}, ...]}\n\nThese 6 tests validate hardening fixes from a scenario audit:\n1. TC001-TC002: Adjustment guardrails (stock floor, reason validation)\n2. TC003-TC004: Item deactivation with stock check\n3. TC005: Transfer race condition fix (serializable transaction)\n4. TC006: Retired BOM blocked from kitting",
     "envs": {
       "API_KEY": "sk-user-f2SeR--HdRiSE9e_M8xOISPxGteF-Uv2IJnMWp2RVdPupD3grJjb5mz3n1l4EjES7e1dFLU2GDPS9Hkm0SiTTe3vBeyV9tQIi14p71JeSAZIerGNj0l1ziF0VzJCW84wapE"
     }
   },
-  "serverPort": 61823,
-  "proxy": "http://d65aab89-f538-4dd5-9970-a7efdcdb9ced:zdyuSCZXSzCEu85l44qHlOam9SmwX3dW@tun.testsprite.com:8080"
+  "serverPort": 60296,
+  "proxy": "http://d0796019-634f-4ff6-9e72-72f56f5a982d:YVzgobXUObtYYEhBDd2dA1u1LfMtmchi@tun.testsprite.com:8080"
 }

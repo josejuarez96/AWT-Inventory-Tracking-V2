@@ -361,6 +361,20 @@ router.patch(
       return res.status(404).json({ error: 'Item not found' });
     }
 
+    // Block deactivation if item has positive stock at any location
+    if (req.body.isActive === false && existing.isActive === true) {
+      const stockResult = await prisma.transaction.aggregate({
+        where: { itemId: id },
+        _sum: { quantity: true },
+      });
+      const totalStock = Number(stockResult._sum.quantity ?? 0);
+      if (totalStock > 0) {
+        return res.status(400).json({
+          error: `Cannot deactivate item with ${totalStock} units on hand. Adjust or transfer stock to zero first.`,
+        });
+      }
+    }
+
     const updated = await prisma.item.update({
       where: { id },
       data: { isActive: req.body.isActive },

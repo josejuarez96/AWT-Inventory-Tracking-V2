@@ -67,6 +67,9 @@ router.post(
       if (!bom) {
         return res.status(400).json({ error: 'BOM not found' });
       }
+      if (bom.status !== 'ACTIVE') {
+        return res.status(400).json({ error: `BOM ${bom.bomCode} is ${bom.status}. Only ACTIVE BOMs can be used for kitting.` });
+      }
 
       // Validate all BOM components are present with correct quantities
       const bomComponentMap = new Map(bom.lines.map((l) => [l.itemId, Number(l.quantityPer)]));

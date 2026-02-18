@@ -16,7 +16,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowLeft, Printer, CheckCircle, XCircle, Save } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ArrowLeft, Printer, CheckCircle, XCircle, Save, AlertTriangle } from 'lucide-react';
 
 // --- Types ---
 
@@ -105,6 +113,7 @@ export function CycleCountDetailPage() {
   const [adminAuthOpen, setAdminAuthOpen] = useState(false);
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
   const [flaggedInfo, setFlaggedInfo] = useState<{ flaggedCount: number; flaggedLines: Array<{ itemCode: string; variance: number; varianceValue: number }> } | null>(null);
+  const [voidConfirmOpen, setVoidConfirmOpen] = useState(false);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -233,6 +242,7 @@ export function CycleCountDetailPage() {
 
   async function handleVoid() {
     if (!cycleCount) return;
+    setVoidConfirmOpen(false);
     setVoiding(true);
     setActionError(null);
     try {
@@ -308,7 +318,7 @@ export function CycleCountDetailPage() {
             </Button>
           )}
           {isAdmin && !isPosted && !isVoid && (
-            <Button variant="destructive" size="sm" onClick={handleVoid} disabled={voiding}>
+            <Button variant="destructive" size="sm" onClick={() => setVoidConfirmOpen(true)} disabled={voiding}>
               <XCircle className="mr-2 h-4 w-4" />
               {voiding ? 'Voiding...' : 'Void'}
             </Button>
@@ -491,6 +501,25 @@ export function CycleCountDetailPage() {
             : '—'}
         </p>
       )}
+
+      {/* Void confirmation dialog */}
+      <Dialog open={voidConfirmOpen} onOpenChange={setVoidConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              Void Cycle Count
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to void <strong>{cycleCount.countNumber}</strong>? All entered quantities will be discarded and no adjustments will be applied to inventory. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setVoidConfirmOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleVoid}>Void Cycle Count</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AdminAuthDialog
         open={adminAuthOpen}

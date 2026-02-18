@@ -471,8 +471,8 @@ router.post(
       .custom((value) => value !== 0)
       .withMessage('quantity cannot be zero'),
     body('reason')
-      .isIn(['Damage', 'Shrinkage', 'Cycle Count', 'Correction', 'Other'])
-      .withMessage('reason must be one of: Damage, Shrinkage, Cycle Count, Correction, Other'),
+      .isIn(['Damage', 'Shrinkage', 'Correction', 'Other'])
+      .withMessage('reason must be one of: Damage, Shrinkage, Correction, Other'),
     body('notes').optional().trim(),
   ],
   async (req, res) => {
@@ -486,6 +486,20 @@ router.post(
     const item = await prisma.item.findUnique({ where: { id: itemId } });
     if (!item || !item.isActive) {
       return res.status(404).json({ error: 'Item not found' });
+    }
+
+    // Block negative adjustments that would make stock go below zero
+    if (quantity < 0) {
+      const stockResult = await prisma.transaction.aggregate({
+        where: { itemId, location },
+        _sum: { quantity: true },
+      });
+      const currentStock = Number(stockResult._sum.quantity ?? 0);
+      if (currentStock + quantity < 0) {
+        return res.status(400).json({
+          error: `Adjustment would result in negative stock. Current stock at ${location}: ${currentStock}, Adjustment: ${quantity}`,
+        });
+      }
     }
 
     const formattedNotes = notes ? `[${reason}] ${notes}` : `[${reason}]`;
@@ -544,52 +558,60 @@ router.post(
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    // Check available stock at source location
-    const stockResult = await prisma.transaction.aggregate({
-      where: { itemId, location: fromLocation },
-      _sum: { quantity: true },
-    });
-    const currentStock = Number(stockResult._sum.quantity ?? 0);
+    // Stock check + transfer creation in a serializable transaction to prevent race conditions
+    let outbound, inbound;
+    try {
+      [outbound, inbound] = await prisma.$transaction(async (tx) => {
+        // Lock: aggregate inside the transaction ensures consistent read
+        const stockResult = await tx.transaction.aggregate({
+          where: { itemId, location: fromLocation },
+          _sum: { quantity: true },
+        });
+        const currentStock = Number(stockResult._sum.quantity ?? 0);
 
-    if (currentStock < quantity) {
-      return res.status(400).json({
-        error: `Insufficient stock at ${fromLocation}. Available: ${currentStock}, Requested: ${quantity}`,
-      });
+        if (currentStock < quantity) {
+          throw new Error(`Insufficient stock at ${fromLocation}. Available: ${currentStock}, Requested: ${quantity}`);
+        }
+
+        const out = await tx.transaction.create({
+          data: {
+            transactionType: 'TRANSFER',
+            itemId,
+            location: fromLocation,
+            quantity: -quantity,
+            transactionDate: new Date(),
+            notes: notes || null,
+            createdBy: req.user.id,
+          },
+          include: {
+            item: { select: { itemCode: true, description: true } },
+            user: { select: { fullName: true } },
+          },
+        });
+        const inc = await tx.transaction.create({
+          data: {
+            transactionType: 'TRANSFER',
+            itemId,
+            location: toLocation,
+            quantity: quantity,
+            transactionDate: new Date(),
+            notes: notes || null,
+            createdBy: req.user.id,
+          },
+          include: {
+            item: { select: { itemCode: true, description: true } },
+            user: { select: { fullName: true } },
+          },
+        });
+
+        return [out, inc];
+      }, { isolationLevel: 'Serializable' });
+    } catch (err) {
+      if (err.message.startsWith('Insufficient stock')) {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
     }
-
-    // Create outbound + inbound transactions atomically
-    const [outbound, inbound] = await prisma.$transaction([
-      prisma.transaction.create({
-        data: {
-          transactionType: 'TRANSFER',
-          itemId,
-          location: fromLocation,
-          quantity: -quantity,
-          transactionDate: new Date(),
-          notes: notes || null,
-          createdBy: req.user.id,
-        },
-        include: {
-          item: { select: { itemCode: true, description: true } },
-          user: { select: { fullName: true } },
-        },
-      }),
-      prisma.transaction.create({
-        data: {
-          transactionType: 'TRANSFER',
-          itemId,
-          location: toLocation,
-          quantity: quantity,
-          transactionDate: new Date(),
-          notes: notes || null,
-          createdBy: req.user.id,
-        },
-        include: {
-          item: { select: { itemCode: true, description: true } },
-          user: { select: { fullName: true } },
-        },
-      }),
-    ]);
 
     return res.status(201).json({
       transfer: {

@@ -20,12 +20,12 @@ import { Combobox } from '@/components/ui/combobox';
 
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string };
 
-const REASONS = ['Damage', 'Shrinkage', 'Cycle Count', 'Correction', 'Other'] as const;
+const REASONS = ['Damage', 'Shrinkage', 'Correction', 'Other'] as const;
 
 // Reasons that always reduce inventory
 const DECREASE_REASONS: string[] = ['Damage', 'Shrinkage'];
 // Reasons that could go either way
-const FLEXIBLE_REASONS: string[] = ['Cycle Count', 'Correction', 'Other'];
+const FLEXIBLE_REASONS: string[] = ['Correction', 'Other'];
 
 type AdjustmentDirection = 'decrease' | 'increase';
 

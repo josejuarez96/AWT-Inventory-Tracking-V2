@@ -1,42 +1,32 @@
 [
   {
     "id": "TC001",
-    "title": "receipt with future date is rejected for all users",
-    "description": "Login as admin (username=jose, password=Password1). POST /api/transactions/receipts with transactionDate set to tomorrow's date (future). Expect 400 response with error message 'Transaction date cannot be in the future'. Then login as standard user (username=alix, password=Password1) and repeat — also expect 400 with same message."
+    "title": "negative adjustment blocked when it would make stock go below zero",
+    "description": "Login as admin (username=jose, password=Password1). GET /api/items to find an active item (use the first one). GET /api/transactions/stock-position to find its current stock at ADEL. Then POST /api/transactions/adjustments with that itemId, location='ADEL', quantity=-(currentStock + 100) (a number that exceeds available stock), reason='Damage', notes='test negative floor'. Expect 400 response with error containing 'negative stock'. Then POST a valid small negative adjustment (quantity=-1) with the same item — expect 201 success."
   },
   {
     "id": "TC002",
-    "title": "receipt with date older than 30 days is rejected for all users",
-    "description": "Login as admin (username=jose, password=Password1). POST /api/transactions/receipts with transactionDate set to 35 days ago. Expect 400 response with error containing 'cannot be more than 30 days in the past'. Then login as standard user (username=alix, password=Password1) and repeat — also expect 400."
+    "title": "Cycle Count reason rejected on manual adjustments",
+    "description": "Login as admin (username=jose, password=Password1). GET /api/items to find an active item. POST /api/transactions/adjustments with that itemId, location='ADEL', quantity=-1, reason='Cycle Count', notes='test'. Expect 400 response with validation error indicating 'Cycle Count' is not a valid reason. Valid reasons are: Damage, Shrinkage, Correction, Other."
   },
   {
     "id": "TC003",
-    "title": "standard user blocked from posting receipt older than 7 days",
-    "description": "Login as standard user (username=alix, password=Password1). POST /api/transactions/receipts with transactionDate set to 10 days ago, itemId for an existing item (use GET /api/items to find one), location='ADEL', quantity=1, unitCost=10. Expect 400 response with error containing 'must be posted by an admin'."
+    "title": "deactivating item with positive stock is blocked",
+    "description": "Login as admin (username=jose, password=Password1). GET /api/items to find an active item. GET /api/transactions/stock-position to confirm it has stock > 0 at some location. Then PATCH /api/items/:id/status with body {isActive: false}. Expect 400 response with error containing 'Cannot deactivate item with' and 'units on hand'."
   },
   {
     "id": "TC004",
-    "title": "admin can post receipt between 8-30 days in the past",
-    "description": "Login as admin (username=jose, password=Password1). POST /api/transactions/receipts with transactionDate set to 10 days ago, a valid itemId (use GET /api/items to find one), location='ADEL', quantity=1, unitCost=10. Expect 201 success response with the created transaction."
+    "title": "deactivating item with zero stock succeeds",
+    "description": "Login as admin (username=jose, password=Password1). POST /api/items to create a new test item with body {itemCode:'TEST-DEACT-001', description:'Test Deactivation Item', category:'Test', unitOfMeasure:'EA'}. This item has zero stock (no transactions). Then PATCH /api/items/:id/status with body {isActive: false}. Expect 200 success. Then PATCH again with {isActive: true} to reactivate, expect 200."
   },
   {
     "id": "TC005",
-    "title": "standard user can post receipt within 7 days",
-    "description": "Login as standard user (username=alix, password=Password1). POST /api/transactions/receipts with transactionDate set to 3 days ago, a valid itemId (use GET /api/items to find one), location='ADEL', quantity=1, unitCost=5. Expect 201 success response with the created transaction."
+    "title": "transfer uses serializable transaction to prevent race condition",
+    "description": "Login as admin (username=jose, password=Password1). GET /api/items to find an active item. GET /api/transactions/stock-position to find its stock at ADEL. POST /api/transactions/transfers with that itemId, fromLocation='ADEL', toLocation='CALHOUN', quantity=(currentStock + 100) — exceeding available. Expect 400 with error containing 'Insufficient stock'. Then POST a valid transfer with quantity=1 — expect 201 success with outbound and inbound transactions."
   },
   {
     "id": "TC006",
-    "title": "standard user can read BOMs list",
-    "description": "Login as standard user (username=alix, password=Password1). GET /api/boms with the auth token. Expect 200 response with an array of BOM objects. This verifies that BOM read access is no longer restricted to admin only."
-  },
-  {
-    "id": "TC007",
-    "title": "standard user can read single BOM by id",
-    "description": "Login as standard user (username=alix, password=Password1). First GET /api/boms to get the list and pick the first BOM id. Then GET /api/boms/:id with that id. Expect 200 response with BOM object including components array. This verifies single BOM read access works for non-admin."
-  },
-  {
-    "id": "TC008",
-    "title": "standard user cannot create or modify BOMs",
-    "description": "Login as standard user (username=alix, password=Password1). POST /api/boms with body {name:'Test BOM', code:'TEST-BOM', finishedGoodId:1, components:[{itemId:1, quantityPer:1}]}. Expect 403 Forbidden. This verifies write operations on BOMs still require admin."
+    "title": "kitting with retired BOM is rejected",
+    "description": "Login as admin (username=jose, password=Password1). GET /api/boms to find an active BOM. Note its id and components. PATCH /api/boms/:id/status with body {status:'RETIRED'} to retire it. Then POST /api/production/kit with that bomId, the correct finishedGoodId (GET /api/boms/:id to find it), location='ADEL', quantityProduced=1, and the correct components array. Expect 400 with error containing 'RETIRED' and 'Only ACTIVE BOMs'. Finally, PATCH /api/boms/:id/status with {status:'ACTIVE'} to restore it."
   }
 ]

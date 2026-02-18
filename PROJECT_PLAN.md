@@ -386,6 +386,56 @@ CREATE INDEX idx_cycle_count_lines_count ON CycleCountLines(cycle_count_id);
 
 ---
 
+### Phase 4C-fixes: UX Fixes from Alix Testing ✅ COMPLETE
+**Goal**: Fix issues found during manual testing with standard user account (Alix).
+
+- [x] Block decimal quantities for EA (each) items on receipt lines
+- [x] Fix Last Paid price text alignment under unit cost column
+- [x] Clarify backdate message wording (admin workflow)
+- [x] Redesign transaction history table (8 cols, colored badges, consolidated Details column)
+- [x] Open BOM GET routes to standard users (needed for kitting page)
+- [x] Improve cycle count empty state message for standard users
+- [x] Item Master read-only access for standard users (route, sidebar, conditional UI)
+- [x] Fix timezone bug in future date validation (date-string comparison)
+
+**Completed**: Phase 4C-fixes commit `6107340`
+**Test Results**: 6/8 TestSprite tests passing (2 failures: 1 timezone bug fixed post-test, 1 test-script assertion bug)
+
+---
+
+### Phase 4D: Role Permissions, Item Types, Admin Auth & Kitting Guardrails ✅ COMPLETE
+**Goal**: Harden role permissions, add item type classification, admin authorization flow for variance overrides, and kitting safety guardrails — all based on Alix's testing feedback.
+
+- [x] **Item Type Field** (RAW / FINISHED / OTHER):
+  - Added `itemType` to Item schema with migration
+  - Backend: validation on create/update, included in GET responses
+  - Frontend: colored badges in item table, Select dropdown in create/edit form
+  - Kitting page: finished good dropdown filters to FINISHED, component dropdown excludes FINISHED
+  - BOMs page: same itemType-based filtering replaces old category heuristic
+- [x] **Cycle Counts Open to Standard Users**:
+  - Removed `requireAdmin` from cycle count creation endpoint
+  - Standard users see counts they created OR are assigned to
+  - "New Cycle Count" button visible to all users
+  - Variance History tab remains admin-only
+- [x] **Admin Authorization Popup** (reusable):
+  - New `AdminAuthDialog` component (username/password modal)
+  - Enhanced `api.ts`: custom headers support, `ApiError.data` for structured error responses
+  - Per-line variance gate (>10% or >$500): instead of hard-blocking, prompts for admin credentials
+  - Backend `verifyAdminCredentials` helper: decodes Basic auth, verifies admin role + password
+  - Real-time line flagging during counting (red highlights for large variances)
+- [x] **Kitting BOM Lock** (extras only):
+  - Backend validates all BOM components present with correct quantities on submission
+  - Missing/modified BOM components return 400 with detailed error
+  - Extra components allowed, tracked as deviations (`hasDeviations`, `deviationNotes`)
+  - Frontend: BOM component rows locked (disabled item/qty/delete), extras get amber "Extra" badge
+  - Deviation banner when extras added: "This kit includes N extra component(s)..."
+
+**Database Migration**: `20260218215737_add_item_type_and_production_deviations`
+
+**Success Criteria**: All met ✅
+
+---
+
 ### Phase 5: Advanced Features & Optimization (Post Go-Live)
 **Goal**: Enhancements driven by real-world usage feedback after the system is in production.
 
@@ -484,6 +534,8 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 | **Phase 4A** | Item & Vendor CRUD | ✅ Complete — full CRUD with dialog-based UI |
 | **Phase 4B** | Technical Debt & Performance | ✅ Complete — N+1 fixes, pagination, rate limiting, schema cleanup |
 | **Phase 4C** | BOMs, Production/Kitting, Cycle Counts | ✅ Complete — manufacturing support, physical inventory verification |
+| **Phase 4C-fixes** | UX Fixes from Alix Testing | ✅ Complete — 8 fixes from standard user testing |
+| **Phase 4D** | Role Permissions, Item Types, Admin Auth, Kitting Guardrails | ✅ Complete — hardened permissions, item classification, admin override flow |
 
 ### Remaining — Build Order
 
@@ -499,6 +551,7 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 - ✅ **Operationally Complete**: Phase 4A complete — full master data CRUD without CSV dependency
 - ✅ **Production Hardened**: Phase 4B complete — paginated endpoints, rate limiting, optimized queries
 - ✅ **Manufacturing-Ready**: Phase 4C complete — BOMs, kitting with cost rollup, cycle counts with variance tracking
+- ✅ **User-Tested & Hardened**: Phase 4D complete — role permissions, item types, admin auth popup, kitting guardrails
 - ⬜ **Deploy to Cloud**: Push to Railway/Vercel (~30 minutes)
 - ⬜ **Feature Complete**: Phase 5 — based on real-world feedback post-launch
 

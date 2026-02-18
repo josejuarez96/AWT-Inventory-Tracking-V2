@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/table';
 import { AlertTriangle, CheckCircle, Plus, X } from 'lucide-react';
 
-type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string };
+type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; itemType?: string };
 
 type BomOption = {
   id: number;
@@ -54,6 +54,7 @@ type StockPosition = {
 const componentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
   quantityPer: z.coerce.number({ invalid_type_error: 'Required' }).positive('Must be > 0'),
+  fromBom: z.boolean().default(false),
 });
 
 const kittingSchema = z.object({
@@ -82,7 +83,7 @@ export function KittingPage() {
       location: 'ADEL',
       quantityProduced: undefined as unknown as number,
       notes: '',
-      components: [{ itemId: '', quantityPer: undefined as unknown as number }],
+      components: [{ itemId: '', quantityPer: undefined as unknown as number, fromBom: false }],
     },
   });
 
@@ -162,6 +163,7 @@ export function KittingPage() {
         bom.lines.map((l) => ({
           itemId: String(l.itemId),
           quantityPer: l.quantityPer,
+          fromBom: true,
         }))
       );
     } catch {
@@ -251,7 +253,7 @@ export function KittingPage() {
         location: prevLocation,
         quantityProduced: undefined as unknown as number,
         notes: '',
-        components: [{ itemId: '', quantityPer: undefined as unknown as number }],
+        components: [{ itemId: '', quantityPer: undefined as unknown as number, fromBom: false }],
       });
 
       // Refresh stock after production
@@ -318,7 +320,7 @@ export function KittingPage() {
                   <SelectValue placeholder="Select finished good..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {items.map((item) => (
+                  {items.filter((i) => i.itemType === 'FINISHED').map((item) => (
                     <SelectItem key={item.id} value={String(item.id)}>
                       {item.itemCode} — {item.description}
                     </SelectItem>
@@ -386,12 +388,25 @@ export function KittingPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => append({ itemId: '', quantityPer: undefined as unknown as number })}
+              onClick={() => append({ itemId: '', quantityPer: undefined as unknown as number, fromBom: false })}
             >
               <Plus className="h-4 w-4 mr-1" />
               Add Component
             </Button>
           </div>
+
+          {(() => {
+            const extraCount = watchedComponents?.filter((c) => !c.fromBom && c.itemId).length ?? 0;
+            const hasBom = !!watch('bomId');
+            if (hasBom && extraCount > 0) {
+              return (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  This kit includes {extraCount} extra component{extraCount !== 1 ? 's' : ''} not in the BOM template. These will be tracked as deviations.
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           <div className="rounded-md border">
             <Table>
@@ -409,22 +424,35 @@ export function KittingPage() {
               </TableHeader>
               <TableBody>
                 {fields.map((field, index) => {
+                  const comp = watchedComponents?.[index];
+                  const isBomLocked = comp?.fromBom === true;
+                  const isExtra = !comp?.fromBom && !!comp?.itemId;
                   const summary = componentSummary[index];
                   const isInsufficient = insufficientLines.includes(index);
                   return (
-                    <TableRow key={field.id}>
-                      <TableCell className="text-gray-400 text-sm">{index + 1}</TableCell>
+                    <TableRow key={field.id} className={isExtra ? 'bg-amber-50' : ''}>
+                      <TableCell className="text-gray-400 text-sm">
+                        <div className="flex items-center gap-1">
+                          {index + 1}
+                          {isExtra && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 border-amber-300 text-amber-700 bg-amber-100">
+                              Extra
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <Select
-                          value={watchedComponents[index]?.itemId || ''}
+                          value={comp?.itemId || ''}
                           onValueChange={(v) => setValue(`components.${index}.itemId`, v)}
+                          disabled={isBomLocked}
                         >
-                          <SelectTrigger className="h-9">
+                          <SelectTrigger className={`h-9 ${isBomLocked ? 'opacity-75 bg-gray-50' : ''}`}>
                             <SelectValue placeholder="Select component..." />
                           </SelectTrigger>
                           <SelectContent>
                             {items
-                              .filter((i) => String(i.id) !== watch('finishedGoodId'))
+                              .filter((i) => i.itemType !== 'FINISHED' && String(i.id) !== watch('finishedGoodId'))
                               .map((item) => (
                                 <SelectItem key={item.id} value={String(item.id)}>
                                   {item.itemCode} — {item.description}
@@ -444,7 +472,8 @@ export function KittingPage() {
                           step="0.0001"
                           min="0.0001"
                           placeholder="1"
-                          className="h-9"
+                          className={`h-9 ${isBomLocked ? 'opacity-75 bg-gray-50' : ''}`}
+                          disabled={isBomLocked}
                           {...register(`components.${index}.quantityPer`)}
                         />
                         {errors.components?.[index]?.quantityPer && (
@@ -473,7 +502,7 @@ export function KittingPage() {
                           : '--'}
                       </TableCell>
                       <TableCell>
-                        {fields.length > 1 && (
+                        {fields.length > 1 && !isBomLocked && (
                           <Button
                             type="button"
                             variant="ghost"

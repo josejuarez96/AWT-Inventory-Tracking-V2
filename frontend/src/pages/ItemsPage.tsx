@@ -51,6 +51,7 @@ type Item = {
   lastPurchaseCost: number | null;
   defaultVendorId: number | null;
   defaultVendor: Vendor | null;
+  itemType?: string;
   isActive?: boolean;
   notes?: string | null;
   createdAt?: string;
@@ -66,6 +67,7 @@ type ItemForm = {
   standardCost: string;
   defaultVendorId: string;
   notes: string;
+  itemType: string;
 };
 
 const EMPTY_FORM: ItemForm = {
@@ -78,6 +80,13 @@ const EMPTY_FORM: ItemForm = {
   standardCost: '',
   defaultVendorId: '',
   notes: '',
+  itemType: 'RAW',
+};
+
+const ITEM_TYPE_BADGE: Record<string, { label: string; className: string }> = {
+  RAW: { label: 'RAW', className: 'bg-gray-100 text-gray-700 border-gray-200' },
+  FINISHED: { label: 'FINISHED', className: 'bg-blue-100 text-blue-700 border-blue-200' },
+  OTHER: { label: 'OTHER', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
 };
 
 export function ItemsPage() {
@@ -131,6 +140,7 @@ export function ItemsPage() {
       standardCost: item.standardCost != null ? String(item.standardCost) : '',
       defaultVendorId: item.defaultVendorId != null ? String(item.defaultVendorId) : '',
       notes: item.notes ?? '',
+      itemType: item.itemType ?? 'RAW',
     });
     setFormError('');
     setDialogOpen(true);
@@ -151,6 +161,7 @@ export function ItemsPage() {
       standardCost: form.standardCost ? parseFloat(form.standardCost) : null,
       defaultVendorId: form.defaultVendorId ? parseInt(form.defaultVendorId) : null,
       notes: form.notes.trim() || null,
+      itemType: form.itemType,
     };
 
     try {
@@ -238,13 +249,31 @@ export function ItemsPage() {
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Input
-                  id="category"
-                  value={form.category}
-                  onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="category">Category</Label>
+                  <Input
+                    id="category"
+                    value={form.category}
+                    onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="itemType">Item Type</Label>
+                  <Select
+                    value={form.itemType}
+                    onValueChange={(val) => setForm((f) => ({ ...f, itemType: val }))}
+                  >
+                    <SelectTrigger id="itemType">
+                      <SelectValue placeholder="Select type..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="RAW">RAW</SelectItem>
+                      <SelectItem value="FINISHED">FINISHED</SelectItem>
+                      <SelectItem value="OTHER">OTHER</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -360,6 +389,7 @@ export function ItemsPage() {
                 <TableHead>Item Code</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead>Category</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>UOM</TableHead>
                 <TableHead className="text-right">Min Qty</TableHead>
                 <TableHead className="text-right">Max Qty</TableHead>
@@ -376,6 +406,12 @@ export function ItemsPage() {
                   <TableCell className="font-mono text-sm">{item.itemCode}</TableCell>
                   <TableCell className="text-sm">{item.description}</TableCell>
                   <TableCell className="text-sm text-gray-500">{item.category ?? '—'}</TableCell>
+                  <TableCell>
+                    {(() => {
+                      const badge = ITEM_TYPE_BADGE[item.itemType ?? 'RAW'] ?? ITEM_TYPE_BADGE.RAW;
+                      return <Badge variant="outline" className={badge.className}>{badge.label}</Badge>;
+                    })()}
+                  </TableCell>
                   <TableCell className="text-sm text-gray-500">{item.unitOfMeasure}</TableCell>
                   <TableCell className="text-right text-sm">{item.minQuantity ?? '—'}</TableCell>
                   <TableCell className="text-right text-sm">{item.maxQuantity ?? '—'}</TableCell>

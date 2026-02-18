@@ -55,11 +55,54 @@ router.post(
       }
     }
 
-    // Validate BOM exists if provided
+    // Validate BOM and enforce component integrity if provided
+    let hasDeviations = false;
+    let deviationNotes = null;
+
     if (bomId) {
-      const bom = await prisma.bom.findUnique({ where: { id: bomId } });
+      const bom = await prisma.bom.findUnique({
+        where: { id: bomId },
+        include: { lines: { include: { item: { select: { itemCode: true } } } } },
+      });
       if (!bom) {
         return res.status(400).json({ error: 'BOM not found' });
+      }
+
+      // Validate all BOM components are present with correct quantities
+      const bomComponentMap = new Map(bom.lines.map((l) => [l.itemId, Number(l.quantityPer)]));
+
+      const missing = [];
+      const modified = [];
+      for (const [itemId, expectedQty] of bomComponentMap) {
+        const submitted = components.find((c) => c.itemId === itemId);
+        if (!submitted) {
+          const bomLine = bom.lines.find((l) => l.itemId === itemId);
+          missing.push({ itemId, itemCode: bomLine?.item?.itemCode ?? `ID ${itemId}`, expected: expectedQty });
+        } else if (Math.abs(parseFloat(submitted.quantityPer) - expectedQty) > 0.0001) {
+          const bomLine = bom.lines.find((l) => l.itemId === itemId);
+          modified.push({ itemId, itemCode: bomLine?.item?.itemCode ?? `ID ${itemId}`, expected: expectedQty, submitted: parseFloat(submitted.quantityPer) });
+        }
+      }
+
+      if (missing.length > 0 || modified.length > 0) {
+        return res.status(400).json({
+          error: 'Cannot remove or modify BOM components. Extra components are allowed.',
+          missing,
+          modified,
+        });
+      }
+
+      // Check for extra (non-BOM) components
+      const extraComponents = components.filter((c) => !bomComponentMap.has(c.itemId));
+      if (extraComponents.length > 0) {
+        hasDeviations = true;
+        // Build notes with item codes
+        const extraDescriptions = [];
+        for (const ec of extraComponents) {
+          const item = componentItemMap.get(ec.itemId);
+          extraDescriptions.push(`${item?.itemCode ?? `ID ${ec.itemId}`} (qty: ${ec.quantityPer})`);
+        }
+        deviationNotes = `Extra components added: ${extraDescriptions.join(', ')}`;
       }
     }
 
@@ -145,6 +188,8 @@ router.post(
           location,
           quantityProduced: qtyProduced,
           totalCost,
+          hasDeviations,
+          deviationNotes,
           notes: notes || null,
           createdBy: req.user.id,
         },

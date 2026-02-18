@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+import { AdminAuthDialog } from '@/components/AdminAuthDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -101,6 +102,9 @@ export function CycleCountDetailPage() {
   const [posting, setPosting] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [adminAuthOpen, setAdminAuthOpen] = useState(false);
+  const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
+  const [flaggedInfo, setFlaggedInfo] = useState<{ flaggedCount: number; flaggedLines: Array<{ itemCode: string; variance: number; varianceValue: number }> } | null>(null);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -191,14 +195,35 @@ export function CycleCountDetailPage() {
     }
   }
 
-  async function handlePost() {
+  async function handlePost(adminCredentials?: { username: string; password: string }) {
     if (!cycleCount) return;
     setPosting(true);
     setActionError(null);
+    setAdminAuthError(null);
     try {
-      await api.post<{ message: string }>(`/api/cycle-counts/${id}/post`, {});
+      const headers: Record<string, string> = {};
+      if (adminCredentials) {
+        const encoded = btoa(`${adminCredentials.username}:${adminCredentials.password}`);
+        headers['X-Admin-Authorization'] = `Basic ${encoded}`;
+      }
+      await api.post<{ message: string }>(`/api/cycle-counts/${id}/post`, {}, headers);
+      setAdminAuthOpen(false);
+      setFlaggedInfo(null);
       await loadDetail();
     } catch (err: unknown) {
+      if (err instanceof ApiError && err.data?.requiresApproval) {
+        setFlaggedInfo({
+          flaggedCount: (err.data.flaggedCount as number) ?? 0,
+          flaggedLines: (err.data.flaggedLines as Array<{ itemCode: string; variance: number; varianceValue: number }>) ?? [],
+        });
+        if (adminCredentials) {
+          setAdminAuthError('Invalid admin credentials');
+        } else {
+          setAdminAuthOpen(true);
+        }
+        setPosting(false);
+        return;
+      }
       const message = err instanceof Error ? err.message : 'Failed to post cycle count';
       setActionError(message);
     } finally {
@@ -385,8 +410,13 @@ export function CycleCountDetailPage() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {cycleCount.lines.map((line, idx) => (
-            <TableRow key={line.id} className={varianceColor(line)}>
+          {cycleCount.lines.map((line, idx) => {
+            const rt = isEditable ? getRealtimeVariance(line) : null;
+            const rowLarge = rt ? rt.isLarge : line.isLargeVariance;
+            const rowVariance = rt ? rt.variance : line.variance;
+            const rowBg = rowLarge ? 'bg-red-50' : (rowVariance !== null && rowVariance !== 0) ? 'bg-yellow-50' : '';
+            return (
+            <TableRow key={line.id} className={isEditable ? rowBg : varianceColor(line)}>
               <TableCell className="text-gray-400">{idx + 1}</TableCell>
               <TableCell className="font-mono text-xs">{line.item.itemCode}</TableCell>
               <TableCell className="max-w-[200px] truncate">{line.item.description}</TableCell>
@@ -409,7 +439,6 @@ export function CycleCountDetailPage() {
                 )}
               </TableCell>
               {(() => {
-                const rt = isEditable ? getRealtimeVariance(line) : null;
                 const displayVariance = rt ? rt.variance : line.variance;
                 const displayValue = rt ? rt.varianceValue : line.varianceValue;
                 const displayLarge = rt ? rt.isLarge : line.isLargeVariance;
@@ -442,7 +471,8 @@ export function CycleCountDetailPage() {
                 );
               })()}
             </TableRow>
-          ))}
+            );
+          })}
         </TableBody>
       </Table>
 
@@ -461,6 +491,15 @@ export function CycleCountDetailPage() {
             : '—'}
         </p>
       )}
+
+      <AdminAuthDialog
+        open={adminAuthOpen}
+        onOpenChange={setAdminAuthOpen}
+        description={`${flaggedInfo?.flaggedCount ?? 0} line(s) exceed variance thresholds (>10% or >$500). Admin authorization is required to post this cycle count.`}
+        onAuthorize={(creds) => handlePost(creds)}
+        isSubmitting={posting}
+        error={adminAuthError}
+      />
     </div>
   );
 }

@@ -180,7 +180,6 @@ export function CycleCountsPage() {
 
   // Load reference data for create dialog
   useEffect(() => {
-    if (!isAdmin) return;
     Promise.all([
       api.get<{ users: User[] }>('/api/users'),
       api.get<{ items: Item[] }>('/api/items'),
@@ -190,7 +189,7 @@ export function CycleCountsPage() {
       const cats = [...new Set(iData.items.map((i) => i.category).filter(Boolean))] as string[];
       setCategories(cats.sort());
     }).catch(() => {});
-  }, [isAdmin]);
+  }, []);
 
   async function handleCreate() {
     setCreateError(null);
@@ -263,12 +262,10 @@ export function CycleCountsPage() {
             Physical inventory counts, variance tracking, and adjustments.
           </p>
         </div>
-        {isAdmin && (
-          <Button onClick={() => { resetCreateForm(); setCreateOpen(true); }}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Cycle Count
-          </Button>
-        )}
+        <Button onClick={() => { resetCreateForm(); setCreateOpen(true); }}>
+          <Plus className="mr-2 h-4 w-4" />
+          New Cycle Count
+        </Button>
       </div>
 
       <Tabs defaultValue="counts" onValueChange={(v) => { if (v === 'variance') loadVarianceHistory(); }}>

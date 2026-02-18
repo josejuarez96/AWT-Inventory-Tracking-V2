@@ -316,7 +316,7 @@ async function main() {
   const finishedGoods = await Promise.all([
     prisma.item.upsert({
       where: { itemCode: 'TR-7K-UTIL' },
-      update: { standardCost: 1250.00 },
+      update: { standardCost: 1250.00, itemType: 'FINISHED' },
       create: {
         itemCode: 'TR-7K-UTIL',
         description: '7K Utility Trailer',
@@ -325,11 +325,12 @@ async function main() {
         minQuantity: 0,
         maxQuantity: 5,
         standardCost: 1250.00,
+        itemType: 'FINISHED',
       }
     }),
     prisma.item.upsert({
       where: { itemCode: 'TR-12K-FLAT' },
-      update: { standardCost: 2800.00 },
+      update: { standardCost: 2800.00, itemType: 'FINISHED' },
       create: {
         itemCode: 'TR-12K-FLAT',
         description: '12K Flatbed Trailer',
@@ -338,11 +339,12 @@ async function main() {
         minQuantity: 0,
         maxQuantity: 3,
         standardCost: 2800.00,
+        itemType: 'FINISHED',
       }
     }),
     prisma.item.upsert({
       where: { itemCode: 'TR-14K-DUMP' },
-      update: { standardCost: 4200.00 },
+      update: { standardCost: 4200.00, itemType: 'FINISHED' },
       create: {
         itemCode: 'TR-14K-DUMP',
         description: '14K Dump Trailer',
@@ -351,6 +353,7 @@ async function main() {
         minQuantity: 0,
         maxQuantity: 2,
         standardCost: 4200.00,
+        itemType: 'FINISHED',
       }
     }),
   ]);

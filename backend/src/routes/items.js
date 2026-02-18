@@ -45,6 +45,7 @@ router.get('/', async (req, res) => {
       lastPurchaseCost: true,
       defaultVendorId: true,
       defaultVendor: { select: VENDOR_SELECT },
+      itemType: true,
       ...(showAll && { isActive: true, notes: true, createdAt: true }),
     },
   });
@@ -223,6 +224,7 @@ router.post(
     body('standardCost').optional({ nullable: true }).isFloat({ min: 0 }).withMessage('standardCost must be >= 0'),
     body('defaultVendorId').optional({ nullable: true }).isInt({ gt: 0 }).withMessage('defaultVendorId must be a positive integer'),
     body('notes').optional({ nullable: true }).trim(),
+    body('itemType').optional().isIn(['RAW', 'FINISHED', 'OTHER']).withMessage('itemType must be RAW, FINISHED, or OTHER'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -257,6 +259,7 @@ router.post(
         standardCost: standardCost != null ? parseFloat(standardCost) : null,
         defaultVendorId: defaultVendorId ?? null,
         notes: notes || null,
+        itemType: req.body.itemType || 'RAW',
       },
       include: { defaultVendor: { select: VENDOR_SELECT } },
     });
@@ -282,6 +285,7 @@ router.put(
     body('standardCost').optional({ nullable: true }).isFloat({ min: 0 }).withMessage('standardCost must be >= 0'),
     body('defaultVendorId').optional({ nullable: true }).isInt({ gt: 0 }).withMessage('defaultVendorId must be a positive integer'),
     body('notes').optional({ nullable: true }).trim(),
+    body('itemType').optional().isIn(['RAW', 'FINISHED', 'OTHER']).withMessage('itemType must be RAW, FINISHED, or OTHER'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -323,6 +327,7 @@ router.put(
     if (standardCost !== undefined) data.standardCost = standardCost != null ? parseFloat(standardCost) : null;
     if (defaultVendorId !== undefined) data.defaultVendorId = defaultVendorId;
     if (notes !== undefined) data.notes = notes || null;
+    if (req.body.itemType !== undefined) data.itemType = req.body.itemType;
 
     const updated = await prisma.item.update({
       where: { id },

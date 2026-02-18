@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/select';
 import { MoreHorizontal, Plus, Search, X } from 'lucide-react';
 
-type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; category?: string | null };
+type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; category?: string | null; itemType?: string };
 
 type BomLine = {
   itemId: string;
@@ -243,12 +243,12 @@ export function BOMsPage() {
     }
   }
 
-  // Split items for the finished good selector: FG category first, then others
-  const finishedGoodItems = items.filter((i) => i.category?.toLowerCase() === 'finished goods');
-  const otherItems = items.filter((i) => i.category?.toLowerCase() !== 'finished goods');
+  // Split items by itemType for the finished good selector
+  const finishedGoodItems = items.filter((i) => i.itemType === 'FINISHED');
+  const otherItems = items.filter((i) => i.itemType !== 'FINISHED');
 
-  // Filter items to exclude the currently selected finished good
-  const componentItems = items.filter((i) => String(i.id) !== form.finishedGoodId);
+  // Filter component items to exclude finished goods and the selected finished good
+  const componentItems = items.filter((i) => i.itemType !== 'FINISHED' && String(i.id) !== form.finishedGoodId);
 
   const filtered = boms.filter((bom) => {
     const q = search.toLowerCase();

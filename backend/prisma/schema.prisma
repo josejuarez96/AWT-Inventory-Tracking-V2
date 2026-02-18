@@ -63,6 +63,7 @@ model Item {
   standardCost    Decimal?  @map("standard_cost") @db.Decimal(10, 2)
   lastPurchaseCost Decimal? @map("last_purchase_cost") @db.Decimal(10, 2)
   defaultVendorId Int?      @map("default_vendor_id")
+  itemType        String    @default("RAW") @map("item_type") @db.VarChar(20) // 'RAW', 'FINISHED', 'OTHER'
   isActive        Boolean   @default(true) @map("is_active")
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")
@@ -198,6 +199,8 @@ model ProductionOrder {
   quantityProduced Decimal   @map("quantity_produced") @db.Decimal(10, 2)
   totalCost        Decimal   @map("total_cost") @db.Decimal(12, 2)
   notes            String?
+  hasDeviations    Boolean   @default(false) @map("has_deviations")
+  deviationNotes   String?   @map("deviation_notes")
   createdBy        Int       @map("created_by")
   createdAt        DateTime  @default(now()) @map("created_at")
 

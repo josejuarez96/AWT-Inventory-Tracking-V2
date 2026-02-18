@@ -1,5 +1,6 @@
 const express = require('express');
 const { body, query, validationResult } = require('express-validator');
+const bcrypt = require('bcrypt');
 const prisma = require('../lib/prisma');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
@@ -9,6 +10,27 @@ router.use(authenticate);
 // Variance thresholds — a line is "large" if it exceeds either
 const VARIANCE_THRESHOLD_PCT = 0.10; // 10%
 const VARIANCE_THRESHOLD_VALUE = 500; // $500
+
+async function verifyAdminCredentials(authHeader) {
+  try {
+    if (!authHeader || !authHeader.startsWith('Basic ')) return false;
+    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
+    const colonIdx = decoded.indexOf(':');
+    if (colonIdx < 1) return false;
+    const username = decoded.slice(0, colonIdx);
+    const password = decoded.slice(colonIdx + 1);
+    if (!username || !password) return false;
+
+    const adminUser = await prisma.user.findUnique({
+      where: { username: username.toLowerCase() },
+    });
+    if (!adminUser || !adminUser.isActive || adminUser.role !== 'admin') return false;
+
+    return bcrypt.compare(password, adminUser.passwordHash);
+  } catch {
+    return false;
+  }
+}
 
 function isLargeVariance(systemQty, variance, varianceValue) {
   const sysNum = Number(systemQty);
@@ -20,11 +42,10 @@ function isLargeVariance(systemQty, variance, varianceValue) {
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/cycle-counts — Create a new cycle count (admin only)
+// POST /api/cycle-counts — Create a new cycle count
 // ---------------------------------------------------------------------------
 router.post(
   '/',
-  requireAdmin,
   [
     body('location').isIn(['ADEL', 'CALHOUN']).withMessage('location must be ADEL or CALHOUN'),
     body('itemSelection').isIn(['all', 'category', 'manual']).withMessage('itemSelection must be all, category, or manual'),
@@ -209,9 +230,12 @@ router.get(
     if (status) where.status = status;
     if (location) where.location = location;
 
-    // Non-admin only sees their assigned counts
+    // Non-admin sees counts they are assigned to OR counts they created
     if (req.user.role !== 'admin') {
-      where.assignedTo = req.user.id;
+      where.OR = [
+        { assignedTo: req.user.id },
+        { createdBy: req.user.id },
+      ];
     }
 
     const [cycleCounts, total] = await Promise.all([
@@ -430,8 +454,8 @@ router.get('/:id', async (req, res) => {
     return res.status(404).json({ error: 'Cycle count not found' });
   }
 
-  // Non-admin can only see their assigned counts
-  if (req.user.role !== 'admin' && cycleCount.assignedTo !== req.user.id) {
+  // Non-admin can only see counts they are assigned to or created
+  if (req.user.role !== 'admin' && cycleCount.assignedTo !== req.user.id && cycleCount.createdBy !== req.user.id) {
     return res.status(403).json({ error: 'Not authorized to view this cycle count' });
   }
 
@@ -499,8 +523,8 @@ router.put(
       return res.status(404).json({ error: 'Cycle count not found' });
     }
 
-    // Non-admin can only update their assigned counts
-    if (req.user.role !== 'admin' && cycleCount.assignedTo !== req.user.id) {
+    // Non-admin can only update counts they are assigned to or created
+    if (req.user.role !== 'admin' && cycleCount.assignedTo !== req.user.id && cycleCount.createdBy !== req.user.id) {
       return res.status(403).json({ error: 'Not authorized to update this cycle count' });
     }
 
@@ -612,12 +636,39 @@ router.post('/:id/post', async (req, res) => {
       isLargeVariance(l.systemQty, l.variance, l.varianceValue)
   );
 
-  // Non-admin blocked if any large variances
+  // Non-admin must provide admin authorization for large variances
   if (req.user.role !== 'admin' && largeVarianceLines.length > 0) {
-    return res.status(403).json({
-      error: 'Admin approval required for large variances',
-      largeVarianceCount: largeVarianceLines.length,
-    });
+    const adminAuthHeader = req.headers['x-admin-authorization'];
+    if (!adminAuthHeader) {
+      return res.status(403).json({
+        error: 'Admin authorization required for large variances',
+        requiresApproval: true,
+        flaggedLines: largeVarianceLines.map((l) => ({
+          itemCode: l.item.itemCode,
+          systemQty: Number(l.systemQty),
+          countedQty: l.countedQty !== null ? Number(l.countedQty) : null,
+          variance: Number(l.variance),
+          varianceValue: Number(l.varianceValue),
+        })),
+        flaggedCount: largeVarianceLines.length,
+      });
+    }
+
+    const isValidAdmin = await verifyAdminCredentials(adminAuthHeader);
+    if (!isValidAdmin) {
+      return res.status(403).json({
+        error: 'Invalid admin credentials',
+        requiresApproval: true,
+        flaggedLines: largeVarianceLines.map((l) => ({
+          itemCode: l.item.itemCode,
+          systemQty: Number(l.systemQty),
+          countedQty: l.countedQty !== null ? Number(l.countedQty) : null,
+          variance: Number(l.variance),
+          varianceValue: Number(l.varianceValue),
+        })),
+        flaggedCount: largeVarianceLines.length,
+      });
+    }
   }
 
   // Create adjustment transactions for non-zero variances

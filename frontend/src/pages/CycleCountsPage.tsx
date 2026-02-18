@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '@/lib/api';
+import { api, API_BASE } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -238,7 +238,7 @@ export function CycleCountsPage() {
     if (varLocationFilter) params.set('location', varLocationFilter);
     if (varFrom) params.set('from', varFrom);
     if (varTo) params.set('to', varTo);
-    const url = `http://localhost:3000/api/cycle-counts/variance-history/export?${params}`;
+    const url = `${API_BASE}/api/cycle-counts/variance-history/export?${params}`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     const blob = await res.blob();
     const a = document.createElement('a');

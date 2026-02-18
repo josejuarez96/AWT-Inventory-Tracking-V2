@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, API_BASE } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
@@ -11,8 +11,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Upload, CheckCircle } from 'lucide-react';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
 type PreviewError = { rowNumber: number; field: string; message: string };
 

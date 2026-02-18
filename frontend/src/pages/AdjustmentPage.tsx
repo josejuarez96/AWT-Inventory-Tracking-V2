@@ -15,19 +15,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { CheckCircle } from 'lucide-react';
+import { CheckCircle, ArrowDown, ArrowUp } from 'lucide-react';
+import { Combobox } from '@/components/ui/combobox';
 
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string };
 
 const REASONS = ['Damage', 'Shrinkage', 'Cycle Count', 'Correction', 'Other'] as const;
+
+// Reasons that always reduce inventory
+const DECREASE_REASONS: string[] = ['Damage', 'Shrinkage'];
+// Reasons that could go either way
+const FLEXIBLE_REASONS: string[] = ['Cycle Count', 'Correction', 'Other'];
+
+type AdjustmentDirection = 'decrease' | 'increase';
 
 const schema = z.object({
   itemId: z.string().min(1, 'Item is required'),
   location: z.enum(['ADEL', 'CALHOUN'], { required_error: 'Location is required' }),
   quantity: z.coerce
     .number({ invalid_type_error: 'Must be a number' })
-    .refine((v) => v !== 0, 'Cannot be zero'),
+    .positive('Must be greater than 0'),
   reason: z.enum(REASONS, { required_error: 'Reason is required' }),
+  direction: z.enum(['decrease', 'increase']),
   notes: z.string().optional(),
 });
 
@@ -42,14 +51,27 @@ export function AdjustmentPage() {
     register,
     handleSubmit,
     setValue,
+    watch,
     reset,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       location: 'ADEL',
+      direction: 'decrease',
     },
   });
+
+  const selectedReason = watch('reason');
+  const selectedDirection = watch('direction') as AdjustmentDirection;
+  const watchedQty = watch('quantity');
+
+  // Auto-set direction when reason changes
+  useEffect(() => {
+    if (selectedReason && DECREASE_REASONS.includes(selectedReason)) {
+      setValue('direction', 'decrease');
+    }
+  }, [selectedReason, setValue]);
 
   useEffect(() => {
     api
@@ -58,26 +80,34 @@ export function AdjustmentPage() {
       .catch(() => {});
   }, []);
 
+  const isDecreaseOnly = selectedReason ? DECREASE_REASONS.includes(selectedReason) : false;
+  const isFlexible = selectedReason ? FLEXIBLE_REASONS.includes(selectedReason) : true;
+
   async function onSubmit(values: FormValues) {
     setSubmitError(null);
     setSuccessMessage(null);
     try {
+      // Apply direction: user always enters positive, we negate if decreasing
+      const finalQty = values.direction === 'decrease' ? -Math.abs(values.quantity) : Math.abs(values.quantity);
+
       const data = await api.post<{ transaction: { id: number } }>(
         '/api/transactions/adjustments',
         {
           itemId: parseInt(values.itemId),
           location: values.location,
-          quantity: values.quantity,
+          quantity: finalQty,
           reason: values.reason,
           notes: values.notes || undefined,
         }
       );
-      setSuccessMessage(`Adjustment #${data.transaction.id} recorded successfully.`);
+      const action = values.direction === 'decrease' ? 'removed from' : 'added to';
+      setSuccessMessage(`Adjustment #${data.transaction.id} recorded — ${values.quantity} units ${action} inventory.`);
       const prevLocation = values.location;
       reset({
         itemId: '',
         location: prevLocation,
         quantity: undefined,
+        direction: 'decrease',
         reason: undefined,
         notes: '',
       });
@@ -108,18 +138,17 @@ export function AdjustmentPage() {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <Label htmlFor="itemId">Item <span className="text-red-500">*</span></Label>
-            <Select onValueChange={(v) => setValue('itemId', v)}>
-              <SelectTrigger id="itemId">
-                <SelectValue placeholder="Select item..." />
-              </SelectTrigger>
-              <SelectContent>
-                {items.map((item) => (
-                  <SelectItem key={item.id} value={String(item.id)}>
-                    {item.itemCode} — {item.description}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              options={items.map((item) => ({
+                value: String(item.id),
+                label: `${item.itemCode} — ${item.description}`,
+                searchText: `${item.itemCode} ${item.description}`,
+              }))}
+              value={watch('itemId')}
+              onValueChange={(v) => setValue('itemId', v)}
+              placeholder="Search items..."
+              searchPlaceholder="Type code or description..."
+            />
             {errors.itemId && (
               <p className="text-xs text-red-600">{errors.itemId.message}</p>
             )}
@@ -145,42 +174,89 @@ export function AdjustmentPage() {
           </div>
         </div>
 
-        {/* Row 2: Quantity + Reason */}
+        {/* Row 2: Reason */}
+        <div className="space-y-1">
+          <Label htmlFor="reason">Reason <span className="text-red-500">*</span></Label>
+          <Select onValueChange={(v) => setValue('reason', v as typeof REASONS[number])}>
+            <SelectTrigger id="reason">
+              <SelectValue placeholder="Select reason..." />
+            </SelectTrigger>
+            <SelectContent>
+              {REASONS.map((r) => (
+                <SelectItem key={r} value={r}>{r}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {errors.reason && (
+            <p className="text-xs text-red-600">{errors.reason.message}</p>
+          )}
+        </div>
+
+        {/* Row 3: Direction + Quantity */}
         <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label>Direction <span className="text-red-500">*</span></Label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={`flex-1 flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                  selectedDirection === 'decrease'
+                    ? 'border-red-300 bg-red-50 text-red-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                } ${isDecreaseOnly ? 'opacity-100' : ''}`}
+                onClick={() => setValue('direction', 'decrease')}
+              >
+                <ArrowDown className="h-4 w-4" />
+                Remove from stock
+              </button>
+              <button
+                type="button"
+                className={`flex-1 flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                  selectedDirection === 'increase'
+                    ? 'border-green-300 bg-green-50 text-green-700'
+                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                } ${isDecreaseOnly ? 'opacity-40 cursor-not-allowed' : ''}`}
+                onClick={() => { if (!isDecreaseOnly) setValue('direction', 'increase'); }}
+                disabled={isDecreaseOnly}
+              >
+                <ArrowUp className="h-4 w-4" />
+                Add to stock
+              </button>
+            </div>
+            {isDecreaseOnly && (
+              <p className="text-xs text-gray-500">{selectedReason} always removes inventory.</p>
+            )}
+          </div>
+
           <div className="space-y-1">
             <Label htmlFor="quantity">Quantity <span className="text-red-500">*</span></Label>
             <Input
               id="quantity"
               type="number"
               step="0.01"
-              placeholder="0"
+              min="0.01"
+              placeholder="Enter quantity..."
               {...register('quantity')}
             />
-            <p className="text-xs text-gray-500">
-              Positive = stock increase, Negative = stock decrease
-            </p>
             {errors.quantity && (
               <p className="text-xs text-red-600">{errors.quantity.message}</p>
             )}
           </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="reason">Reason <span className="text-red-500">*</span></Label>
-            <Select onValueChange={(v) => setValue('reason', v as typeof REASONS[number])}>
-              <SelectTrigger id="reason">
-                <SelectValue placeholder="Select reason..." />
-              </SelectTrigger>
-              <SelectContent>
-                {REASONS.map((r) => (
-                  <SelectItem key={r} value={r}>{r}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.reason && (
-              <p className="text-xs text-red-600">{errors.reason.message}</p>
-            )}
-          </div>
         </div>
+
+        {/* Preview of what will happen */}
+        {watchedQty > 0 && selectedReason && (
+          <div className={`rounded-md px-4 py-3 text-sm font-medium ${
+            selectedDirection === 'decrease'
+              ? 'bg-red-50 text-red-800 border border-red-200'
+              : 'bg-green-50 text-green-800 border border-green-200'
+          }`}>
+            {selectedDirection === 'decrease'
+              ? `This will REMOVE ${watchedQty} units from inventory (${selectedReason})`
+              : `This will ADD ${watchedQty} units to inventory (${selectedReason})`
+            }
+          </div>
+        )}
 
         {/* Notes */}
         <div className="space-y-1">

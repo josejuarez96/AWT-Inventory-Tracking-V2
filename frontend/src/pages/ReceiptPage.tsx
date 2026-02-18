@@ -25,9 +25,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { AlertTriangle, CheckCircle, Plus, X } from 'lucide-react';
+import { Combobox } from '@/components/ui/combobox';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
-type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string };
+type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; lastPurchaseCost: number | null };
 
 const lineItemSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -94,6 +95,15 @@ export function ReceiptPage() {
     loadData();
   }, []);
 
+  // Preload last paid prices from items data
+  useEffect(() => {
+    const priceMap: Record<number, number | null> = {};
+    for (const item of items) {
+      priceMap[item.id] = item.lastPurchaseCost;
+    }
+    setLastPaidPrices((prev) => ({ ...prev, ...priceMap }));
+  }, [items]);
+
   // Compute line totals and receipt total
   const watchedLines = watch('lineItems');
   const lineTotals = watchedLines.map((li) => {
@@ -115,6 +125,13 @@ export function ReceiptPage() {
     const delta = Math.abs((cost - lastPaid) / lastPaid);
     if (delta <= 0.1) return null;
     return { delta, lastPaid };
+  }
+
+  function getLastPaid(index: number) {
+    const li = watchedLines[index];
+    if (!li?.itemId) return null;
+    const itemId = parseInt(li.itemId);
+    return lastPaidPrices[itemId] ?? null;
   }
 
   async function onSubmit(values: ReceiptFormValues) {
@@ -186,18 +203,17 @@ export function ReceiptPage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <Label>Vendor <span className="text-red-500">*</span></Label>
-              <Select onValueChange={(v) => setValue('vendorId', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select vendor..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {vendors.map((v) => (
-                    <SelectItem key={v.id} value={String(v.id)}>
-                      {v.vendorName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={vendors.map((v) => ({
+                  value: String(v.id),
+                  label: v.vendorName,
+                  searchText: `${v.vendorCode} ${v.vendorName}`,
+                }))}
+                value={watch('vendorId')}
+                onValueChange={(v) => setValue('vendorId', v)}
+                placeholder="Search vendors..."
+                searchPlaceholder="Type to search vendors..."
+              />
               {errors.vendorId && (
                 <p className="text-xs text-red-600">{errors.vendorId.message}</p>
               )}
@@ -284,18 +300,18 @@ export function ReceiptPage() {
                     <TableRow key={field.id} className={variance ? 'border-b-0' : undefined}>
                       <TableCell className="text-gray-400 text-sm">{index + 1}</TableCell>
                       <TableCell>
-                        <Select onValueChange={(v) => setValue(`lineItems.${index}.itemId`, v)}>
-                          <SelectTrigger className="h-9">
-                            <SelectValue placeholder="Select item..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {items.map((item) => (
-                              <SelectItem key={item.id} value={String(item.id)}>
-                                {item.itemCode} — {item.description}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Combobox
+                          options={items.map((item) => ({
+                            value: String(item.id),
+                            label: `${item.itemCode} — ${item.description}`,
+                            searchText: `${item.itemCode} ${item.description} ${item.category ?? ''}`,
+                          }))}
+                          value={watchedLines[index]?.itemId}
+                          onValueChange={(v) => setValue(`lineItems.${index}.itemId`, v)}
+                          placeholder="Search items..."
+                          searchPlaceholder="Type code or description..."
+                          triggerClassName="h-9"
+                        />
                         {errors.lineItems?.[index]?.itemId && (
                           <p className="text-xs text-red-600 mt-0.5">{errors.lineItems[index].itemId?.message}</p>
                         )}
@@ -322,6 +338,12 @@ export function ReceiptPage() {
                           className="h-9"
                           {...register(`lineItems.${index}.unitCost`)}
                         />
+                        {(() => {
+                          const lp = getLastPaid(index);
+                          return lp !== null ? (
+                            <p className="text-xs text-gray-500 mt-0.5">Last paid: {formatCurrency(lp)}</p>
+                          ) : null;
+                        })()}
                         {errors.lineItems?.[index]?.unitCost && (
                           <p className="text-xs text-red-600 mt-0.5">{errors.lineItems[index].unitCost?.message}</p>
                         )}

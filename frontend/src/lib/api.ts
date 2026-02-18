@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env['VITE_API_URL'] as string | undefined) ?? 'http://localhost:3000';
+export const API_BASE = (import.meta.env['VITE_API_URL'] as string | undefined) ?? 'http://localhost:3000';
 const TOKEN_KEY = 'awt_token';
 
 type RequestOptions = {

@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { CheckCircle, AlertTriangle } from 'lucide-react';
+import { Combobox } from '@/components/ui/combobox';
 
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string };
 type StockPosition = {
@@ -163,18 +164,17 @@ export function TransferPage() {
         {/* Row 1: Item */}
         <div className="space-y-1">
           <Label htmlFor="itemId">Item <span className="text-red-500">*</span></Label>
-          <Select onValueChange={(v) => setValue('itemId', v)}>
-            <SelectTrigger id="itemId">
-              <SelectValue placeholder="Select item..." />
-            </SelectTrigger>
-            <SelectContent>
-              {items.map((item) => (
-                <SelectItem key={item.id} value={String(item.id)}>
-                  {item.itemCode} — {item.description}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            options={items.map((item) => ({
+              value: String(item.id),
+              label: `${item.itemCode} — ${item.description}`,
+              searchText: `${item.itemCode} ${item.description}`,
+            }))}
+            value={watch('itemId')}
+            onValueChange={(v) => setValue('itemId', v)}
+            placeholder="Search items..."
+            searchPlaceholder="Type code or description..."
+          />
           {errors.itemId && (
             <p className="text-xs text-red-600">{errors.itemId.message}</p>
           )}

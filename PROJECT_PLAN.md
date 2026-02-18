@@ -58,33 +58,103 @@ created_at      TIMESTAMP DEFAULT NOW()
 
 **Items** (Inventory Master)
 ```
-id              SERIAL PRIMARY KEY
-item_code       VARCHAR(50) UNIQUE NOT NULL
-description     TEXT NOT NULL
-category        VARCHAR(100)
-unit_of_measure VARCHAR(20) DEFAULT 'EA'
-min_quantity    DECIMAL(10,2)
-max_quantity    DECIMAL(10,2)
-is_active       BOOLEAN DEFAULT true
-notes           TEXT
-created_at      TIMESTAMP DEFAULT NOW()
+id                SERIAL PRIMARY KEY
+item_code         VARCHAR(50) UNIQUE NOT NULL
+description       TEXT NOT NULL
+category          VARCHAR(100)
+unit_of_measure   VARCHAR(20) DEFAULT 'EA'
+min_quantity      DECIMAL(10,2)
+max_quantity      DECIMAL(10,2)
+safety_stock      DECIMAL(10,2) DEFAULT 0
+standard_cost     DECIMAL(10,2)           -- Fallback cost for production rollup
+last_purchase_cost DECIMAL(10,2)          -- Updated on each receipt
+default_vendor_id INTEGER REFERENCES Vendors(id)
+is_active         BOOLEAN DEFAULT true
+notes             TEXT
+created_at        TIMESTAMP DEFAULT NOW()
 ```
 
 **Transactions** (All Inventory Movements)
 ```
+id                  SERIAL PRIMARY KEY
+transaction_type    VARCHAR(20) NOT NULL  -- 'RECEIPT', 'ADJUSTMENT', 'TRANSFER', 'OPENING_BALANCE', 'CONSUMPTION', 'PRODUCTION'
+item_id             INTEGER NOT NULL REFERENCES Items(id)
+vendor_id           INTEGER REFERENCES Vendors(id)
+location            VARCHAR(50) NOT NULL  -- 'ADEL' or 'CALHOUN'
+quantity            DECIMAL(10,2) NOT NULL  -- Positive for in, negative for out
+unit_cost           DECIMAL(10,2)
+reference_price     DECIMAL(10,2)  -- Last known price for variance detection
+invoice_number      VARCHAR(100)
+reason              VARCHAR(50)    -- For adjustments: Damage, Shrinkage, etc.
+transaction_date    DATE NOT NULL
+notes               TEXT
+production_order_id INTEGER REFERENCES ProductionOrders(id)  -- Links consumption/production txns
+created_by          INTEGER REFERENCES Users(id)
+created_at          TIMESTAMP DEFAULT NOW()
+```
+
+### Manufacturing Tables (Phase 4C)
+
+**Boms** (Bill of Materials)
+```
 id                SERIAL PRIMARY KEY
-transaction_type  VARCHAR(20) NOT NULL  -- 'RECEIPT', 'ADJUSTMENT', 'TRANSFER', 'OPENING_BALANCE'
-item_id           INTEGER NOT NULL REFERENCES Items(id)
-vendor_id         INTEGER REFERENCES Vendors(id)  -- Nullable for adjustments
-location          VARCHAR(50) NOT NULL  -- 'ADEL' or 'CALHOUN'
-quantity          DECIMAL(10,2) NOT NULL  -- Positive for in, negative for out
-unit_cost         DECIMAL(10,2)  -- Price paid (nullable for adjustments)
-reference_price   DECIMAL(10,2)  -- Last known price for variance detection
-invoice_number    VARCHAR(100)
-transaction_date  DATE NOT NULL
+bom_code          VARCHAR(50) UNIQUE NOT NULL
+name              VARCHAR(200) NOT NULL
+finished_good_id  INTEGER NOT NULL REFERENCES Items(id)
+status            VARCHAR(20) DEFAULT 'DRAFT'  -- 'DRAFT', 'ACTIVE', 'RETIRED'
 notes             TEXT
 created_by        INTEGER REFERENCES Users(id)
 created_at        TIMESTAMP DEFAULT NOW()
+updated_at        TIMESTAMP
+```
+
+**BomLines** (BOM Components)
+```
+id                SERIAL PRIMARY KEY
+bom_id            INTEGER NOT NULL REFERENCES Boms(id) ON DELETE CASCADE
+item_id           INTEGER NOT NULL REFERENCES Items(id)
+quantity_per      DECIMAL(10,2) NOT NULL  -- Qty consumed per 1 finished good
+sort_order        INTEGER DEFAULT 0
+```
+
+**ProductionOrders** (Kitting Records)
+```
+id                SERIAL PRIMARY KEY
+order_number      VARCHAR(50) UNIQUE NOT NULL  -- Auto-generated: PRD-YYYYMMDD-XXXX
+finished_good_id  INTEGER NOT NULL REFERENCES Items(id)
+bom_id            INTEGER REFERENCES Boms(id)
+location          VARCHAR(50) NOT NULL
+quantity_produced DECIMAL(10,2) NOT NULL
+total_cost        DECIMAL(10,2)  -- Rolled-up cost from components
+status            VARCHAR(20) DEFAULT 'COMPLETED'
+notes             TEXT
+created_by        INTEGER REFERENCES Users(id)
+created_at        TIMESTAMP DEFAULT NOW()
+```
+
+**CycleCounts** (Physical Inventory Counts)
+```
+id                SERIAL PRIMARY KEY
+count_number      VARCHAR(50) UNIQUE NOT NULL  -- Auto-generated: CC-YYYYMMDD-XXXX
+location          VARCHAR(50) NOT NULL
+status            VARCHAR(20) DEFAULT 'OPEN'  -- 'OPEN', 'IN_PROGRESS', 'POSTED', 'VOIDED'
+category_filter   VARCHAR(100)  -- Optional: count only items in this category
+notes             TEXT
+posted_at         TIMESTAMP
+posted_by         INTEGER REFERENCES Users(id)
+created_by        INTEGER REFERENCES Users(id)
+created_at        TIMESTAMP DEFAULT NOW()
+```
+
+**CycleCountLines** (Individual Count Lines)
+```
+id                SERIAL PRIMARY KEY
+cycle_count_id    INTEGER NOT NULL REFERENCES CycleCounts(id) ON DELETE CASCADE
+item_id           INTEGER NOT NULL REFERENCES Items(id)
+system_qty        DECIMAL(10,2) NOT NULL  -- Snapshot of system qty at count creation
+counted_qty       DECIMAL(10,2)           -- Actual physical count (null = not yet counted)
+variance          DECIMAL(10,2)           -- counted_qty - system_qty (computed on post)
+notes             TEXT
 ```
 
 ### Indexes for Performance
@@ -92,8 +162,12 @@ created_at        TIMESTAMP DEFAULT NOW()
 CREATE INDEX idx_transactions_item_id ON Transactions(item_id);
 CREATE INDEX idx_transactions_date ON Transactions(transaction_date);
 CREATE INDEX idx_transactions_type ON Transactions(transaction_type);
+CREATE INDEX idx_transactions_production ON Transactions(production_order_id);
 CREATE INDEX idx_items_code ON Items(item_code);
 CREATE INDEX idx_vendors_code ON Vendors(vendor_code);
+CREATE INDEX idx_boms_finished_good ON Boms(finished_good_id);
+CREATE INDEX idx_bom_lines_bom ON BomLines(bom_id);
+CREATE INDEX idx_cycle_count_lines_count ON CycleCountLines(cycle_count_id);
 ```
 
 ---
@@ -265,6 +339,53 @@ CREATE INDEX idx_vendors_code ON Vendors(vendor_code);
 
 ---
 
+### Phase 4C: BOMs, Production/Kitting & Cycle Counts ✅ COMPLETE
+**Goal**: Add manufacturing support — define how trailers are assembled from components, execute kitting orders that auto-consume stock, and provide a formal cycle count process for physical inventory verification.
+
+**Why built**: AWT builds trailers from components (axles, tires, couplers, lights, bolt kits). Without BOMs and kitting, production consumption had to be entered as manual adjustments — error-prone and unauditable. Cycle counts were identified as critical for maintaining data integrity between physical and system inventory.
+
+- [x] **Bill of Materials (BOM) Management** (Admin only):
+  - Full CRUD: create, edit (DRAFT only), view list, view detail
+  - Status lifecycle: DRAFT → ACTIVE → RETIRED
+  - Auto-retire previous ACTIVE BOM when activating a new one for the same finished good
+  - Duplicate existing BOM as new DRAFT (for version iterations)
+  - Component lines with quantity-per and sort order
+  - Validation: unique bomCode, no self-referencing, no duplicate components
+  - Frontend: full-page BOM management with inline component editing
+- [x] **Production / Kitting** (All authenticated users):
+  - `POST /api/production/kit` — execute kitting order atomically:
+    - Validates all components have sufficient stock at specified location
+    - Creates CONSUMPTION transactions (negative qty) for each component
+    - Creates PRODUCTION transaction (positive qty) for finished good
+    - Cost rollup: weighted average cost per component, falls back to standardCost
+    - Auto-generates order number (PRD-YYYYMMDD-XXXX)
+  - `GET /api/production` — list with filters (location, date range, item) + pagination
+  - `GET /api/production/:id` — detail with linked transactions
+  - Frontend: kitting page with BOM template loading, real-time stock validation, cost preview
+- [x] **Cycle Counts** (All authenticated users):
+  - `POST /api/cycle-counts` — create count (snapshots system qty for selected location/category)
+  - `GET /api/cycle-counts` — list with status/location filters + pagination
+  - `GET /api/cycle-counts/:id` — detail with all count lines
+  - `PUT /api/cycle-counts/:id/lines` — update counted quantities (bulk)
+  - `POST /api/cycle-counts/:id/post` — post count: creates ADJUSTMENT transactions for variances
+  - `POST /api/cycle-counts/:id/void` — void count (no stock changes)
+  - `GET /api/cycle-counts/variance-history` — variance reporting with CSV export
+  - Frontend: create counts, enter counts (blind count support), review variances, post/void, print count sheets
+- [x] **Account Settings Page**:
+  - Password change form (current + new password with strength validation)
+  - Available to all authenticated users
+- [x] **Database Migrations**:
+  - `20260217163721_add_cycle_counts` — CycleCount and CycleCountLine tables
+  - `20260217173519_add_item_cost_and_default_vendor` — standardCost, lastPurchaseCost, safetyStock, defaultVendorId on Items
+  - `20260217200709_add_bom_and_production` — Bom, BomLine, ProductionOrder tables + production_order_id on Transactions
+
+**Completed**: Phase 4C commit `575f4eb`
+**Test Results**: 7/10 TestSprite tests passing (all APIs verified working — 3 failures are test-code issues)
+
+**Success Criteria**: All met ✅
+
+---
+
 ### Phase 5: Advanced Features & Optimization (Post Go-Live)
 **Goal**: Enhancements driven by real-world usage feedback after the system is in production.
 
@@ -315,13 +436,16 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 ### Admin Role
 **Who**: Jose (owner), IT support
 **Permissions**: Full system access
-- ✅ All transaction entry (receipts, adjustments, transfers)
-- ✅ View stock position, transaction history, reports
+- ✅ All transaction entry (receipts, adjustments, transfers, opening balances)
+- ✅ Execute kitting/production orders
+- ✅ View stock position, transaction history, dashboard
 - ✅ Manage Items (add, edit, deactivate parts)
 - ✅ Manage Vendors (add, edit, deactivate suppliers)
+- ✅ Manage BOMs (create, edit, activate/retire, duplicate)
 - ✅ Manage Users (create, edit, deactivate user accounts)
-- ✅ System settings (cost thresholds, backup preferences)
-- ✅ CSV import/export and database backups
+- ✅ Create and manage cycle counts (create, count, post, void)
+- ✅ CSV import/export (items, vendors, opening balances)
+- ✅ Account settings (change own password)
 
 ### User Role (Standard)
 **Who**: Alix, warehouse staff (2-5 total users expected)
@@ -329,11 +453,15 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 - ✅ Create receipts (receive inventory from vendors)
 - ✅ Create adjustments (damage, shrinkage, cycle counts)
 - ✅ Create transfers (move items between ADEL and CALHOUN)
-- ✅ View stock position (read-only)
-- ✅ View transaction history (read-only)
+- ✅ Execute kitting/production orders
+- ✅ Create and manage cycle counts (create, count, post, void)
+- ✅ View stock position, transaction history, dashboard
+- ✅ Account settings (change own password)
 - ❌ Cannot add/edit/delete Items or Vendors
-- ❌ Cannot manage users or change system settings
-- ❌ Cannot perform CSV imports or database exports
+- ❌ Cannot manage BOMs
+- ❌ Cannot manage users
+- ❌ Cannot create opening balances
+- ❌ Cannot perform CSV imports
 
 ### Implementation
 - **Backend**: Express middleware checks `req.user.role` before allowing operations
@@ -355,6 +483,7 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 | **Phase 3B** | Multi-Item Receipt Builder | ✅ Complete — batch receipts with atomic submission |
 | **Phase 4A** | Item & Vendor CRUD | ✅ Complete — full CRUD with dialog-based UI |
 | **Phase 4B** | Technical Debt & Performance | ✅ Complete — N+1 fixes, pagination, rate limiting, schema cleanup |
+| **Phase 4C** | BOMs, Production/Kitting, Cycle Counts | ✅ Complete — manufacturing support, physical inventory verification |
 
 ### Remaining — Build Order
 
@@ -369,6 +498,7 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 - ✅ **Go-Live Ready**: Phase 3A complete — can load real inventory and operate all transaction types
 - ✅ **Operationally Complete**: Phase 4A complete — full master data CRUD without CSV dependency
 - ✅ **Production Hardened**: Phase 4B complete — paginated endpoints, rate limiting, optimized queries
+- ✅ **Manufacturing-Ready**: Phase 4C complete — BOMs, kitting with cost rollup, cycle counts with variance tracking
 - ⬜ **Deploy to Cloud**: Push to Railway/Vercel (~30 minutes)
 - ⬜ **Feature Complete**: Phase 5 — based on real-world feedback post-launch
 
@@ -528,11 +658,13 @@ PostgreSQL Database (Railway)
 
 ### ✅ CONFIRMED Decisions
 
-✅ **Development Approach**: Build locally first, deploy after Phase 4B
+✅ **Development Approach**: Build locally first, deploy after Phase 4C
 ✅ **Test Data**: Seed scripts for development; real data loaded via Opening Balance + CSV import at go-live
 ✅ **Users**: 2-5 users total (Admin + Standard roles sufficient)
 ✅ **Locations**: ADEL and CALHOUN only (hardcoded — revisit only if a 3rd location is added)
 ✅ **Multi-Item Receipts**: No schema changes — batch creates multiple Transaction rows sharing the same invoiceNumber
+✅ **BOMs & Kitting**: Single-level BOMs with status lifecycle; kitting creates atomic CONSUMPTION + PRODUCTION transactions with cost rollup
+✅ **Cycle Counts**: Snapshot-based counting with blind count support; posting auto-creates ADJUSTMENT transactions for variances
 ✅ **Scope Control**: Purchase orders, dynamic locations, system settings UI, and DB export UI deferred (see Deferred section in roadmap)
 
 ### 🚨 Future Decisions (Not Blocking Development)

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '@/lib/api';
+import { useAuthContext } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,7 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { AlertTriangle, CheckCircle, Plus, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Plus, X, Clock } from 'lucide-react';
 import { Combobox } from '@/components/ui/combobox';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
@@ -47,7 +48,40 @@ const receiptSchema = z.object({
 
 type ReceiptFormValues = z.infer<typeof receiptSchema>;
 
+// ---------------------------------------------------------------------------
+// Date validation helpers
+// ---------------------------------------------------------------------------
+const WARN_DAYS = 7;
+const MAX_DAYS = 30;
+
+function toLocalDateStr(d: Date) {
+  return d.toISOString().split('T')[0];
+}
+
+/** How many days ago is this date string (negative = future)? */
+function daysAgo(dateStr: string): number {
+  const d = new Date(dateStr + 'T00:00:00');
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+}
+
+type DateStatus = 'ok' | 'warn' | 'blocked-role' | 'blocked-hard' | 'future';
+
+function getDateStatus(dateStr: string, isAdmin: boolean): DateStatus {
+  if (!dateStr) return 'ok';
+  const age = daysAgo(dateStr);
+  if (age < 0) return 'future';
+  if (age > MAX_DAYS) return 'blocked-hard';
+  if (age > WARN_DAYS && !isAdmin) return 'blocked-role';
+  if (age > WARN_DAYS && isAdmin) return 'warn';
+  return 'ok';
+}
+
 export function ReceiptPage() {
+  const { user } = useAuthContext();
+  const isAdmin = user?.role === 'admin';
+
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [lastPaidPrices, setLastPaidPrices] = useState<Record<number, number | null>>({});
@@ -103,6 +137,12 @@ export function ReceiptPage() {
     }
     setLastPaidPrices((prev) => ({ ...prev, ...priceMap }));
   }, [items]);
+
+  // Date validation
+  const watchedDate = watch('transactionDate');
+  const dateStatus = useMemo(() => getDateStatus(watchedDate, isAdmin), [watchedDate, isAdmin]);
+  const todayStr = toLocalDateStr(new Date());
+  const dateBlocked = dateStatus === 'future' || dateStatus === 'blocked-hard' || dateStatus === 'blocked-role';
 
   // Compute line totals and receipt total
   const watchedLines = watch('lineItems');
@@ -243,9 +283,28 @@ export function ReceiptPage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
               <Label>Date <span className="text-red-500">*</span></Label>
-              <Input type="date" {...register('transactionDate')} />
+              <Input type="date" max={todayStr} {...register('transactionDate')} />
               {errors.transactionDate && (
                 <p className="text-xs text-red-600">{errors.transactionDate.message}</p>
+              )}
+              {dateStatus === 'future' && (
+                <p className="text-xs text-red-600">Future dates are not allowed.</p>
+              )}
+              {dateStatus === 'blocked-hard' && (
+                <p className="text-xs text-red-600">Cannot post receipts older than {MAX_DAYS} days.</p>
+              )}
+              {dateStatus === 'blocked-role' && (
+                <p className="text-xs text-red-600">
+                  Dates older than {WARN_DAYS} days require an admin. Contact your administrator.
+                </p>
+              )}
+              {dateStatus === 'warn' && (
+                <div className="flex items-center gap-1 mt-1">
+                  <Clock className="h-3 w-3 text-amber-500" />
+                  <p className="text-xs text-amber-600">
+                    This date is over {WARN_DAYS} days ago. Verify this is correct before saving.
+                  </p>
+                </div>
               )}
             </div>
 
@@ -403,7 +462,7 @@ export function ReceiptPage() {
         )}
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={isSubmitting}>
+          <Button type="submit" disabled={isSubmitting || dateBlocked}>
             {isSubmitting
               ? 'Saving...'
               : `Save Receipt (${fields.length} item${fields.length !== 1 ? 's' : ''})`

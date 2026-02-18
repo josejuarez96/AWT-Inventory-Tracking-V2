@@ -11,6 +11,44 @@ const upload = multer({ storage: multer.memoryStorage() });
 router.use(authenticate);
 
 // ---------------------------------------------------------------------------
+// Date validation helper — role-based backdate rules
+//   Anyone:       0–7 days back = OK
+//   Standard user: 8+ days back  = BLOCKED
+//   Admin:        8–30 days back = OK (frontend shows warning)
+//   Everyone:     31+ days back  = BLOCKED
+//   Everyone:     future         = BLOCKED
+// ---------------------------------------------------------------------------
+const WARN_BACKDATE_DAYS = 7;
+const MAX_BACKDATE_DAYS = 30;
+
+function validateTransactionDate(dateStr, userRole) {
+  const txDate = new Date(dateStr);
+  const today = new Date();
+  today.setHours(23, 59, 59, 999); // end of today
+  if (txDate > today) {
+    return 'Transaction date cannot be in the future';
+  }
+
+  const hardCutoff = new Date();
+  hardCutoff.setDate(hardCutoff.getDate() - MAX_BACKDATE_DAYS);
+  hardCutoff.setHours(0, 0, 0, 0);
+  if (txDate < hardCutoff) {
+    return `Transaction date cannot be more than ${MAX_BACKDATE_DAYS} days in the past`;
+  }
+
+  if (userRole !== 'admin') {
+    const userCutoff = new Date();
+    userCutoff.setDate(userCutoff.getDate() - WARN_BACKDATE_DAYS);
+    userCutoff.setHours(0, 0, 0, 0);
+    if (txDate < userCutoff) {
+      return `Dates older than ${WARN_BACKDATE_DAYS} days require admin approval. Contact your administrator.`;
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/transactions/receipts — create a RECEIPT transaction
 // ---------------------------------------------------------------------------
 router.post(
@@ -32,6 +70,12 @@ router.post(
     }
 
     const { itemId, vendorId, location, quantity, unitCost, transactionDate, invoiceNumber, notes } = req.body;
+
+    // Enforce date window
+    const dateError = validateTransactionDate(transactionDate, req.user.role);
+    if (dateError) {
+      return res.status(400).json({ error: dateError });
+    }
 
     const item = await prisma.item.findUnique({ where: { id: itemId } });
     if (!item || !item.isActive) {
@@ -125,6 +169,12 @@ router.post(
     }
 
     const { vendorId, location, transactionDate, invoiceNumber, notes, lineItems } = req.body;
+
+    // Enforce date window
+    const dateError = validateTransactionDate(transactionDate, req.user.role);
+    if (dateError) {
+      return res.status(400).json({ error: dateError });
+    }
 
     // Validate vendor
     const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });

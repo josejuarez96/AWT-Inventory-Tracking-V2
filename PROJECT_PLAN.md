@@ -436,6 +436,40 @@ CREATE INDEX idx_cycle_count_lines_count ON CycleCountLines(cycle_count_id);
 
 ---
 
+### Phase 4E: UX Audit Fixes (P1 + P2) ✅ COMPLETE
+**Goal**: Address high and medium priority findings from a comprehensive UX audit — server-side filtering, confirmation dialogs, dirty form guards, UI consistency, and shared utilities.
+
+- [x] **Server-side Category Filtering** (HIGH-1):
+  - New `GET /api/items/categories` endpoint for distinct active categories
+  - Added `category` query param to stock-position endpoint
+  - StockPositionPage now filters server-side instead of client-side on paginated data
+- [x] **Transaction Confirmation Dialogs** (HIGH-2):
+  - New reusable `ConfirmDialog` component built on existing Radix Dialog
+  - ReceiptPage: confirmation with vendor, location, item count, total, invoice summary
+  - AdjustmentPage: confirmation with item, direction, quantity, reason; destructive variant for removals
+  - KittingPage: confirmation with finished good, BOM, quantity, location, component count, cost estimate
+- [x] **Dirty Form Navigation Warning** (HIGH-3):
+  - ReceiptPage and KittingPage warn on browser close/refresh via `beforeunload` when form has unsaved changes
+  - Note: in-app navigation blocking requires `createBrowserRouter` migration (out of scope)
+- [x] **BOM Status Filter** (MED-4):
+  - Added status dropdown (All/Draft/Active/Retired) to BOMsPage
+  - Leverages existing backend `?status=` param that wasn't being used
+- [x] **Shadcn Select on UsersPage** (MED-1):
+  - Replaced raw HTML `<select>` elements with Shadcn Select in create and edit dialogs
+- [x] **Deactivation/Status Confirmations** (MED-2):
+  - ItemsPage: confirm before deactivating/activating items
+  - UsersPage: confirm before deactivating/activating users with name displayed
+  - BOMsPage: confirm status transitions; extra warning for Active→Retired ("cannot be used for kitting")
+- [x] **Shared Currency Formatting** (LOW-4):
+  - `formatCurrency()` utility in `utils.ts` replaces 7 inline definitions across the app
+  - Consistent `$X,XXX.XX` format with null handling
+
+**Files modified**: 15 (2 backend, 1 new component, 12 frontend pages)
+
+**Success Criteria**: All met ✅
+
+---
+
 ### Phase 5: Advanced Features & Optimization (Post Go-Live)
 **Goal**: Enhancements driven by real-world usage feedback after the system is in production.
 
@@ -445,11 +479,11 @@ CREATE INDEX idx_cycle_count_lines_count ON CycleCountLines(cycle_count_id);
   - Touch-optimized UI for warehouse iPads/phones
   - Larger touch targets, simplified navigation
   - Receipt entry optimized for tablet in receiving dock
-- [ ] **Reporting & Export**:
-  - CSV/PDF export of stock position, transaction history
-  - "Spend by Vendor" report (monthly, yearly)
-  - "Cost Variance Report" (items with frequent price changes)
-  - "Inventory Value Over Time" chart
+- [ ] **Reporting & Export for QuickBooks Alignment**:
+  - Export current inventory valuation to align with QuickBooks.
+  - Export logs of scrapped or damaged items to ensure they are properly recorded as expenses in QuickBooks.
+  - "Spend by Vendor" report (monthly, yearly).
+  - "Inventory Value Over Time" chart.
 - [ ] **Barcode Scanning**:
   - Use device camera or USB scanner for item lookup
   - Quick-add to receipt builder by scanning item codes
@@ -536,6 +570,7 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 | **Phase 4C** | BOMs, Production/Kitting, Cycle Counts | ✅ Complete — manufacturing support, physical inventory verification |
 | **Phase 4C-fixes** | UX Fixes from Alix Testing | ✅ Complete — 8 fixes from standard user testing |
 | **Phase 4D** | Role Permissions, Item Types, Admin Auth, Kitting Guardrails | ✅ Complete — hardened permissions, item classification, admin override flow |
+| **Phase 4E** | UX Audit Fixes (P1 + P2) | ✅ Complete — server-side filtering, confirmation dialogs, dirty form guards, UI consistency |
 
 ### Remaining — Build Order
 
@@ -552,6 +587,7 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 - ✅ **Production Hardened**: Phase 4B complete — paginated endpoints, rate limiting, optimized queries
 - ✅ **Manufacturing-Ready**: Phase 4C complete — BOMs, kitting with cost rollup, cycle counts with variance tracking
 - ✅ **User-Tested & Hardened**: Phase 4D complete — role permissions, item types, admin auth popup, kitting guardrails
+- ✅ **UX Audit Hardened**: Phase 4E complete — confirmation dialogs, server-side filtering, dirty form guards, UI consistency
 - ⬜ **Deploy to Cloud**: Push to Railway/Vercel (~30 minutes)
 - ⬜ **Feature Complete**: Phase 5 — based on real-world feedback post-launch
 

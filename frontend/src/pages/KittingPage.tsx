@@ -3,11 +3,13 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api, ApiError } from '@/lib/api';
+import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -98,8 +100,23 @@ export function KittingPage() {
     watch,
     setValue,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = form;
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingValues, setPendingValues] = useState<KittingFormValues | null>(null);
+
+  // Warn before browser close/refresh if form is dirty
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   const watchedLocation = watch('location');
   const watchedComponents = watch('components');
@@ -223,19 +240,26 @@ export function KittingPage() {
   const unitCost = watchedQtyProduced > 0 ? totalCost / watchedQtyProduced : 0;
   const hasInsufficientStock = insufficientLines.length > 0;
 
-  async function onSubmit(values: KittingFormValues) {
+  function onFormValid(values: KittingFormValues) {
+    setPendingValues(values);
+    setConfirmOpen(true);
+  }
+
+  async function onConfirmed() {
+    if (!pendingValues) return;
+    setConfirmOpen(false);
     setSubmitError(null);
     setSuccessMessage(null);
     try {
       const data = await api.post<{
         order: { orderNumber: string; totalCost: number; quantityProduced: number };
       }>('/api/production/kit', {
-        bomId: values.bomId ? parseInt(values.bomId) : undefined,
-        finishedGoodId: parseInt(values.finishedGoodId),
-        location: values.location,
-        quantityProduced: values.quantityProduced,
-        notes: values.notes || undefined,
-        components: values.components.map((c) => ({
+        bomId: pendingValues.bomId ? parseInt(pendingValues.bomId) : undefined,
+        finishedGoodId: parseInt(pendingValues.finishedGoodId),
+        location: pendingValues.location,
+        quantityProduced: pendingValues.quantityProduced,
+        notes: pendingValues.notes || undefined,
+        components: pendingValues.components.map((c) => ({
           itemId: parseInt(c.itemId),
           quantityPer: c.quantityPer,
         })),
@@ -243,10 +267,10 @@ export function KittingPage() {
 
       setSuccessMessage(
         `Kitting order ${data.order.orderNumber} created successfully. ` +
-        `Produced ${data.order.quantityProduced} unit(s), total cost $${Number(data.order.totalCost).toFixed(2)}.`
+        `Produced ${data.order.quantityProduced} unit(s), total cost ${formatCurrency(Number(data.order.totalCost))}.`
       );
 
-      const prevLocation = values.location;
+      const prevLocation = pendingValues.location;
       reset({
         bomId: '',
         finishedGoodId: '',
@@ -255,6 +279,7 @@ export function KittingPage() {
         notes: '',
         components: [{ itemId: '', quantityPer: undefined as unknown as number, fromBom: false }],
       });
+      setPendingValues(null);
 
       // Refresh stock after production
       void loadStock();
@@ -262,9 +287,6 @@ export function KittingPage() {
       setSubmitError(err instanceof ApiError ? err.message : 'Failed to create kitting order.');
     }
   }
-
-  const formatCurrency = (val: number) =>
-    `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -282,7 +304,7 @@ export function KittingPage() {
         </Alert>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onFormValid)} className="space-y-6">
         {/* ====== TEMPLATE + HEADER ====== */}
         <div className="rounded-lg border bg-white p-4 space-y-4">
           <h2 className="text-sm font-medium text-gray-700">Production Details</h2>
@@ -575,6 +597,30 @@ export function KittingPage() {
           </Button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Confirm Kitting Order"
+        confirmLabel="Submit Kitting Order"
+        description={
+          pendingValues && (
+            <div className="space-y-1 text-sm">
+              <p><span className="font-medium">Finished Good:</span> {items.find((i) => String(i.id) === pendingValues.finishedGoodId)?.itemCode ?? '--'}</p>
+              {pendingValues.bomId && (
+                <p><span className="font-medium">BOM:</span> {activeBoms.find((b) => String(b.id) === pendingValues.bomId)?.bomCode ?? '--'}</p>
+              )}
+              <p><span className="font-medium">Quantity:</span> {pendingValues.quantityProduced}</p>
+              <p><span className="font-medium">Location:</span> {pendingValues.location}</p>
+              <p><span className="font-medium">Components:</span> {pendingValues.components.length}</p>
+              {totalCost > 0 && (
+                <p><span className="font-medium">Est. Total Cost:</span> {formatCurrency(totalCost)}</p>
+              )}
+            </div>
+          )
+        }
+        onConfirm={onConfirmed}
+      />
     </div>
   );
 }

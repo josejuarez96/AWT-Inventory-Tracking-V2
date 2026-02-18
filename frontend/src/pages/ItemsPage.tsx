@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { useAuthContext } from '@/context/AuthContext';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -105,6 +106,7 @@ export function ItemsPage() {
   const [formError, setFormError] = useState('');
   const [toggleError, setToggleError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [confirmToggle, setConfirmToggle] = useState<{ id: number; currentStatus: boolean; itemCode: string } | null>(null);
 
   async function fetchItems() {
     setIsLoading(true);
@@ -442,7 +444,7 @@ export function ItemsPage() {
                             Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => void handleToggleStatus(item.id, item.isActive !== false)}
+                            onClick={() => setConfirmToggle({ id: item.id, currentStatus: item.isActive !== false, itemCode: item.itemCode })}
                           >
                             {item.isActive !== false ? 'Deactivate' : 'Activate'}
                           </DropdownMenuItem>
@@ -463,6 +465,25 @@ export function ItemsPage() {
           {search && ` matching "${search}"`}
         </p>
       )}
+
+      <ConfirmDialog
+        open={confirmToggle !== null}
+        onOpenChange={(open) => { if (!open) setConfirmToggle(null); }}
+        title={confirmToggle?.currentStatus ? 'Deactivate Item?' : 'Activate Item?'}
+        description={
+          confirmToggle?.currentStatus
+            ? `${confirmToggle.itemCode} will no longer appear in transactions.`
+            : `${confirmToggle?.itemCode} will become available for transactions again.`
+        }
+        confirmLabel={confirmToggle?.currentStatus ? 'Deactivate' : 'Activate'}
+        confirmVariant={confirmToggle?.currentStatus ? 'destructive' : 'default'}
+        onConfirm={() => {
+          if (confirmToggle) {
+            void handleToggleStatus(confirmToggle.id, confirmToggle.currentStatus);
+            setConfirmToggle(null);
+          }
+        }}
+      />
     </div>
   );
 }

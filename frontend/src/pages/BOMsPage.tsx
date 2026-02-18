@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -94,6 +95,7 @@ export function BOMsPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -102,21 +104,24 @@ export function BOMsPage() {
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [confirmStatus, setConfirmStatus] = useState<{ id: number; newStatus: string; name: string } | null>(null);
 
-  async function fetchBoms() {
+  const fetchBoms = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await api.get<{ boms: BomListItem[] }>('/api/boms?limit=500');
+      const params = new URLSearchParams({ limit: '500' });
+      if (statusFilter !== 'ALL') params.set('status', statusFilter);
+      const data = await api.get<{ boms: BomListItem[] }>(`/api/boms?${params}`);
       setBoms(data.boms);
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [statusFilter]);
 
   useEffect(() => {
     void fetchBoms();
     api.get<{ items: Item[] }>('/api/items').then((d) => setItems(d.items)).catch(() => {});
-  }, []);
+  }, [fetchBoms]);
 
   function openCreate() {
     setEditingId(null);
@@ -457,15 +462,28 @@ export function BOMsPage() {
         </Dialog>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          placeholder="Search by code, name, or finished good..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      {/* Search + Status Filter */}
+      <div className="flex gap-4 items-center">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Search by code, name, or finished good..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="All Statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All Statuses</SelectItem>
+            <SelectItem value="DRAFT">Draft</SelectItem>
+            <SelectItem value="ACTIVE">Active</SelectItem>
+            <SelectItem value="RETIRED">Retired</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {actionError && (
@@ -530,17 +548,17 @@ export function BOMsPage() {
                           </DropdownMenuItem>
                         )}
                         {bom.status === 'DRAFT' && (
-                          <DropdownMenuItem onClick={() => void handleStatusChange(bom.id, 'ACTIVE')}>
+                          <DropdownMenuItem onClick={() => setConfirmStatus({ id: bom.id, newStatus: 'ACTIVE', name: bom.name })}>
                             Activate
                           </DropdownMenuItem>
                         )}
                         {bom.status === 'ACTIVE' && (
-                          <DropdownMenuItem onClick={() => void handleStatusChange(bom.id, 'RETIRED')}>
+                          <DropdownMenuItem onClick={() => setConfirmStatus({ id: bom.id, newStatus: 'RETIRED', name: bom.name })}>
                             Retire
                           </DropdownMenuItem>
                         )}
                         {bom.status === 'RETIRED' && (
-                          <DropdownMenuItem onClick={() => void handleStatusChange(bom.id, 'ACTIVE')}>
+                          <DropdownMenuItem onClick={() => setConfirmStatus({ id: bom.id, newStatus: 'ACTIVE', name: bom.name })}>
                             Re-activate
                           </DropdownMenuItem>
                         )}
@@ -560,9 +578,32 @@ export function BOMsPage() {
       {!isLoading && (
         <p className="text-xs text-gray-400">
           {filtered.length} BOM{filtered.length !== 1 ? 's' : ''}
+          {statusFilter !== 'ALL' && ` (${statusFilter})`}
           {search && ` matching "${search}"`}
         </p>
       )}
+
+      <ConfirmDialog
+        open={confirmStatus !== null}
+        onOpenChange={(open) => { if (!open) setConfirmStatus(null); }}
+        title="Change BOM Status?"
+        description={
+          confirmStatus && (
+            <span>
+              Change <strong>{confirmStatus.name}</strong> to <strong>{confirmStatus.newStatus}</strong>?
+              {confirmStatus.newStatus === 'RETIRED' && ' Retired BOMs cannot be used for kitting.'}
+            </span>
+          )
+        }
+        confirmLabel={`Set to ${confirmStatus?.newStatus ?? ''}`}
+        confirmVariant={confirmStatus?.newStatus === 'RETIRED' ? 'destructive' : 'default'}
+        onConfirm={() => {
+          if (confirmStatus) {
+            void handleStatusChange(confirmStatus.id, confirmStatus.newStatus);
+            setConfirmStatus(null);
+          }
+        }}
+      />
     </div>
   );
 }

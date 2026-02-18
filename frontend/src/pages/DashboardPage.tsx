@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
+import { formatCurrency } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PackageOpen, ArrowLeftRight, Truck, Users, AlertTriangle, TrendingDown, DollarSign, Activity, PackageX } from 'lucide-react';
@@ -45,7 +46,6 @@ type ActivityItem = {
   location: string;
 };
 
-const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 function formatActivityDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -204,16 +204,16 @@ export function DashboardPage() {
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">ADEL</span>
-                  <span className="font-medium">{currency.format(valuation.adel)}</span>
+                  <span className="font-medium">{formatCurrency(valuation.adel)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">CALHOUN</span>
-                  <span className="font-medium">{currency.format(valuation.calhoun)}</span>
+                  <span className="font-medium">{formatCurrency(valuation.calhoun)}</span>
                 </div>
                 <div className="border-t pt-3 flex justify-between">
                   <span className="text-sm font-semibold">Total On-Hand</span>
                   <span className="text-lg font-bold text-gray-900">
-                    {currency.format(valuation.total)}
+                    {formatCurrency(valuation.total)}
                   </span>
                 </div>
                 <p className="text-xs text-gray-400">

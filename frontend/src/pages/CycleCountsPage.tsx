@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, API_BASE } from '@/lib/api';
+import { formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -88,9 +89,6 @@ function formatDate(iso: string) {
   });
 }
 
-function formatCurrency(val: number) {
-  return val.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-}
 
 // --- Component ---
 

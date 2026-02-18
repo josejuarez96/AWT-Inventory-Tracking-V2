@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Select,
   SelectContent,
@@ -62,6 +63,9 @@ export function AdjustmentPage() {
     },
   });
 
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
+
   const selectedReason = watch('reason');
   const selectedDirection = watch('direction') as AdjustmentDirection;
   const watchedQty = watch('quantity');
@@ -83,26 +87,32 @@ export function AdjustmentPage() {
   const isDecreaseOnly = selectedReason ? DECREASE_REASONS.includes(selectedReason) : false;
   const isFlexible = selectedReason ? FLEXIBLE_REASONS.includes(selectedReason) : true;
 
-  async function onSubmit(values: FormValues) {
+  function onFormValid(values: FormValues) {
+    setPendingValues(values);
+    setConfirmOpen(true);
+  }
+
+  async function onConfirmed() {
+    if (!pendingValues) return;
+    setConfirmOpen(false);
     setSubmitError(null);
     setSuccessMessage(null);
     try {
-      // Apply direction: user always enters positive, we negate if decreasing
-      const finalQty = values.direction === 'decrease' ? -Math.abs(values.quantity) : Math.abs(values.quantity);
+      const finalQty = pendingValues.direction === 'decrease' ? -Math.abs(pendingValues.quantity) : Math.abs(pendingValues.quantity);
 
       const data = await api.post<{ transaction: { id: number } }>(
         '/api/transactions/adjustments',
         {
-          itemId: parseInt(values.itemId),
-          location: values.location,
+          itemId: parseInt(pendingValues.itemId),
+          location: pendingValues.location,
           quantity: finalQty,
-          reason: values.reason,
-          notes: values.notes || undefined,
+          reason: pendingValues.reason,
+          notes: pendingValues.notes || undefined,
         }
       );
-      const action = values.direction === 'decrease' ? 'removed from' : 'added to';
-      setSuccessMessage(`Adjustment #${data.transaction.id} recorded — ${values.quantity} units ${action} inventory.`);
-      const prevLocation = values.location;
+      const action = pendingValues.direction === 'decrease' ? 'removed from' : 'added to';
+      setSuccessMessage(`Adjustment #${data.transaction.id} recorded — ${pendingValues.quantity} units ${action} inventory.`);
+      const prevLocation = pendingValues.location;
       reset({
         itemId: '',
         location: prevLocation,
@@ -111,6 +121,7 @@ export function AdjustmentPage() {
         reason: undefined,
         notes: '',
       });
+      setPendingValues(null);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to save adjustment.';
       setSubmitError(message);
@@ -133,7 +144,7 @@ export function AdjustmentPage() {
         </Alert>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onFormValid)} className="space-y-6">
         {/* Row 1: Item + Location */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
@@ -279,6 +290,28 @@ export function AdjustmentPage() {
           </Button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Confirm Adjustment"
+        confirmLabel="Save Adjustment"
+        confirmVariant={pendingValues?.direction === 'decrease' ? 'destructive' : 'default'}
+        description={
+          pendingValues && (
+            <div className="space-y-1 text-sm">
+              <p><span className="font-medium">Item:</span> {items.find((i) => String(i.id) === pendingValues.itemId)?.itemCode ?? '--'}</p>
+              <p><span className="font-medium">Action:</span>{' '}
+                {pendingValues.direction === 'decrease' ? 'REMOVE' : 'ADD'}{' '}
+                {pendingValues.quantity} units
+              </p>
+              <p><span className="font-medium">Reason:</span> {pendingValues.reason}</p>
+              <p><span className="font-medium">Location:</span> {pendingValues.location}</p>
+            </div>
+          )
+        }
+        onConfirm={onConfirmed}
+      />
     </div>
   );
 }

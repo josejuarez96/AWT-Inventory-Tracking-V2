@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { formatCurrency } from '@/lib/utils';
 import { AdminAuthDialog } from '@/components/AdminAuthDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -80,9 +81,6 @@ const STATUS_COLORS: Record<string, string> = {
   VOID: 'bg-red-100 text-red-700',
 };
 
-function formatCurrency(val: number) {
-  return val.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-}
 
 function varianceColor(line: CycleCountLine): string {
   if (line.variance === null || line.variance === 0) return '';

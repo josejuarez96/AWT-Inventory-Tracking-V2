@@ -3,12 +3,14 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '@/lib/api';
+import { formatCurrency } from '@/lib/utils';
 import { useAuthContext } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Select,
   SelectContent,
@@ -110,8 +112,23 @@ export function ReceiptPage() {
     handleSubmit,
     watch,
     setValue,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = form;
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingValues, setPendingValues] = useState<ReceiptFormValues | null>(null);
+
+  // Warn before browser close/refresh if form is dirty
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   useEffect(() => {
     async function loadData() {
@@ -188,7 +205,14 @@ export function ReceiptPage() {
     return lastPaidPrices[itemId] ?? null;
   }
 
-  async function onSubmit(values: ReceiptFormValues) {
+  function onFormValid(values: ReceiptFormValues) {
+    setPendingValues(values);
+    setConfirmOpen(true);
+  }
+
+  async function onConfirmed() {
+    if (!pendingValues) return;
+    setConfirmOpen(false);
     setSubmitError(null);
     setSuccessMessage(null);
     try {
@@ -196,12 +220,12 @@ export function ReceiptPage() {
         transactions: Array<{ id: number }>;
         lastPaidPrices: Record<number, number | null>;
       }>('/api/transactions/receipts/batch', {
-        vendorId: parseInt(values.vendorId),
-        location: values.location,
-        transactionDate: values.transactionDate,
-        invoiceNumber: values.invoiceNumber || undefined,
-        notes: values.notes || undefined,
-        lineItems: values.lineItems.map((li) => ({
+        vendorId: parseInt(pendingValues.vendorId),
+        location: pendingValues.location,
+        transactionDate: pendingValues.transactionDate,
+        invoiceNumber: pendingValues.invoiceNumber || undefined,
+        notes: pendingValues.notes || undefined,
+        lineItems: pendingValues.lineItems.map((li) => ({
           itemId: parseInt(li.itemId),
           quantity: li.quantity,
           unitCost: li.unitCost,
@@ -214,7 +238,7 @@ export function ReceiptPage() {
         `Receipt saved: ${count} item${count !== 1 ? 's' : ''} received successfully.`
       );
 
-      const prevLocation = values.location;
+      const prevLocation = pendingValues.location;
       form.reset({
         vendorId: '',
         location: prevLocation,
@@ -223,14 +247,12 @@ export function ReceiptPage() {
         notes: '',
         lineItems: [{ itemId: '', quantity: undefined as unknown as number, unitCost: undefined as unknown as number }],
       });
+      setPendingValues(null);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to save receipt.';
       setSubmitError(message);
     }
   }
-
-  const formatCurrency = (val: number) =>
-    `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -248,7 +270,7 @@ export function ReceiptPage() {
         </Alert>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onFormValid)} className="space-y-6">
         {/* ====== HEADER SECTION ====== */}
         <div className="rounded-lg border bg-white p-4 space-y-4">
           <h2 className="text-sm font-medium text-gray-700">Receipt Details</h2>
@@ -496,6 +518,27 @@ export function ReceiptPage() {
           </Button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Confirm Receipt"
+        confirmLabel="Save Receipt"
+        description={
+          pendingValues && (
+            <div className="space-y-1 text-sm">
+              <p><span className="font-medium">Vendor:</span> {vendors.find((v) => String(v.id) === pendingValues.vendorId)?.vendorName ?? '--'}</p>
+              <p><span className="font-medium">Location:</span> {pendingValues.location}</p>
+              <p><span className="font-medium">Items:</span> {pendingValues.lineItems.length}</p>
+              <p><span className="font-medium">Total:</span> {formatCurrency(receiptTotal)}</p>
+              {pendingValues.invoiceNumber && (
+                <p><span className="font-medium">Invoice:</span> {pendingValues.invoiceNumber}</p>
+              )}
+            </div>
+          )
+        }
+        onConfirm={onConfirmed}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from '@/lib/api';
+import { formatCurrency } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -71,10 +72,18 @@ export function StockPositionPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Reset to page 1 when search changes
+  // Fetch distinct categories once on mount
+  const [categories, setCategories] = useState<string[]>([]);
+  useEffect(() => {
+    api.get<{ categories: string[] }>('/api/items/categories')
+      .then((d) => setCategories(d.categories))
+      .catch(() => {});
+  }, []);
+
+  // Reset to page 1 when search or category changes
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, categoryFilter]);
 
   // Fetch data from server
   useEffect(() => {
@@ -84,6 +93,7 @@ export function StockPositionPage() {
       try {
         const params = new URLSearchParams();
         if (debouncedSearch) params.set('search', debouncedSearch);
+        if (categoryFilter !== 'ALL') params.set('category', categoryFilter);
         params.set('page', String(page));
         params.set('limit', String(limit));
 
@@ -100,26 +110,11 @@ export function StockPositionPage() {
       }
     }
     load();
-  }, [debouncedSearch, page]);
-
-  // Extract unique categories for filter dropdown (client-side filter on current page)
-  const categories = useMemo(() => {
-    const cats = new Set<string>();
-    positions.forEach((p) => {
-      if (p.item.category) cats.add(p.item.category);
-    });
-    return Array.from(cats).sort();
-  }, [positions]);
-
-  // Client-side category filter on paginated results
-  const filtered = useMemo(() => {
-    if (categoryFilter === 'ALL') return positions;
-    return positions.filter((p) => p.item.category === categoryFilter);
-  }, [positions, categoryFilter]);
+  }, [debouncedSearch, page, categoryFilter]);
 
   // Client-side sort
   const sorted = useMemo(() => {
-    const arr = [...filtered];
+    const arr = [...positions];
     arr.sort((a, b) => {
       let valA: string | number | null;
       let valB: string | number | null;
@@ -171,7 +166,7 @@ export function StockPositionPage() {
         : (valB as number) - (valA as number);
     });
     return arr;
-  }, [filtered, sortKey, sortDir]);
+  }, [positions, sortKey, sortDir]);
 
   const toggleSort = useCallback((key: SortKey) => {
     if (sortKey === key) {
@@ -191,9 +186,6 @@ export function StockPositionPage() {
 
   const isLowStock = (p: StockPosition) =>
     p.item.minQuantity !== null && p.totalQty <= p.item.minQuantity;
-
-  const formatCurrency = (val: number | null) =>
-    val !== null ? `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--';
 
   // Totals for current page
   const grandTotal = useMemo(() => {

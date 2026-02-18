@@ -627,10 +627,11 @@ router.post(
 // ---------------------------------------------------------------------------
 router.get('/stock-position', async (req, res) => {
   const search = (req.query.search || '').trim().toLowerCase();
+  const category = (req.query.category || '').trim();
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
 
-  // Build item filter with optional server-side search
+  // Build item filter with optional server-side search and category
   const itemWhere = { isActive: true };
   if (search) {
     itemWhere.OR = [
@@ -638,6 +639,9 @@ router.get('/stock-position', async (req, res) => {
       { description: { contains: search, mode: 'insensitive' } },
       { category: { contains: search, mode: 'insensitive' } },
     ];
+  }
+  if (category) {
+    itemWhere.category = category;
   }
 
   const [grouped, items, itemCount, costRows] = await Promise.all([

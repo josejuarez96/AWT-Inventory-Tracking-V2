@@ -53,6 +53,17 @@ router.get('/', async (req, res) => {
   return res.json({ items: items.map(serializeItem) });
 });
 
+// GET /api/items/categories — distinct categories for active items
+router.get('/categories', async (_req, res) => {
+  const rows = await prisma.item.findMany({
+    where: { isActive: true, category: { not: null } },
+    select: { category: true },
+    distinct: ['category'],
+    orderBy: { category: 'asc' },
+  });
+  return res.json({ categories: rows.map((r) => r.category) });
+});
+
 // POST /api/items/import/preview — parse CSV, return rows + validation errors (no DB writes)
 router.post('/import/preview', requireAdmin, upload.single('file'), (req, res) => {
   if (!req.file) {

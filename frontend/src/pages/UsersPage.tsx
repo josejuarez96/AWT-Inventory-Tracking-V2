@@ -18,8 +18,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,6 +88,7 @@ export function UsersPage() {
   const [resetSuccess, setResetSuccess] = useState('');
   const [isResetting, setIsResetting] = useState(false);
   const [toggleError, setToggleError] = useState('');
+  const [confirmToggle, setConfirmToggle] = useState<User | null>(null);
 
   async function fetchUsers() {
     setIsLoadingUsers(true);
@@ -221,17 +230,18 @@ export function UsersPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="create-role">Role</Label>
-                <select
-                  id="create-role"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                <Select
                   value={createForm.role}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, role: e.target.value as 'admin' | 'user' }))
-                  }
+                  onValueChange={(v) => setCreateForm((f) => ({ ...f, role: v as 'admin' | 'user' }))}
                 >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
+                  <SelectTrigger id="create-role">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="user">User</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               {createError && <p className="text-sm text-red-500">{createError}</p>}
               <div className="flex justify-end gap-2">
@@ -313,9 +323,7 @@ export function UsersPage() {
                             Reset Password
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => void handleToggleStatus(u.id, u.isActive)}
-                          >
+                          <DropdownMenuItem onClick={() => setConfirmToggle(u)}>
                             {u.isActive ? 'Deactivate' : 'Activate'}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -347,17 +355,18 @@ export function UsersPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-role">Role</Label>
-              <select
-                id="edit-role"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              <Select
                 value={editForm.role}
-                onChange={(e) =>
-                  setEditForm((f) => ({ ...f, role: e.target.value as 'admin' | 'user' }))
-                }
+                onValueChange={(v) => setEditForm((f) => ({ ...f, role: v as 'admin' | 'user' }))}
               >
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-              </select>
+                <SelectTrigger id="edit-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             {editError && <p className="text-sm text-red-500">{editError}</p>}
             <div className="flex justify-end gap-2">
@@ -375,6 +384,25 @@ export function UsersPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmToggle !== null}
+        onOpenChange={(open) => { if (!open) setConfirmToggle(null); }}
+        title={confirmToggle?.isActive ? 'Deactivate User?' : 'Activate User?'}
+        description={
+          confirmToggle?.isActive
+            ? `${confirmToggle.fullName} will be locked out immediately.`
+            : `${confirmToggle?.fullName} will regain access.`
+        }
+        confirmLabel={confirmToggle?.isActive ? 'Deactivate' : 'Activate'}
+        confirmVariant={confirmToggle?.isActive ? 'destructive' : 'default'}
+        onConfirm={() => {
+          if (confirmToggle) {
+            void handleToggleStatus(confirmToggle.id, confirmToggle.isActive);
+            setConfirmToggle(null);
+          }
+        }}
+      />
 
       {/* Reset Password Dialog */}
       <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>

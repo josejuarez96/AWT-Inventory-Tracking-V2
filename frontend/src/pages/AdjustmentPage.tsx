@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+import { LOCATIONS, type Location } from '@/lib/locations';
+import { useAuth } from '@/hooks/useAuth';
+import { useFormDirty } from '@/context/FormDirtyContext';
+import { AdminAuthDialog } from '@/components/AdminAuthDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +24,10 @@ import { CheckCircle, ArrowDown, ArrowUp } from 'lucide-react';
 import { Combobox } from '@/components/ui/combobox';
 
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string };
+type StockPosition = {
+  item: { id: number };
+  qtyByLocation: Record<string, number>;
+};
 
 const REASONS = ['Damage', 'Shrinkage', 'Correction', 'Other'] as const;
 
@@ -32,7 +40,7 @@ type AdjustmentDirection = 'decrease' | 'increase';
 
 const schema = z.object({
   itemId: z.string().min(1, 'Item is required'),
-  location: z.enum(['ADEL', 'CALHOUN'], { required_error: 'Location is required' }),
+  location: z.enum(LOCATIONS, { required_error: 'Location is required' }),
   quantity: z.coerce
     .number({ invalid_type_error: 'Must be a number' })
     .positive('Must be greater than 0'),
@@ -44,9 +52,14 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export function AdjustmentPage() {
+  const { user } = useAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [adminAuthOpen, setAdminAuthOpen] = useState(false);
+  const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
+  const [adminAuthSubmitting, setAdminAuthSubmitting] = useState(false);
+  const [positions, setPositions] = useState<StockPosition[]>([]);
 
   const {
     register,
@@ -54,14 +67,28 @@ export function AdjustmentPage() {
     setValue,
     watch,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      location: 'ADEL',
+      location: LOCATIONS[0],
       direction: 'decrease',
     },
   });
+
+  const { setDirty: setFormDirty } = useFormDirty();
+  useEffect(() => {
+    setFormDirty(isDirty);
+    return () => setFormDirty(false);
+  }, [isDirty, setFormDirty]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
@@ -78,18 +105,61 @@ export function AdjustmentPage() {
   }, [selectedReason, setValue]);
 
   useEffect(() => {
-    api
-      .get<{ items: Item[] }>('/api/items')
-      .then((data) => setItems(data.items))
-      .catch(() => {});
+    Promise.all([
+      api.get<{ items: Item[] }>('/api/items'),
+      api.get<{ positions: StockPosition[] }>('/api/transactions/stock-position'),
+    ]).then(([itemData, stockData]) => {
+      setItems(itemData.items);
+      setPositions(stockData.positions);
+    }).catch(() => {});
   }, []);
 
   const isDecreaseOnly = selectedReason ? DECREASE_REASONS.includes(selectedReason) : false;
   const isFlexible = selectedReason ? FLEXIBLE_REASONS.includes(selectedReason) : true;
 
   function onFormValid(values: FormValues) {
+    // Pre-check: block negative stock before showing confirm dialog
+    if (values.direction === 'decrease') {
+      const pos = positions.find((p) => p.item.id === parseInt(values.itemId));
+      const currentStock = pos
+        ? (pos.qtyByLocation[values.location] ?? 0)
+        : 0;
+      if (values.quantity > currentStock) {
+        setSubmitError(
+          `Cannot remove ${values.quantity} units — only ${currentStock} available at ${values.location}.`
+        );
+        return;
+      }
+    }
+    setSubmitError(null);
     setPendingValues(values);
     setConfirmOpen(true);
+  }
+
+  function buildAdjPayload(values: FormValues) {
+    const finalQty = values.direction === 'decrease' ? -Math.abs(values.quantity) : Math.abs(values.quantity);
+    return {
+      itemId: parseInt(values.itemId),
+      location: values.location,
+      quantity: finalQty,
+      reason: values.reason,
+      notes: values.notes || undefined,
+    };
+  }
+
+  function handleAdjSuccess(data: { transaction: { id: number } }, values: FormValues) {
+    const action = values.direction === 'decrease' ? 'removed from' : 'added to';
+    setSuccessMessage(`Adjustment #${data.transaction.id} recorded — ${values.quantity} units ${action} inventory.`);
+    const prevLocation = values.location;
+    reset({
+      itemId: '',
+      location: prevLocation,
+      quantity: undefined,
+      direction: 'decrease',
+      reason: undefined,
+      notes: '',
+    });
+    setPendingValues(null);
   }
 
   async function onConfirmed() {
@@ -98,33 +168,45 @@ export function AdjustmentPage() {
     setSubmitError(null);
     setSuccessMessage(null);
     try {
-      const finalQty = pendingValues.direction === 'decrease' ? -Math.abs(pendingValues.quantity) : Math.abs(pendingValues.quantity);
-
       const data = await api.post<{ transaction: { id: number } }>(
         '/api/transactions/adjustments',
-        {
-          itemId: parseInt(pendingValues.itemId),
-          location: pendingValues.location,
-          quantity: finalQty,
-          reason: pendingValues.reason,
-          notes: pendingValues.notes || undefined,
-        }
+        buildAdjPayload(pendingValues)
       );
-      const action = pendingValues.direction === 'decrease' ? 'removed from' : 'added to';
-      setSuccessMessage(`Adjustment #${data.transaction.id} recorded — ${pendingValues.quantity} units ${action} inventory.`);
-      const prevLocation = pendingValues.location;
-      reset({
-        itemId: '',
-        location: prevLocation,
-        quantity: undefined,
-        direction: 'decrease',
-        reason: undefined,
-        notes: '',
-      });
-      setPendingValues(null);
+      handleAdjSuccess(data, pendingValues);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to save adjustment.';
-      setSubmitError(message);
+      if (err instanceof ApiError && err.data?.requiresApproval) {
+        setAdminAuthError(null);
+        setAdminAuthOpen(true);
+      } else {
+        const message = err instanceof Error ? err.message : 'Failed to save adjustment.';
+        setSubmitError(message);
+      }
+    }
+  }
+
+  async function handleAdminAuthorize(credentials: { username: string; password: string }) {
+    if (!pendingValues) return;
+    setAdminAuthSubmitting(true);
+    setAdminAuthError(null);
+    try {
+      const encoded = btoa(`${credentials.username}:${credentials.password}`);
+      const data = await api.post<{ transaction: { id: number } }>(
+        '/api/transactions/adjustments',
+        buildAdjPayload(pendingValues),
+        { 'X-Admin-Authorization': `Basic ${encoded}` }
+      );
+      setAdminAuthOpen(false);
+      handleAdjSuccess(data, pendingValues);
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.data?.requiresApproval) {
+        setAdminAuthError(err.message);
+      } else {
+        setAdminAuthOpen(false);
+        const message = err instanceof Error ? err.message : 'Failed to save adjustment.';
+        setSubmitError(message);
+      }
+    } finally {
+      setAdminAuthSubmitting(false);
     }
   }
 
@@ -161,26 +243,27 @@ export function AdjustmentPage() {
               searchPlaceholder="Type code or description..."
             />
             {errors.itemId && (
-              <p className="text-xs text-red-600">{errors.itemId.message}</p>
+              <p className="text-xs text-red-600 animate-field-error">{errors.itemId.message}</p>
             )}
           </div>
 
           <div className="space-y-1">
             <Label htmlFor="location">Location <span className="text-red-500">*</span></Label>
             <Select
-              defaultValue="ADEL"
-              onValueChange={(v) => setValue('location', v as 'ADEL' | 'CALHOUN')}
+              defaultValue={LOCATIONS[0]}
+              onValueChange={(v) => setValue('location', v as Location)}
             >
               <SelectTrigger id="location">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ADEL">ADEL</SelectItem>
-                <SelectItem value="CALHOUN">CALHOUN</SelectItem>
+                {LOCATIONS.map((loc) => (
+                  <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             {errors.location && (
-              <p className="text-xs text-red-600">{errors.location.message}</p>
+              <p className="text-xs text-red-600 animate-field-error">{errors.location.message}</p>
             )}
           </div>
         </div>
@@ -199,7 +282,7 @@ export function AdjustmentPage() {
             </SelectContent>
           </Select>
           {errors.reason && (
-            <p className="text-xs text-red-600">{errors.reason.message}</p>
+            <p className="text-xs text-red-600 animate-field-error">{errors.reason.message}</p>
           )}
         </div>
 
@@ -250,7 +333,7 @@ export function AdjustmentPage() {
               {...register('quantity')}
             />
             {errors.quantity && (
-              <p className="text-xs text-red-600">{errors.quantity.message}</p>
+              <p className="text-xs text-red-600 animate-field-error">{errors.quantity.message}</p>
             )}
           </div>
         </div>
@@ -311,6 +394,15 @@ export function AdjustmentPage() {
           )
         }
         onConfirm={onConfirmed}
+      />
+
+      <AdminAuthDialog
+        open={adminAuthOpen}
+        onOpenChange={setAdminAuthOpen}
+        description="This adjustment exceeds the threshold (>10% of stock or >$500 value impact). Enter admin credentials to authorize."
+        onAuthorize={handleAdminAuthorize}
+        isSubmitting={adminAuthSubmitting}
+        error={adminAuthError}
       />
     </div>
   );

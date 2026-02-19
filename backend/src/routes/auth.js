@@ -114,6 +114,27 @@ router.post(
   }
 );
 
+// POST /api/auth/refresh — issue a new token if current one is still valid
+router.post('/refresh', authenticate, async (req, res) => {
+  // Verify user is still active
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { id: true, username: true, fullName: true, role: true, isActive: true },
+  });
+
+  if (!user || !user.isActive) {
+    return res.status(401).json({ error: 'User is no longer active' });
+  }
+
+  const token = jwt.sign(
+    { userId: user.id, username: user.username, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+
+  return res.json({ token });
+});
+
 // POST /api/auth/logout — client-side only; server just acknowledges
 router.post('/logout', authenticate, (req, res) => {
   return res.json({ message: 'Logged out successfully' });

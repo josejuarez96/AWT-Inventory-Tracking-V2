@@ -36,3 +36,20 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+@layer utilities {
+  .animate-field-error {
+    animation: field-error-in 0.3s ease-out;
+  }
+}
+
+@keyframes field-error-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

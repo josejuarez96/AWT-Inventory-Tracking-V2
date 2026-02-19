@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { formatCurrency } from '@/lib/utils';
+import { LOCATIONS } from '@/lib/locations';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
 type Transaction = {
   id: number;
@@ -29,6 +30,7 @@ type Transaction = {
   quantity: number;
   unitCost: number | null;
   invoiceNumber: string | null;
+  batchId: string | null;
   notes: string | null;
   transactionDate: string;
   createdAt: string;
@@ -68,6 +70,7 @@ export function TransactionHistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [search, setSearch] = useState('');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
   const [filterType, setFilterType] = useState('ALL');
@@ -84,6 +87,7 @@ export function TransactionHistoryPage() {
       setError(null);
       try {
         const params = new URLSearchParams();
+        if (search.trim()) params.set('search', search.trim());
         if (filterFrom) params.set('from', filterFrom);
         if (filterTo) params.set('to', filterTo);
         if (filterType !== 'ALL') params.set('type', filterType);
@@ -104,15 +108,13 @@ export function TransactionHistoryPage() {
       }
     }
     load();
-  }, [filterFrom, filterTo, filterType, filterLocation, page]);
+  }, [search, filterFrom, filterTo, filterType, filterLocation, page]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setPage(1);
-  }, [filterFrom, filterTo, filterType, filterLocation]);
+  }, [search, filterFrom, filterTo, filterType, filterLocation]);
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
 
   // Extract adjustment reason from notes "[Reason] optional text"
@@ -133,8 +135,20 @@ export function TransactionHistoryPage() {
         </p>
       </div>
 
-      {/* Filters */}
+      {/* Search + Filters */}
       <div className="flex flex-wrap gap-4 items-end">
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Search</Label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Item, vendor, invoice #..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 w-56"
+            />
+          </div>
+        </div>
         <div className="space-y-1">
           <Label className="text-xs text-gray-500">From</Label>
           <Input
@@ -178,8 +192,9 @@ export function TransactionHistoryPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Locations</SelectItem>
-              <SelectItem value="ADEL">ADEL</SelectItem>
-              <SelectItem value="CALHOUN">CALHOUN</SelectItem>
+              {LOCATIONS.map((loc) => (
+                <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -198,7 +213,8 @@ export function TransactionHistoryPage() {
               <TableRow>
                 <TableHead className="w-28">Date</TableHead>
                 <TableHead className="w-24">Type</TableHead>
-                <TableHead>Item</TableHead>
+                <TableHead>Item Code</TableHead>
+                <TableHead>Description</TableHead>
                 <TableHead className="w-20">Loc</TableHead>
                 <TableHead className="w-20 text-right">Qty</TableHead>
                 <TableHead className="w-28 text-right">Value</TableHead>
@@ -207,11 +223,18 @@ export function TransactionHistoryPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {transactions.map((t) => {
+              {transactions.map((t, idx) => {
                 const { reason, text } = parseNotes(t);
                 const totalCost = t.unitCost !== null ? Math.abs(t.quantity) * t.unitCost : null;
+                // Batch grouping: count items in the same batch, mark first occurrence
+                const batchCount = t.batchId
+                  ? transactions.filter((x) => x.batchId === t.batchId).length
+                  : 0;
+                const isFirstInBatch = t.batchId
+                  ? transactions.findIndex((x) => x.batchId === t.batchId) === idx
+                  : false;
                 return (
-                  <TableRow key={t.id}>
+                  <TableRow key={t.id} className={t.batchId ? 'border-l-2 border-l-blue-300' : ''}>
                     {/* Date */}
                     <TableCell className="text-sm text-gray-600 whitespace-nowrap">
                       {formatDate(t.transactionDate)}
@@ -219,18 +242,23 @@ export function TransactionHistoryPage() {
 
                     {/* Type badge */}
                     <TableCell>
-                      <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[t.transactionType] ?? 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                        {TYPE_LABELS[t.transactionType] ?? t.transactionType}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[t.transactionType] ?? 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                          {TYPE_LABELS[t.transactionType] ?? t.transactionType}
+                        </span>
+                        {isFirstInBatch && batchCount > 1 && (
+                          <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0 text-[10px] font-medium">
+                            {batchCount}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
 
-                    {/* Item — code + description on one line */}
-                    <TableCell>
-                      <span className="text-sm">
-                        <span className="font-mono text-xs text-gray-400 mr-1.5">{t.item.itemCode}</span>
-                        {t.item.description}
-                      </span>
-                    </TableCell>
+                    {/* Item Code */}
+                    <TableCell className="font-mono text-sm">{t.item.itemCode}</TableCell>
+
+                    {/* Description */}
+                    <TableCell className="text-sm">{t.item.description}</TableCell>
 
                     {/* Location */}
                     <TableCell className="text-sm text-gray-600">{t.location}</TableCell>
@@ -254,9 +282,16 @@ export function TransactionHistoryPage() {
                       )}
                     </TableCell>
 
-                    {/* Details — consolidated vendor, invoice, reason, notes */}
+                    {/* Details — consolidated vendor, invoice, reason, transfer info, notes */}
                     <TableCell className="text-sm text-gray-600">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        {t.transactionType === 'TRANSFER' && (
+                          <span className="text-xs font-medium text-purple-600">
+                            {t.quantity < 0
+                              ? `To ${LOCATIONS.find((l) => l !== t.location) ?? '?'}`
+                              : `From ${LOCATIONS.find((l) => l !== t.location) ?? '?'}`}
+                          </span>
+                        )}
                         {t.vendor?.vendorName && (
                           <span className="text-gray-700">{t.vendor.vendorName}</span>
                         )}
@@ -271,7 +306,7 @@ export function TransactionHistoryPage() {
                             {text}
                           </span>
                         )}
-                        {!t.vendor?.vendorName && !t.invoiceNumber && !reason && !text && (
+                        {t.transactionType !== 'TRANSFER' && !t.vendor?.vendorName && !t.invoiceNumber && !reason && !text && (
                           <span className="text-gray-300">—</span>
                         )}
                       </div>

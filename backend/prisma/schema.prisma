@@ -94,6 +94,7 @@ model Transaction {
   createdAt       DateTime  @default(now()) @map("created_at")
 
   productionOrderId Int?   @map("production_order_id")
+  batchId           String? @map("batch_id") @db.VarChar(36)
 
   item              Item              @relation(fields: [itemId], references: [id])
   vendor            Vendor?           @relation(fields: [vendorId], references: [id])
@@ -102,8 +103,10 @@ model Transaction {
   productionOrder   ProductionOrder?  @relation(fields: [productionOrderId], references: [id])
 
   @@index([itemId])
+  @@index([itemId, location])
   @@index([transactionDate])
   @@index([transactionType])
+  @@index([batchId])
   @@map("transactions")
 }
 

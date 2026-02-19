@@ -7,6 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -27,7 +34,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, Plus, Search } from 'lucide-react';
+import { MoreHorizontal, Plus, Search, CheckCircle } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 type Vendor = {
   id: number;
@@ -52,6 +60,17 @@ type VendorForm = {
   notes: string;
 };
 
+const PAYMENT_TERMS_OPTIONS = [
+  'COD',
+  'Net 15',
+  'Net 30',
+  'Net 45',
+  'Net 60',
+  'Net 90',
+  '2/10 Net 30',
+  'Due on Receipt',
+] as const;
+
 const EMPTY_FORM: VendorForm = {
   vendorCode: '',
   vendorName: '',
@@ -63,6 +82,8 @@ const EMPTY_FORM: VendorForm = {
 };
 
 export function VendorsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -73,11 +94,12 @@ export function VendorsPage() {
   const [formError, setFormError] = useState('');
   const [toggleError, setToggleError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   async function fetchVendors() {
     setIsLoading(true);
     try {
-      const data = await api.get<{ vendors: Vendor[] }>('/api/vendors?all=true');
+      const data = await api.get<{ vendors: Vendor[] }>(`/api/vendors${isAdmin ? '?all=true' : ''}`);
       setVendors(data.vendors);
     } finally {
       setIsLoading(false);
@@ -115,11 +137,22 @@ export function VendorsPage() {
     setFormError('');
     setIsSaving(true);
 
+    // Validate phone if provided
+    const phoneTrimmed = form.phone.trim();
+    if (phoneTrimmed) {
+      const digits = phoneTrimmed.replace(/\D/g, '');
+      if (digits.length < 7 || digits.length > 15) {
+        setFormError('Phone number must have 7–15 digits.');
+        setIsSaving(false);
+        return;
+      }
+    }
+
     const payload = {
       vendorCode: form.vendorCode.trim(),
       vendorName: form.vendorName.trim(),
       contactPerson: form.contactPerson.trim() || null,
-      phone: form.phone.trim() || null,
+      phone: phoneTrimmed || null,
       email: form.email.trim() || null,
       paymentTerms: form.paymentTerms.trim() || null,
       notes: form.notes.trim() || null,
@@ -128,8 +161,10 @@ export function VendorsPage() {
     try {
       if (editingId) {
         await api.put(`/api/vendors/${editingId}`, payload);
+        setSuccessMessage(`Vendor "${payload.vendorName}" updated successfully.`);
       } else {
         await api.post('/api/vendors', payload);
+        setSuccessMessage(`Vendor "${payload.vendorName}" created successfully.`);
       }
       setDialogOpen(false);
       void fetchVendors();
@@ -140,10 +175,12 @@ export function VendorsPage() {
     }
   }
 
-  async function handleToggleStatus(id: number, currentStatus: boolean) {
+  async function handleToggleStatus(v: Vendor) {
+    const currentStatus = v.isActive !== false;
     setToggleError('');
     try {
-      await api.patch(`/api/vendors/${id}/status`, { isActive: !currentStatus });
+      await api.patch(`/api/vendors/${v.id}/status`, { isActive: !currentStatus });
+      setSuccessMessage(`Vendor "${v.vendorName}" ${currentStatus ? 'deactivated' : 'activated'} successfully.`);
       void fetchVendors();
     } catch (err) {
       setToggleError(err instanceof ApiError ? err.message : 'Failed to update vendor status');
@@ -164,15 +201,17 @@ export function VendorsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Vendors</h1>
-          <p className="mt-1 text-sm text-gray-500">Manage supplier master data</p>
+          <p className="mt-1 text-sm text-gray-500">{isAdmin ? 'Manage supplier master data' : 'View supplier master data'}</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" onClick={openCreate}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Vendor
-            </Button>
-          </DialogTrigger>
+          {isAdmin && (
+            <DialogTrigger asChild>
+              <Button size="sm" onClick={openCreate}>
+                <Plus className="mr-2 h-4 w-4" />
+                New Vendor
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Vendor' : 'Create New Vendor'}</DialogTitle>
@@ -191,12 +230,20 @@ export function VendorsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="paymentTerms">Payment Terms</Label>
-                  <Input
-                    id="paymentTerms"
-                    value={form.paymentTerms}
-                    onChange={(e) => setForm((f) => ({ ...f, paymentTerms: e.target.value }))}
-                    placeholder="e.g. Net 30"
-                  />
+                  <Select
+                    value={form.paymentTerms || '__none__'}
+                    onValueChange={(val) => setForm((f) => ({ ...f, paymentTerms: val === '__none__' ? '' : val }))}
+                  >
+                    <SelectTrigger id="paymentTerms">
+                      <SelectValue placeholder="Select terms..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {PAYMENT_TERMS_OPTIONS.map((term) => (
+                        <SelectItem key={term} value={term}>{term}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-2">
@@ -222,8 +269,10 @@ export function VendorsPage() {
                   <Label htmlFor="phone">Phone</Label>
                   <Input
                     id="phone"
+                    type="tel"
                     value={form.phone}
                     onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                    placeholder="(555) 123-4567"
                   />
                 </div>
                 <div className="space-y-2">
@@ -270,6 +319,13 @@ export function VendorsPage() {
         />
       </div>
 
+      {successMessage && (
+        <Alert className="border-green-200 bg-green-50">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertDescription className="text-green-800">{successMessage}</AlertDescription>
+        </Alert>
+      )}
+
       {toggleError && (
         <Alert variant="destructive">
           <AlertDescription className="flex items-center justify-between">
@@ -296,8 +352,8 @@ export function VendorsPage() {
                 <TableHead>Phone</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Payment Terms</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-10" />
+                {isAdmin && <TableHead>Status</TableHead>}
+                {isAdmin && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -309,30 +365,34 @@ export function VendorsPage() {
                   <TableCell className="text-sm text-gray-500">{v.phone ?? '—'}</TableCell>
                   <TableCell className="text-sm text-gray-500">{v.email ?? '—'}</TableCell>
                   <TableCell className="text-sm text-gray-500">{v.paymentTerms ?? '—'}</TableCell>
-                  <TableCell>
-                    <Badge variant={v.isActive !== false ? 'outline' : 'destructive'}>
-                      {v.isActive !== false ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(v)}>
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => void handleToggleStatus(v.id, v.isActive !== false)}
-                        >
-                          {v.isActive !== false ? 'Deactivate' : 'Activate'}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <Badge variant={v.isActive !== false ? 'outline' : 'destructive'}>
+                        {v.isActive !== false ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </TableCell>
+                  )}
+                  {isAdmin && (
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEdit(v)}>
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => void handleToggleStatus(v)}
+                          >
+                            {v.isActive !== false ? 'Deactivate' : 'Activate'}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

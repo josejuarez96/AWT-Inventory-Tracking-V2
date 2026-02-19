@@ -109,10 +109,12 @@ export function BOMsPage() {
   const fetchBoms = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({ limit: '500' });
+      const params = new URLSearchParams({ limit: '200' });
       if (statusFilter !== 'ALL') params.set('status', statusFilter);
       const data = await api.get<{ boms: BomListItem[] }>(`/api/boms?${params}`);
       setBoms(data.boms);
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Failed to load BOMs');
     } finally {
       setIsLoading(false);
     }
@@ -213,6 +215,16 @@ export function BOMsPage() {
       return;
     }
 
+    // Enforce whole numbers for EA (each) items
+    for (const line of payload.lines) {
+      const item = items.find((i) => i.id === line.itemId);
+      if (item && item.unitOfMeasure.toUpperCase() === 'EA' && !Number.isInteger(line.quantityPer)) {
+        setFormError(`${item.itemCode} is measured in EA — Qty Per must be a whole number.`);
+        setIsSaving(false);
+        return;
+      }
+    }
+
     try {
       if (editingId) {
         await api.put(`/api/boms/${editingId}`, payload);
@@ -281,7 +293,7 @@ export function BOMsPage() {
               New BOM
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>{viewOnly ? 'View BOM' : editingId ? 'Edit BOM' : 'Create New BOM'}</DialogTitle>
             </DialogHeader>

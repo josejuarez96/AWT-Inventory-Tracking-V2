@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { api, ApiError } from '@/lib/api';
+import { formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -302,7 +303,7 @@ export function UsersPage() {
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">
                     {u.lastLoginAt
-                      ? new Date(u.lastLoginAt).toLocaleDateString()
+                      ? formatDate(u.lastLoginAt)
                       : 'Never'}
                   </TableCell>
                   <TableCell>

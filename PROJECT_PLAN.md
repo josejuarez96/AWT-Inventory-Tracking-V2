@@ -28,147 +28,18 @@ We are building a **cloud-hosted web application** accessible from anywhere with
 
 ## 📊 Database Schema
 
-### Core Tables
+**Source of truth**: `backend/prisma/schema.prisma`
 
-**Users**
-```
-id              SERIAL PRIMARY KEY
-username        VARCHAR(50) UNIQUE NOT NULL
-password_hash   TEXT NOT NULL
-full_name       VARCHAR(100) NOT NULL
-role            VARCHAR(20) NOT NULL  -- 'admin' or 'user'
-is_active       BOOLEAN DEFAULT true
-created_at      TIMESTAMP DEFAULT NOW()
-last_login_at   TIMESTAMP
-```
+**Tables**: Users, Vendors, Items, Transactions, Boms, BomLines, ProductionOrders, CycleCounts, CycleCountLines
 
-**Vendors**
-```
-id              SERIAL PRIMARY KEY
-vendor_code     VARCHAR(50) UNIQUE NOT NULL
-vendor_name     VARCHAR(200) NOT NULL
-contact_person  VARCHAR(100)
-phone           VARCHAR(20)
-email           VARCHAR(100)
-payment_terms   VARCHAR(50)
-notes           TEXT
-is_active       BOOLEAN DEFAULT true
-created_at      TIMESTAMP DEFAULT NOW()
-```
-
-**Items** (Inventory Master)
-```
-id                SERIAL PRIMARY KEY
-item_code         VARCHAR(50) UNIQUE NOT NULL
-description       TEXT NOT NULL
-category          VARCHAR(100)
-unit_of_measure   VARCHAR(20) DEFAULT 'EA'
-min_quantity      DECIMAL(10,2)
-max_quantity      DECIMAL(10,2)
-safety_stock      DECIMAL(10,2) DEFAULT 0
-standard_cost     DECIMAL(10,2)           -- Fallback cost for production rollup
-last_purchase_cost DECIMAL(10,2)          -- Updated on each receipt
-default_vendor_id INTEGER REFERENCES Vendors(id)
-is_active         BOOLEAN DEFAULT true
-notes             TEXT
-created_at        TIMESTAMP DEFAULT NOW()
-```
-
-**Transactions** (All Inventory Movements)
-```
-id                  SERIAL PRIMARY KEY
-transaction_type    VARCHAR(20) NOT NULL  -- 'RECEIPT', 'ADJUSTMENT', 'TRANSFER', 'OPENING_BALANCE', 'CONSUMPTION', 'PRODUCTION'
-item_id             INTEGER NOT NULL REFERENCES Items(id)
-vendor_id           INTEGER REFERENCES Vendors(id)
-location            VARCHAR(50) NOT NULL  -- 'ADEL' or 'CALHOUN'
-quantity            DECIMAL(10,2) NOT NULL  -- Positive for in, negative for out
-unit_cost           DECIMAL(10,2)
-reference_price     DECIMAL(10,2)  -- Last known price for variance detection
-invoice_number      VARCHAR(100)
-reason              VARCHAR(50)    -- For adjustments: Damage, Shrinkage, etc.
-transaction_date    DATE NOT NULL
-notes               TEXT
-production_order_id INTEGER REFERENCES ProductionOrders(id)  -- Links consumption/production txns
-created_by          INTEGER REFERENCES Users(id)
-created_at          TIMESTAMP DEFAULT NOW()
-```
-
-### Manufacturing Tables (Phase 4C)
-
-**Boms** (Bill of Materials)
-```
-id                SERIAL PRIMARY KEY
-bom_code          VARCHAR(50) UNIQUE NOT NULL
-name              VARCHAR(200) NOT NULL
-finished_good_id  INTEGER NOT NULL REFERENCES Items(id)
-status            VARCHAR(20) DEFAULT 'DRAFT'  -- 'DRAFT', 'ACTIVE', 'RETIRED'
-notes             TEXT
-created_by        INTEGER REFERENCES Users(id)
-created_at        TIMESTAMP DEFAULT NOW()
-updated_at        TIMESTAMP
-```
-
-**BomLines** (BOM Components)
-```
-id                SERIAL PRIMARY KEY
-bom_id            INTEGER NOT NULL REFERENCES Boms(id) ON DELETE CASCADE
-item_id           INTEGER NOT NULL REFERENCES Items(id)
-quantity_per      DECIMAL(10,2) NOT NULL  -- Qty consumed per 1 finished good
-sort_order        INTEGER DEFAULT 0
-```
-
-**ProductionOrders** (Kitting Records)
-```
-id                SERIAL PRIMARY KEY
-order_number      VARCHAR(50) UNIQUE NOT NULL  -- Auto-generated: PRD-YYYYMMDD-XXXX
-finished_good_id  INTEGER NOT NULL REFERENCES Items(id)
-bom_id            INTEGER REFERENCES Boms(id)
-location          VARCHAR(50) NOT NULL
-quantity_produced DECIMAL(10,2) NOT NULL
-total_cost        DECIMAL(10,2)  -- Rolled-up cost from components
-status            VARCHAR(20) DEFAULT 'COMPLETED'
-notes             TEXT
-created_by        INTEGER REFERENCES Users(id)
-created_at        TIMESTAMP DEFAULT NOW()
-```
-
-**CycleCounts** (Physical Inventory Counts)
-```
-id                SERIAL PRIMARY KEY
-count_number      VARCHAR(50) UNIQUE NOT NULL  -- Auto-generated: CC-YYYYMMDD-XXXX
-location          VARCHAR(50) NOT NULL
-status            VARCHAR(20) DEFAULT 'OPEN'  -- 'OPEN', 'IN_PROGRESS', 'POSTED', 'VOIDED'
-category_filter   VARCHAR(100)  -- Optional: count only items in this category
-notes             TEXT
-posted_at         TIMESTAMP
-posted_by         INTEGER REFERENCES Users(id)
-created_by        INTEGER REFERENCES Users(id)
-created_at        TIMESTAMP DEFAULT NOW()
-```
-
-**CycleCountLines** (Individual Count Lines)
-```
-id                SERIAL PRIMARY KEY
-cycle_count_id    INTEGER NOT NULL REFERENCES CycleCounts(id) ON DELETE CASCADE
-item_id           INTEGER NOT NULL REFERENCES Items(id)
-system_qty        DECIMAL(10,2) NOT NULL  -- Snapshot of system qty at count creation
-counted_qty       DECIMAL(10,2)           -- Actual physical count (null = not yet counted)
-variance          DECIMAL(10,2)           -- counted_qty - system_qty (computed on post)
-notes             TEXT
-```
-
-### Indexes for Performance
-```sql
-CREATE INDEX idx_transactions_item_id ON Transactions(item_id);
-CREATE INDEX idx_transactions_date ON Transactions(transaction_date);
-CREATE INDEX idx_transactions_type ON Transactions(transaction_type);
-CREATE INDEX idx_transactions_production ON Transactions(production_order_id);
-CREATE INDEX idx_items_code ON Items(item_code);
-CREATE INDEX idx_vendors_code ON Vendors(vendor_code);
-CREATE INDEX idx_boms_finished_good ON Boms(finished_good_id);
-CREATE INDEX idx_bom_lines_bom ON BomLines(bom_id);
-CREATE INDEX idx_cycle_count_lines_count ON CycleCountLines(cycle_count_id);
-```
+**Key design decisions**:
+- All inventory movements stored as `Transaction` rows with `transactionType` discriminator (RECEIPT, ADJUSTMENT, TRANSFER, OPENING_BALANCE, CONSUMPTION, PRODUCTION)
+- Transfers create atomic pairs (negative at source + positive at destination)
+- Kitting creates CONSUMPTION transactions per component + PRODUCTION transaction for finished good
+- Cycle count posting auto-creates ADJUSTMENT transactions for variances
+- Items have `itemType` (RAW/FINISHED/OTHER) for BOM/kitting filtering
+- `batchId` UUID groups related transactions (e.g., multi-item receipts)
+- Composite index on `(itemId, location)` for stock position performance
 
 ---
 
@@ -216,12 +87,7 @@ CREATE INDEX idx_cycle_count_lines_count ON CycleCountLines(cycle_count_id);
 
 **Completed**: Phase 2 commits `983d404`, `34c52c9`, `1af53e8`
 **Test Results**: 18/24 passing (75%) — 6 failures are test-code bugs, not API bugs
-
-**Known limitations carried forward**:
-- ~~Receipt form handles 1 item per submission~~ → ✅ Fixed in Phase 3B (multi-item receipt builder)
-- ~~No pagination on list endpoints~~ → ✅ Fixed in Phase 4B (server-side pagination)
-- ~~N+1 query in low-stock burn rate calculation~~ → ✅ Fixed in Phase 4B (single groupBy query)
-- ~~Sidebar shows Vendors, Items, Settings links as disabled~~ → ✅ Fixed in Phase 4A (full CRUD pages)
+**Known limitations** (single-item receipts, no pagination, N+1 queries, disabled sidebar links) — all resolved in later phases.
 
 ---
 
@@ -470,6 +336,66 @@ CREATE INDEX idx_cycle_count_lines_count ON CycleCountLines(cycle_count_id);
 
 ---
 
+### Bug Backlog (B-001 to B-038) ✅ COMPLETE
+**Goal**: Resolve all 38 bugs identified across Excel Master Backlog, organized into 6 priority phases. All deploy-gate blockers, recommended fixes, and post-go-live polish items addressed.
+
+#### Deploy-Gate Blockers (Phases 1-4) — 20 bugs
+- [x] **B-001**: BOM creation broken on frontend (response handling fix)
+- [x] **B-002**: Date timezone bug — `parseDate()` utility appends `T00:00:00` to date-only strings
+- [x] **B-003**: Kitting admin approval — `AdminAuthDialog` pattern for all kitting operations
+- [x] **B-004**: Adjustment role restriction — threshold-based admin approval (>10% or >$500)
+- [x] **B-005**: Opening balance duplicate check — query existing for same item+location before insert
+- [x] **B-006**: Batch receipt atomicity — Prisma `$transaction` block for receipt + price updates
+- [x] **B-007**: Adjustment "Other" requires notes — conditional backend validation
+- [x] **B-008**: Duplicate receipt detection — same vendor+date+item+qty within 24hrs warning
+- [x] **B-009**: Item deactivation BOM check — query active BOMs containing item before deactivation
+- [x] **B-010**: Confirmation dialogs for all stock-changing actions
+- [x] **B-011**: Transaction history search/filter — search by item code, vendor, invoice number
+- [x] **B-013**: Item code + description separation in tables
+- [x] **B-015**: Standard user vendor read-only access
+- [x] **B-016**: Inventory valuation mismatch — per-item rounding in dashboard `getWeightedAvgCostMap()`
+
+#### Recommended Before Go-Live (Phase 5) — 6 bugs
+- [x] **B-012**: Batch transaction grouping — `batchId` UUID column, visual grouping in history
+- [x] **B-014**: Unsaved changes warning on logout — `FormDirtyContext` integrated across all form pages
+- [x] **B-024**: Negative stock check before confirmation dialog in adjustments
+- [x] **B-026**: JWT refresh token — `POST /api/auth/refresh` endpoint + auto-refresh in API client
+- [x] **B-027**: Payment terms dropdown (COD, Net 15/30/45/60/90) + phone validation
+- [x] **B-028**: Item code auto-generation — `GET /api/items/next-code` + wand button in create form
+
+#### Post Go-Live Polish (Phase 6) — 12 bugs
+- [x] **B-017**: Sidebar nav labels rename (Inventory → Stock Levels, Items → Item Master)
+- [x] **B-018**: Sticky table headers on all list pages
+- [x] **B-019**: Transfer counterpart location in transaction details
+- [x] **B-020**: BOM modal click-outside protection
+- [x] **B-021**: Qty Per decimal enforcement for EA items (BOMs + Kitting)
+- [x] **B-022**: Transfer location picker logic (already implemented — read-only "To" field)
+- [x] **B-023**: Cycle count live variance calculation — summary cards update in real-time
+- [x] **B-025**: Stock position query performance — composite index + page-scoped raw SQL
+- [x] **B-029**: Success confirmation toasts for Items and Vendors CRUD
+- [x] **B-030**: Dashboard stat widget navigation — clickable cards link to relevant pages
+- [x] **B-031**: Location-level valuation totals in Stock Position footer
+- [x] **B-032**: Dead stock empty state message improvement
+- [x] **B-033**: Warning icon vertical centering in Alert component
+- [x] **B-034**: Last price hint alignment on receipt form
+- [x] **B-035**: Inline validation animation — `animate-field-error` CSS keyframe
+- [x] **B-036**: CSV export filename timestamp
+- [x] **B-037**: Future date validation wording improvement
+- [x] **B-038**: Date validation inline display (already resolved)
+
+**Database Migrations**:
+- `add_batch_id_to_transactions` — batchId UUID column + index
+- `add_item_location_composite_index` — composite (itemId, location) index for stock position performance
+
+**Key Architectural Additions**:
+- `FormDirtyContext` — global dirty form tracking for logout warning
+- JWT refresh token mechanism — sliding window refresh within 1 day of expiry
+- Raw SQL stock position queries scoped to current page's items (vs full table scan)
+
+**Success Criteria**: All 38 bugs resolved ✅
+
+---
+
 ### Phase 5: Advanced Features & Optimization (Post Go-Live)
 **Goal**: Enhancements driven by real-world usage feedback after the system is in production.
 
@@ -571,6 +497,7 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 | **Phase 4C-fixes** | UX Fixes from Alix Testing | ✅ Complete — 8 fixes from standard user testing |
 | **Phase 4D** | Role Permissions, Item Types, Admin Auth, Kitting Guardrails | ✅ Complete — hardened permissions, item classification, admin override flow |
 | **Phase 4E** | UX Audit Fixes (P1 + P2) | ✅ Complete — server-side filtering, confirmation dialogs, dirty form guards, UI consistency |
+| **Bug Backlog** | B-001 to B-038 (all 38 bugs) | ✅ Complete — deploy blockers, recommended fixes, and polish items all resolved |
 
 ### Remaining — Build Order
 
@@ -595,27 +522,9 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 
 ## 🚀 Deployment Strategy
 
-**IMPORTANT**: Deployment is OPTIONAL and only needed when you're ready to go live. Build and test everything locally first!
+All development phases are complete. Next step is cloud deployment.
 
-### Local Development (Phases 0-4)
-**Recommended Approach**: Build entirely on your machine
-- Run PostgreSQL locally (or use free Railway dev database)
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:3000`
-- Test with seed data, perfect the features
-- Demo to Alix on your computer or local network
-- **Cost**: $0
-- **Internet**: Not required (if using local PostgreSQL)
-
-### Cloud Deployment (When Ready for Production)
-
-**When to Deploy**:
-- ✅ After Phase 4 is complete (all core features working)
-- ✅ When you want Alix to access from warehouse/home
-- ✅ When you're ready to load real data
-- ✅ Estimated: ~13-16 weeks into development
-
-**Recommended Hosting Stack**:
+### Hosting Stack
 
 **Frontend**: [Vercel](https://vercel.com)
 - Free tier with generous limits
@@ -631,7 +540,7 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 
 **Alternative**: [Render.com](https://render.com) (all-in-one)
 
-### Deployment Architecture (When You Deploy)
+### Architecture
 
 ```
 User Browser (anywhere with internet)
@@ -643,7 +552,7 @@ Backend (Railway) → https://api-awt-inventory.railway.app
 PostgreSQL Database (Railway)
 ```
 
-### Quick Deployment Process (Takes ~30 minutes)
+### Deployment Process (~30 minutes)
 
 1. **Push to GitHub**: `git push origin main`
 2. **Connect Vercel**: Import repository, auto-detects Vite config
@@ -659,8 +568,7 @@ PostgreSQL Database (Railway)
 2. **Custom** (~$12/year): Point custom domain (e.g., `inventory.allworldtrailers.com`)
 
 ### Cost Estimate
-- **Local Development (Phases 0-4)**: $0
-- **Cloud Production (when deployed)**: $5-20/month
+- **Cloud Production**: $5-20/month (Railway backend + database, Vercel frontend free tier)
 
 ---
 
@@ -718,16 +626,6 @@ PostgreSQL Database (Railway)
 | Internet connectivity | Required | Ensure reliable internet at AWT locations |
 | Modern web browser | Chrome, Firefox, Safari, Edge | Already in use at AWT |
 
-### Knowledge Dependencies
-
-| Technology | Complexity | Mitigation |
-|------------|-----------|------------|
-| React | Medium | Use Vite template, follow official tutorials |
-| Prisma ORM | Low-Medium | Excellent documentation, abstracts SQL complexity |
-| JWT Authentication | Medium | Use proven libraries (jsonwebtoken, bcrypt) |
-| PostgreSQL | Low | Prisma handles most SQL, similar to SQLite syntax |
-| Cloud Deployment | Low | Railway/Vercel well-documented, simpler than AWS |
-
 ### Business Risks
 
 1. **Data Quality**: CSV imports may have inconsistent formats or duplicates
@@ -756,20 +654,18 @@ PostgreSQL Database (Railway)
 ✅ **Cycle Counts**: Snapshot-based counting with blind count support; posting auto-creates ADJUSTMENT transactions for variances
 ✅ **Scope Control**: Purchase orders, dynamic locations, system settings UI, and DB export UI deferred (see Deferred section in roadmap)
 
-### 🚨 Future Decisions (Not Blocking Development)
+### 🚨 Decisions Before Deploy
 
-**When Ready to Deploy** (after Phase 4B):
-- Custom domain or free Railway URL?
+- Custom domain (e.g., `inventory.allworldtrailers.com`, ~$12/year) or free Railway/Vercel URLs?
 - Which hosting tier (free vs paid)?
 - When to load real vendor/item data (opening balances)?
+- Seed data cleanup strategy (drop seed data before loading real data)
 
-**Phase 5 scope** (after 2-4 weeks of live usage):
+**Phase 5 scope** (determine after 2-4 weeks of live usage):
 - Which advanced features do Alix and warehouse staff actually need?
 - Mobile-first or reporting-first?
 
 ### Contingency Plans
 
 - **If Railway too expensive**: Switch to Render.com (similar pricing and features)
-- **If PostgreSQL too complex**: Use Supabase (managed PostgreSQL with GUI)
-- **If React too difficult**: Fall back to server-rendered HTML (Express + EJS, but loses modern UX)
 - **If CSV parsing breaks on weird formats**: Provide strict Excel template with example data

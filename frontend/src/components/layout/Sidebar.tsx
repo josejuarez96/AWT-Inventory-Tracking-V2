@@ -22,6 +22,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useFormDirty } from '@/context/FormDirtyContext';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -44,8 +45,8 @@ type NavGroup = {
 
 const TOP_ITEMS: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard', adminOnly: false, enabled: true },
-  { icon: PackageOpen, label: 'Inventory', path: '/inventory', adminOnly: false, enabled: true },
-  { icon: List, label: 'Items', path: '/items', adminOnly: false, enabled: true },
+  { icon: PackageOpen, label: 'Stock Levels', path: '/inventory', adminOnly: false, enabled: true },
+  { icon: List, label: 'Item Master', path: '/items', adminOnly: false, enabled: true },
   { icon: ArrowLeftRight, label: 'Transactions', path: '/transactions', adminOnly: false, enabled: true },
 ];
 
@@ -64,7 +65,7 @@ const TRANSACTION_GROUP: NavGroup = {
 
 const ADMIN_ITEMS: NavItem[] = [
   { icon: Layers, label: 'BOMs', path: '/boms', adminOnly: true, enabled: true },
-  { icon: Truck, label: 'Vendors', path: '/vendors', adminOnly: true, enabled: true },
+  { icon: Truck, label: 'Vendors', path: '/vendors', adminOnly: false, enabled: true },
   { icon: Upload, label: 'Import', path: '/import', adminOnly: true, enabled: true },
   { icon: Users, label: 'Users', path: '/users', adminOnly: true, enabled: true },
   { icon: Settings, label: 'Settings', path: '/settings', adminOnly: true, enabled: false },
@@ -101,6 +102,7 @@ function NavLink({ item, isActive }: { item: NavItem; isActive: boolean }) {
 export function Sidebar() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const { isDirty } = useFormDirty();
   const [txGroupOpen, setTxGroupOpen] = useState(true);
 
   const isAdmin = user?.role === 'admin';
@@ -206,7 +208,12 @@ export function Sidebar() {
           variant="ghost"
           size="sm"
           className="w-full justify-start text-gray-500 hover:text-gray-700"
-          onClick={logout}
+          onClick={() => {
+            if (isDirty) {
+              if (!window.confirm('You have unsaved changes. Are you sure you want to logout?')) return;
+            }
+            logout();
+          }}
         >
           <LogOut className="mr-2 h-3 w-3" />
           Logout

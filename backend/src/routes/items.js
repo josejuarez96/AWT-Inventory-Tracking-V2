@@ -53,6 +53,34 @@ router.get('/', async (req, res) => {
   return res.json({ items: items.map(serializeItem) });
 });
 
+// GET /api/items/next-code — suggest next item code based on prefix
+router.get('/next-code', async (req, res) => {
+  const prefix = (req.query.prefix || '').toString().toUpperCase().trim();
+  if (!prefix) {
+    return res.status(400).json({ error: 'prefix query parameter is required' });
+  }
+
+  // Find all item codes that start with the prefix followed by digits
+  const items = await prisma.item.findMany({
+    where: { itemCode: { startsWith: prefix } },
+    select: { itemCode: true },
+    orderBy: { itemCode: 'desc' },
+  });
+
+  let maxNum = 0;
+  const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)$`);
+  for (const item of items) {
+    const match = item.itemCode.match(pattern);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  }
+
+  const nextNum = String(maxNum + 1).padStart(3, '0');
+  return res.json({ nextCode: `${prefix}${nextNum}` });
+});
+
 // GET /api/items/categories — distinct categories for active items
 router.get('/categories', async (_req, res) => {
   const rows = await prisma.item.findMany({
@@ -382,6 +410,21 @@ router.patch(
       if (totalStock > 0) {
         return res.status(400).json({
           error: `Cannot deactivate item with ${totalStock} units on hand. Adjust or transfer stock to zero first.`,
+        });
+      }
+
+      // Block deactivation if item is a component in any ACTIVE BOM
+      const activeBomRefs = await prisma.bomLine.findMany({
+        where: {
+          itemId: id,
+          bom: { status: 'ACTIVE' },
+        },
+        include: { bom: { select: { bomCode: true, name: true } } },
+      });
+      if (activeBomRefs.length > 0) {
+        const bomList = activeBomRefs.map((r) => r.bom.bomCode).join(', ');
+        return res.status(400).json({
+          error: `Cannot deactivate item — it is a component in ${activeBomRefs.length} active BOM(s): ${bomList}. Retire those BOMs first.`,
         });
       }
     }

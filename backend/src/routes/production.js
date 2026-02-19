@@ -1,10 +1,34 @@
 const express = require('express');
+const crypto = require('crypto');
 const { body, query, validationResult } = require('express-validator');
+const bcrypt = require('bcryptjs');
 const prisma = require('../lib/prisma');
 const { authenticate } = require('../middleware/auth');
+const { LOCATIONS } = require('../lib/locations');
 
 const router = express.Router();
 router.use(authenticate);
+
+async function verifyAdminCredentials(authHeader) {
+  try {
+    if (!authHeader || !authHeader.startsWith('Basic ')) return false;
+    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
+    const colonIdx = decoded.indexOf(':');
+    if (colonIdx < 1) return false;
+    const username = decoded.slice(0, colonIdx);
+    const password = decoded.slice(colonIdx + 1);
+    if (!username || !password) return false;
+
+    const adminUser = await prisma.user.findUnique({
+      where: { username: username.toLowerCase() },
+    });
+    if (!adminUser || !adminUser.isActive || adminUser.role !== 'admin') return false;
+
+    return bcrypt.compare(password, adminUser.passwordHash);
+  } catch {
+    return false;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // POST /api/production/kit — Execute a kitting/production order
@@ -13,7 +37,7 @@ router.post(
   '/kit',
   [
     body('finishedGoodId').isInt({ gt: 0 }).withMessage('finishedGoodId is required'),
-    body('location').isIn(['ADEL', 'CALHOUN']).withMessage('location must be ADEL or CALHOUN'),
+    body('location').isIn(LOCATIONS).withMessage('location must be ADEL or CALHOUN'),
     body('quantityProduced').isFloat({ gt: 0 }).withMessage('quantityProduced must be > 0'),
     body('bomId').optional({ nullable: true }).isInt({ gt: 0 }),
     body('components').isArray({ min: 1 }).withMessage('At least one component is required'),
@@ -180,7 +204,34 @@ router.post(
     totalCost = Math.round(totalCost * 100) / 100;
     const unitCostPerFinishedGood = Math.round((totalCost / qtyProduced) * 100) / 100;
 
+    // Non-admin users require admin authorization to execute kitting
+    if (req.user.role !== 'admin') {
+      const adminAuthHeader = req.headers['x-admin-authorization'];
+      if (!adminAuthHeader) {
+        return res.status(403).json({
+          error: 'Admin authorization required for kitting operations',
+          requiresApproval: true,
+          summary: {
+            finishedGood: finishedGood.itemCode,
+            location,
+            quantityProduced: qtyProduced,
+            components: requiredPerComponent.length,
+            totalCost,
+          },
+        });
+      }
+
+      const isValidAdmin = await verifyAdminCredentials(adminAuthHeader);
+      if (!isValidAdmin) {
+        return res.status(403).json({
+          error: 'Invalid admin credentials',
+          requiresApproval: true,
+        });
+      }
+    }
+
     // Create everything atomically
+    const kitBatchId = crypto.randomUUID();
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create ProductionOrder with temp orderNumber
       const order = await tx.productionOrder.create({
@@ -223,6 +274,7 @@ router.post(
             notes: `[Kit ${updatedOrder.orderNumber}] Consumed for ${finishedGood.itemCode}`,
             createdBy: req.user.id,
             productionOrderId: order.id,
+            batchId: kitBatchId,
           },
         });
       }
@@ -239,6 +291,7 @@ router.post(
           notes: `[Kit ${updatedOrder.orderNumber}] Produced`,
           createdBy: req.user.id,
           productionOrderId: order.id,
+          batchId: kitBatchId,
         },
       });
 
@@ -280,7 +333,7 @@ router.post(
 router.get(
   '/',
   [
-    query('location').optional().isIn(['ADEL', 'CALHOUN']),
+    query('location').optional().isIn(LOCATIONS),
     query('from').optional().isISO8601(),
     query('to').optional().isISO8601(),
     query('page').optional().isInt({ gt: 0 }),

@@ -3,6 +3,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '@/lib/api';
+import { LOCATIONS, type Location } from '@/lib/locations';
+import { useFormDirty } from '@/context/FormDirtyContext';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,7 +26,7 @@ type Item = { id: number; itemCode: string; description: string; unitOfMeasure: 
 
 const schema = z.object({
   itemId: z.string().min(1, 'Item is required'),
-  location: z.enum(['ADEL', 'CALHOUN'], { required_error: 'Location is required' }),
+  location: z.enum(LOCATIONS, { required_error: 'Location is required' }),
   quantity: z.coerce.number({ invalid_type_error: 'Must be a number' }).positive('Must be greater than 0'),
   unitCost: z.coerce.number({ invalid_type_error: 'Must be a number' }).positive('Must be greater than 0').optional().or(z.literal(NaN).transform(() => undefined)),
   notes: z.string().optional(),
@@ -41,13 +44,30 @@ export function OpeningBalancePage() {
     handleSubmit,
     setValue,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      location: 'ADEL',
+      location: LOCATIONS[0],
     },
   });
+
+  const { setDirty: setFormDirty } = useFormDirty();
+  useEffect(() => {
+    setFormDirty(isDirty);
+    return () => setFormDirty(false);
+  }, [isDirty, setFormDirty]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
 
   useEffect(() => {
     api
@@ -56,22 +76,29 @@ export function OpeningBalancePage() {
       .catch(() => {});
   }, []);
 
-  async function onSubmit(values: FormValues) {
+  function onFormValid(values: FormValues) {
+    setPendingValues(values);
+    setConfirmOpen(true);
+  }
+
+  async function onConfirmed() {
+    if (!pendingValues) return;
+    setConfirmOpen(false);
     setSubmitError(null);
     setSuccessMessage(null);
     try {
       const data = await api.post<{ transaction: { id: number } }>(
         '/api/transactions/opening-balances',
         {
-          itemId: parseInt(values.itemId),
-          location: values.location,
-          quantity: values.quantity,
-          unitCost: values.unitCost || undefined,
-          notes: values.notes || undefined,
+          itemId: parseInt(pendingValues.itemId),
+          location: pendingValues.location,
+          quantity: pendingValues.quantity,
+          unitCost: pendingValues.unitCost || undefined,
+          notes: pendingValues.notes || undefined,
         }
       );
       setSuccessMessage(`Opening balance #${data.transaction.id} recorded successfully.`);
-      const prevLocation = values.location;
+      const prevLocation = pendingValues.location;
       reset({
         itemId: '',
         location: prevLocation,
@@ -79,6 +106,7 @@ export function OpeningBalancePage() {
         unitCost: undefined,
         notes: '',
       });
+      setPendingValues(null);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to save opening balance.';
       setSubmitError(message);
@@ -109,7 +137,7 @@ export function OpeningBalancePage() {
               </Alert>
             )}
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <form onSubmit={handleSubmit(onFormValid)} className="space-y-6">
               {/* Row 1: Item + Location */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
@@ -127,26 +155,27 @@ export function OpeningBalancePage() {
                     </SelectContent>
                   </Select>
                   {errors.itemId && (
-                    <p className="text-xs text-red-600">{errors.itemId.message}</p>
+                    <p className="text-xs text-red-600 animate-field-error">{errors.itemId.message}</p>
                   )}
                 </div>
 
                 <div className="space-y-1">
                   <Label htmlFor="location">Location <span className="text-red-500">*</span></Label>
                   <Select
-                    defaultValue="ADEL"
-                    onValueChange={(v) => setValue('location', v as 'ADEL' | 'CALHOUN')}
+                    defaultValue={LOCATIONS[0]}
+                    onValueChange={(v) => setValue('location', v as Location)}
                   >
                     <SelectTrigger id="location">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ADEL">ADEL</SelectItem>
-                      <SelectItem value="CALHOUN">CALHOUN</SelectItem>
+                      {LOCATIONS.map((loc) => (
+                        <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   {errors.location && (
-                    <p className="text-xs text-red-600">{errors.location.message}</p>
+                    <p className="text-xs text-red-600 animate-field-error">{errors.location.message}</p>
                   )}
                 </div>
               </div>
@@ -164,7 +193,7 @@ export function OpeningBalancePage() {
                     {...register('quantity')}
                   />
                   {errors.quantity && (
-                    <p className="text-xs text-red-600">{errors.quantity.message}</p>
+                    <p className="text-xs text-red-600 animate-field-error">{errors.quantity.message}</p>
                   )}
                 </div>
 
@@ -179,7 +208,7 @@ export function OpeningBalancePage() {
                     {...register('unitCost')}
                   />
                   {errors.unitCost && (
-                    <p className="text-xs text-red-600">{errors.unitCost.message}</p>
+                    <p className="text-xs text-red-600 animate-field-error">{errors.unitCost.message}</p>
                   )}
                 </div>
               </div>
@@ -217,6 +246,26 @@ export function OpeningBalancePage() {
           />
         </TabsContent>
       </Tabs>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Confirm Opening Balance"
+        confirmLabel="Save Opening Balance"
+        description={
+          pendingValues && (
+            <div className="space-y-1 text-sm">
+              <p><span className="font-medium">Item:</span> {items.find((i) => String(i.id) === pendingValues.itemId)?.itemCode ?? '--'}</p>
+              <p><span className="font-medium">Location:</span> {pendingValues.location}</p>
+              <p><span className="font-medium">Quantity:</span> {pendingValues.quantity}</p>
+              {pendingValues.unitCost && (
+                <p><span className="font-medium">Unit Cost:</span> ${pendingValues.unitCost}</p>
+              )}
+            </div>
+          )
+        }
+        onConfirm={onConfirmed}
+      />
     </div>
   );
 }

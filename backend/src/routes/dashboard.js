@@ -192,7 +192,7 @@ async function getWeightedAvgCostMap() {
 
   const avgCostMap = {};
   for (const row of rows) {
-    avgCostMap[row.itemId] = Number(row.avgCost ?? 0);
+    avgCostMap[row.itemId] = Math.round(Number(row.avgCost ?? 0) * 100) / 100;
   }
   return avgCostMap;
 }

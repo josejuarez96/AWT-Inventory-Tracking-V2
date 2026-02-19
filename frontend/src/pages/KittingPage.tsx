@@ -3,7 +3,11 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api, ApiError } from '@/lib/api';
+import { LOCATIONS, type Location } from '@/lib/locations';
 import { formatCurrency } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
+import { useFormDirty } from '@/context/FormDirtyContext';
+import { AdminAuthDialog } from '@/components/AdminAuthDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,8 +52,7 @@ type BomDetail = BomOption & {
 
 type StockPosition = {
   itemId: number;
-  adelQty: number;
-  calhounQty: number;
+  qtyByLocation: Record<string, number>;
   avgCost: number | null;
 };
 
@@ -62,7 +65,7 @@ const componentSchema = z.object({
 const kittingSchema = z.object({
   bomId: z.string().optional(),
   finishedGoodId: z.string().min(1, 'Finished good is required'),
-  location: z.enum(['ADEL', 'CALHOUN'], { required_error: 'Location is required' }),
+  location: z.enum(LOCATIONS, { required_error: 'Location is required' }),
   quantityProduced: z.coerce.number({ invalid_type_error: 'Required' }).positive('Must be > 0'),
   notes: z.string().optional(),
   components: z.array(componentSchema).min(1, 'At least one component is required'),
@@ -71,18 +74,23 @@ const kittingSchema = z.object({
 type KittingFormValues = z.infer<typeof kittingSchema>;
 
 export function KittingPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [items, setItems] = useState<Item[]>([]);
   const [activeBoms, setActiveBoms] = useState<BomOption[]>([]);
   const [stockMap, setStockMap] = useState<Map<number, StockPosition>>(new Map());
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [adminAuthOpen, setAdminAuthOpen] = useState(false);
+  const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
+  const [adminAuthSubmitting, setAdminAuthSubmitting] = useState(false);
 
   const form = useForm<KittingFormValues>({
     resolver: zodResolver(kittingSchema),
     defaultValues: {
       bomId: '',
       finishedGoodId: '',
-      location: 'ADEL',
+      location: LOCATIONS[0],
       quantityProduced: undefined as unknown as number,
       notes: '',
       components: [{ itemId: '', quantityPer: undefined as unknown as number, fromBom: false }],
@@ -106,6 +114,8 @@ export function KittingPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState<KittingFormValues | null>(null);
 
+  const { setDirty: setFormDirty } = useFormDirty();
+
   // Warn before browser close/refresh if form is dirty
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -118,6 +128,11 @@ export function KittingPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
 
+  useEffect(() => {
+    setFormDirty(isDirty);
+    return () => setFormDirty(false);
+  }, [isDirty, setFormDirty]);
+
   const watchedLocation = watch('location');
   const watchedComponents = watch('components');
   const watchedQtyProduced = watch('quantityProduced') || 0;
@@ -128,7 +143,7 @@ export function KittingPage() {
       try {
         const [itemData, bomData] = await Promise.all([
           api.get<{ items: Item[] }>('/api/items'),
-          api.get<{ boms: BomOption[] }>('/api/boms?status=ACTIVE&limit=500'),
+          api.get<{ boms: BomOption[] }>('/api/boms?status=ACTIVE&limit=200'),
         ]);
         setItems(itemData.items);
         setActiveBoms(bomData.boms);
@@ -144,18 +159,16 @@ export function KittingPage() {
     try {
       const data = await api.get<{
         positions: Array<{
-          id: number;
-          adelQty: number;
-          calhounQty: number;
+          item: { id: number };
+          qtyByLocation: Record<string, number>;
           avgCost: number | null;
         }>;
       }>('/api/transactions/stock-position?limit=9999');
       const map = new Map<number, StockPosition>();
       for (const p of data.positions) {
-        map.set(p.id, {
-          itemId: p.id,
-          adelQty: p.adelQty,
-          calhounQty: p.calhounQty,
+        map.set(p.item.id, {
+          itemId: p.item.id,
+          qtyByLocation: p.qtyByLocation,
           avgCost: p.avgCost,
         });
       }
@@ -209,7 +222,7 @@ export function KittingPage() {
     if (!itemId) return null;
     const pos = stockMap.get(parseInt(itemId));
     if (!pos) return 0;
-    return watchedLocation === 'ADEL' ? pos.adelQty : pos.calhounQty;
+    return pos.qtyByLocation[watchedLocation] ?? 0;
   }
 
   function getAvgCost(itemId: string): number | null {
@@ -241,8 +254,50 @@ export function KittingPage() {
   const hasInsufficientStock = insufficientLines.length > 0;
 
   function onFormValid(values: KittingFormValues) {
+    // Enforce whole numbers for EA items
+    for (const comp of values.components) {
+      const item = items.find((i) => i.id === parseInt(comp.itemId));
+      if (item && item.unitOfMeasure.toUpperCase() === 'EA' && !Number.isInteger(comp.quantityPer)) {
+        setSubmitError(`${item.itemCode} is measured in EA — Qty Per must be a whole number.`);
+        return;
+      }
+    }
+    setSubmitError(null);
     setPendingValues(values);
     setConfirmOpen(true);
+  }
+
+  function buildKitPayload(values: KittingFormValues) {
+    return {
+      bomId: values.bomId ? parseInt(values.bomId) : undefined,
+      finishedGoodId: parseInt(values.finishedGoodId),
+      location: values.location,
+      quantityProduced: values.quantityProduced,
+      notes: values.notes || undefined,
+      components: values.components.map((c) => ({
+        itemId: parseInt(c.itemId),
+        quantityPer: c.quantityPer,
+      })),
+    };
+  }
+
+  function handleKitSuccess(data: { order: { orderNumber: string; totalCost: number; quantityProduced: number } }) {
+    setSuccessMessage(
+      `Kitting order ${data.order.orderNumber} created successfully. ` +
+      `Produced ${data.order.quantityProduced} unit(s), total cost ${formatCurrency(Number(data.order.totalCost))}.`
+    );
+
+    const prevLocation = pendingValues?.location ?? LOCATIONS[0];
+    reset({
+      bomId: '',
+      finishedGoodId: '',
+      location: prevLocation,
+      quantityProduced: undefined as unknown as number,
+      notes: '',
+      components: [{ itemId: '', quantityPer: undefined as unknown as number, fromBom: false }],
+    });
+    setPendingValues(null);
+    void loadStock();
   }
 
   async function onConfirmed() {
@@ -253,38 +308,42 @@ export function KittingPage() {
     try {
       const data = await api.post<{
         order: { orderNumber: string; totalCost: number; quantityProduced: number };
-      }>('/api/production/kit', {
-        bomId: pendingValues.bomId ? parseInt(pendingValues.bomId) : undefined,
-        finishedGoodId: parseInt(pendingValues.finishedGoodId),
-        location: pendingValues.location,
-        quantityProduced: pendingValues.quantityProduced,
-        notes: pendingValues.notes || undefined,
-        components: pendingValues.components.map((c) => ({
-          itemId: parseInt(c.itemId),
-          quantityPer: c.quantityPer,
-        })),
-      });
+      }>('/api/production/kit', buildKitPayload(pendingValues));
 
-      setSuccessMessage(
-        `Kitting order ${data.order.orderNumber} created successfully. ` +
-        `Produced ${data.order.quantityProduced} unit(s), total cost ${formatCurrency(Number(data.order.totalCost))}.`
-      );
-
-      const prevLocation = pendingValues.location;
-      reset({
-        bomId: '',
-        finishedGoodId: '',
-        location: prevLocation,
-        quantityProduced: undefined as unknown as number,
-        notes: '',
-        components: [{ itemId: '', quantityPer: undefined as unknown as number, fromBom: false }],
-      });
-      setPendingValues(null);
-
-      // Refresh stock after production
-      void loadStock();
+      handleKitSuccess(data);
     } catch (err) {
-      setSubmitError(err instanceof ApiError ? err.message : 'Failed to create kitting order.');
+      if (err instanceof ApiError && err.data?.requiresApproval) {
+        setAdminAuthError(null);
+        setAdminAuthOpen(true);
+      } else {
+        setSubmitError(err instanceof ApiError ? err.message : 'Failed to create kitting order.');
+      }
+    }
+  }
+
+  async function handleAdminAuthorize(credentials: { username: string; password: string }) {
+    if (!pendingValues) return;
+    setAdminAuthSubmitting(true);
+    setAdminAuthError(null);
+    try {
+      const encoded = btoa(`${credentials.username}:${credentials.password}`);
+      const data = await api.post<{
+        order: { orderNumber: string; totalCost: number; quantityProduced: number };
+      }>('/api/production/kit', buildKitPayload(pendingValues), {
+        'X-Admin-Authorization': `Basic ${encoded}`,
+      });
+
+      setAdminAuthOpen(false);
+      handleKitSuccess(data);
+    } catch (err) {
+      if (err instanceof ApiError && err.data?.requiresApproval) {
+        setAdminAuthError(err.message);
+      } else {
+        setAdminAuthOpen(false);
+        setSubmitError(err instanceof ApiError ? err.message : 'Failed to create kitting order.');
+      }
+    } finally {
+      setAdminAuthSubmitting(false);
     }
   }
 
@@ -350,7 +409,7 @@ export function KittingPage() {
                 </SelectContent>
               </Select>
               {errors.finishedGoodId && (
-                <p className="text-xs text-red-600">{errors.finishedGoodId.message}</p>
+                <p className="text-xs text-red-600 animate-field-error">{errors.finishedGoodId.message}</p>
               )}
             </div>
           </div>
@@ -360,19 +419,20 @@ export function KittingPage() {
             <div className="space-y-1">
               <Label>Location <span className="text-red-500">*</span></Label>
               <Select
-                defaultValue="ADEL"
-                onValueChange={(v) => setValue('location', v as 'ADEL' | 'CALHOUN')}
+                defaultValue={LOCATIONS[0]}
+                onValueChange={(v) => setValue('location', v as Location)}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ADEL">ADEL</SelectItem>
-                  <SelectItem value="CALHOUN">CALHOUN</SelectItem>
+                  {LOCATIONS.map((loc) => (
+                    <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               {errors.location && (
-                <p className="text-xs text-red-600">{errors.location.message}</p>
+                <p className="text-xs text-red-600 animate-field-error">{errors.location.message}</p>
               )}
             </div>
 
@@ -386,7 +446,7 @@ export function KittingPage() {
                 {...register('quantityProduced')}
               />
               {errors.quantityProduced && (
-                <p className="text-xs text-red-600">{errors.quantityProduced.message}</p>
+                <p className="text-xs text-red-600 animate-field-error">{errors.quantityProduced.message}</p>
               )}
             </div>
           </div>
@@ -620,6 +680,15 @@ export function KittingPage() {
           )
         }
         onConfirm={onConfirmed}
+      />
+
+      <AdminAuthDialog
+        open={adminAuthOpen}
+        onOpenChange={setAdminAuthOpen}
+        description="Kitting operations require admin approval. Enter admin credentials to authorize this production order."
+        onAuthorize={handleAdminAuthorize}
+        isSubmitting={adminAuthSubmitting}
+        error={adminAuthError}
       />
     </div>
   );

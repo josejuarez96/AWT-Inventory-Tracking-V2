@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from '@/lib/api';
+import { LOCATIONS } from '@/lib/locations';
 import { formatCurrency } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -32,8 +33,7 @@ type StockItem = {
 
 type StockPosition = {
   item: StockItem;
-  adelQty: number;
-  calhounQty: number;
+  qtyByLocation: Record<string, number>;
   totalQty: number;
   avgCost: number | null;
   totalValue: number | null;
@@ -47,7 +47,7 @@ type PaginatedResponse = {
   totalPages: number;
 };
 
-type SortKey = 'itemCode' | 'description' | 'category' | 'adelQty' | 'calhounQty' | 'totalQty' | 'avgCost' | 'totalValue';
+type SortKey = 'itemCode' | 'description' | 'category' | 'totalQty' | 'avgCost' | 'totalValue' | `loc_${string}`;
 type SortDir = 'asc' | 'desc';
 
 export function StockPositionPage() {
@@ -132,14 +132,6 @@ export function StockPositionPage() {
           valA = a.item.category ?? '';
           valB = b.item.category ?? '';
           break;
-        case 'adelQty':
-          valA = a.adelQty;
-          valB = b.adelQty;
-          break;
-        case 'calhounQty':
-          valA = a.calhounQty;
-          valB = b.calhounQty;
-          break;
         case 'totalQty':
           valA = a.totalQty;
           valB = b.totalQty;
@@ -153,6 +145,12 @@ export function StockPositionPage() {
           valB = b.totalValue ?? -1;
           break;
         default:
+          if (sortKey.startsWith('loc_')) {
+            const loc = sortKey.slice(4);
+            valA = a.qtyByLocation[loc] ?? 0;
+            valB = b.qtyByLocation[loc] ?? 0;
+            break;
+          }
           return 0;
       }
 
@@ -188,12 +186,22 @@ export function StockPositionPage() {
     p.item.minQuantity !== null && p.totalQty <= p.item.minQuantity;
 
   // Totals for current page
-  const grandTotal = useMemo(() => {
+  const { grandTotal, locationTotals } = useMemo(() => {
     let value = 0;
+    const locTotals: Record<string, number> = {};
+    for (const loc of LOCATIONS) locTotals[loc] = 0;
     sorted.forEach((p) => {
+      const cost = p.avgCost ?? 0;
       if (p.totalValue !== null) value += p.totalValue;
+      for (const loc of LOCATIONS) {
+        locTotals[loc] += (p.qtyByLocation[loc] ?? 0) * cost;
+      }
     });
-    return Math.round(value * 100) / 100;
+    for (const loc of LOCATIONS) locTotals[loc] = Math.round(locTotals[loc] * 100) / 100;
+    return {
+      grandTotal: Math.round(value * 100) / 100,
+      locationTotals: locTotals,
+    };
   }, [sorted]);
 
   return (
@@ -246,12 +254,11 @@ export function StockPositionPage() {
                   Category <SortIcon column="category" />
                 </TableHead>
                 <TableHead className="text-right">UOM</TableHead>
-                <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort('adelQty')}>
-                  ADEL <SortIcon column="adelQty" />
-                </TableHead>
-                <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort('calhounQty')}>
-                  CALHOUN <SortIcon column="calhounQty" />
-                </TableHead>
+                {LOCATIONS.map((loc) => (
+                  <TableHead key={loc} className="text-right cursor-pointer select-none" onClick={() => toggleSort(`loc_${loc}` as SortKey)}>
+                    {loc} <SortIcon column={`loc_${loc}` as SortKey} />
+                  </TableHead>
+                ))}
                 <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort('totalQty')}>
                   Total <SortIcon column="totalQty" />
                 </TableHead>
@@ -277,8 +284,9 @@ export function StockPositionPage() {
                   <TableCell>{p.item.description}</TableCell>
                   <TableCell className="text-gray-500">{p.item.category ?? '--'}</TableCell>
                   <TableCell className="text-right text-gray-500">{p.item.unitOfMeasure}</TableCell>
-                  <TableCell className="text-right font-medium">{p.adelQty}</TableCell>
-                  <TableCell className="text-right font-medium">{p.calhounQty}</TableCell>
+                  {LOCATIONS.map((loc) => (
+                    <TableCell key={loc} className="text-right font-medium">{p.qtyByLocation[loc] ?? 0}</TableCell>
+                  ))}
                   <TableCell className="text-right font-bold">{p.totalQty}</TableCell>
                   <TableCell className="text-right text-sm">{formatCurrency(p.avgCost)}</TableCell>
                   <TableCell className="text-right text-sm font-medium">{formatCurrency(p.totalValue)}</TableCell>
@@ -286,7 +294,12 @@ export function StockPositionPage() {
               ))}
               {/* Totals row */}
               <TableRow className="bg-gray-50 font-semibold">
-                <TableCell colSpan={8} className="text-right">Page Inventory Value</TableCell>
+                <TableCell colSpan={4} className="text-right">Page Totals</TableCell>
+                {LOCATIONS.map((loc) => (
+                  <TableCell key={loc} className="text-right">{formatCurrency(locationTotals[loc])}</TableCell>
+                ))}
+                <TableCell />
+                <TableCell />
                 <TableCell className="text-right">{formatCurrency(grandTotal)}</TableCell>
               </TableRow>
             </TableBody>

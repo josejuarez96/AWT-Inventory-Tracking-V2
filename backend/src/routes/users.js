@@ -7,7 +7,17 @@ const validatePassword = require('../lib/validatePassword');
 
 const router = express.Router();
 
-// All users routes require authentication + admin role
+// Lightweight list for dropdowns — any authenticated user can see active user names
+router.get('/list', authenticate, async (_req, res) => {
+  const users = await prisma.user.findMany({
+    where: { isActive: true },
+    select: { id: true, fullName: true, role: true },
+    orderBy: { fullName: 'asc' },
+  });
+  return res.json({ users });
+});
+
+// All remaining users routes require admin role
 router.use(authenticate, requireAdmin);
 
 // GET /api/users

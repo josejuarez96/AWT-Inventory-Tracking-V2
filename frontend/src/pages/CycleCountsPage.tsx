@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, API_BASE } from '@/lib/api';
-import { formatCurrency } from '@/lib/utils';
+import { LOCATIONS } from '@/lib/locations';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -53,7 +54,7 @@ type CycleCountSummary = {
   totalVarianceValue: number;
 };
 
-type User = { id: number; fullName: string; role: string; isActive: boolean };
+type User = { id: number; fullName: string; role: string };
 type Item = { id: number; itemCode: string; description: string; category: string | null };
 
 type VarianceLine = {
@@ -81,13 +82,6 @@ const STATUS_COLORS: Record<string, string> = {
   VOID: 'bg-red-100 text-red-700',
 };
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
 
 
 // --- Component ---
@@ -105,7 +99,7 @@ export function CycleCountsPage() {
 
   // Create dialog state
   const [createOpen, setCreateOpen] = useState(false);
-  const [createLocation, setCreateLocation] = useState<string>('ADEL');
+  const [createLocation, setCreateLocation] = useState<string>(LOCATIONS[0]);
   const [itemSelection, setItemSelection] = useState<string>('all');
   const [category, setCategory] = useState('');
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
@@ -176,17 +170,18 @@ export function CycleCountsPage() {
     loadCycleCounts();
   }, [loadCycleCounts]);
 
-  // Load reference data for create dialog
+  // Load reference data for create dialog (separate calls so one failure doesn't block the other)
   useEffect(() => {
-    Promise.all([
-      api.get<{ users: User[] }>('/api/users'),
-      api.get<{ items: Item[] }>('/api/items'),
-    ]).then(([uData, iData]) => {
-      setUsers(uData.users.filter((u) => u.isActive));
-      setItems(iData.items);
-      const cats = [...new Set(iData.items.map((i) => i.category).filter(Boolean))] as string[];
-      setCategories(cats.sort());
-    }).catch(() => {});
+    api.get<{ users: User[] }>('/api/users/list')
+      .then((data) => setUsers(data.users))
+      .catch(() => {});
+    api.get<{ items: Item[] }>('/api/items')
+      .then((data) => {
+        setItems(data.items);
+        const cats = [...new Set(data.items.map((i) => i.category).filter(Boolean))] as string[];
+        setCategories(cats.sort());
+      })
+      .catch(() => {});
   }, []);
 
   async function handleCreate() {
@@ -219,7 +214,7 @@ export function CycleCountsPage() {
   }
 
   function resetCreateForm() {
-    setCreateLocation('ADEL');
+    setCreateLocation(LOCATIONS[0]);
     setItemSelection('all');
     setCategory('');
     setSelectedItemIds([]);
@@ -240,7 +235,8 @@ export function CycleCountsPage() {
     const blob = await res.blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'variance-history.csv';
+    const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    a.download = `variance-history-${ts}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -294,8 +290,9 @@ export function CycleCountsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All locations</SelectItem>
-                <SelectItem value="ADEL">ADEL</SelectItem>
-                <SelectItem value="CALHOUN">CALHOUN</SelectItem>
+                {LOCATIONS.map((loc) => (
+                  <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -376,8 +373,9 @@ export function CycleCountsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ALL">All locations</SelectItem>
-                    <SelectItem value="ADEL">ADEL</SelectItem>
-                    <SelectItem value="CALHOUN">CALHOUN</SelectItem>
+                    {LOCATIONS.map((loc) => (
+                      <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -481,8 +479,9 @@ export function CycleCountsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ADEL">ADEL</SelectItem>
-                  <SelectItem value="CALHOUN">CALHOUN</SelectItem>
+                  {LOCATIONS.map((loc) => (
+                    <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

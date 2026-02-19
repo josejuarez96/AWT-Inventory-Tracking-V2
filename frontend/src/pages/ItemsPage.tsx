@@ -36,7 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Plus, Search } from 'lucide-react';
+import { MoreHorizontal, Plus, Search, CheckCircle, Wand2 } from 'lucide-react';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
 
@@ -107,6 +107,7 @@ export function ItemsPage() {
   const [toggleError, setToggleError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState<{ id: number; currentStatus: boolean; itemCode: string } | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   async function fetchItems() {
     setIsLoading(true);
@@ -169,8 +170,10 @@ export function ItemsPage() {
     try {
       if (editingId) {
         await api.put(`/api/items/${editingId}`, payload);
+        setSuccessMessage(`Item "${payload.itemCode}" updated successfully.`);
       } else {
         await api.post('/api/items', payload);
+        setSuccessMessage(`Item "${payload.itemCode}" created successfully.`);
       }
       setDialogOpen(false);
       void fetchItems();
@@ -181,10 +184,11 @@ export function ItemsPage() {
     }
   }
 
-  async function handleToggleStatus(id: number, currentStatus: boolean) {
+  async function handleToggleStatus(id: number, currentStatus: boolean, itemCode: string) {
     setToggleError('');
     try {
       await api.patch(`/api/items/${id}/status`, { isActive: !currentStatus });
+      setSuccessMessage(`Item "${itemCode}" ${currentStatus ? 'deactivated' : 'activated'} successfully.`);
       void fetchItems();
     } catch (err) {
       setToggleError(err instanceof ApiError ? err.message : 'Failed to update item status');
@@ -224,13 +228,33 @@ export function ItemsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="itemCode">Item Code <span className="text-red-500">*</span></Label>
-                  <Input
-                    id="itemCode"
-                    value={form.itemCode}
-                    onChange={(e) => setForm((f) => ({ ...f, itemCode: e.target.value }))}
-                    maxLength={50}
-                    required
-                  />
+                  <div className="flex gap-1">
+                    <Input
+                      id="itemCode"
+                      value={form.itemCode}
+                      onChange={(e) => setForm((f) => ({ ...f, itemCode: e.target.value }))}
+                      maxLength={50}
+                      required
+                    />
+                    {!editingId && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0"
+                        title="Auto-generate code"
+                        onClick={async () => {
+                          const prefix = form.itemType === 'FINISHED' ? 'FIN-' : form.itemType === 'OTHER' ? 'OTH-' : 'RAW-';
+                          try {
+                            const data = await api.get<{ nextCode: string }>(`/api/items/next-code?prefix=${prefix}`);
+                            setForm((f) => ({ ...f, itemCode: data.nextCode }));
+                          } catch { /* ignore */ }
+                        }}
+                      >
+                        <Wand2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="unitOfMeasure">Unit of Measure</Label>
@@ -368,6 +392,13 @@ export function ItemsPage() {
         />
       </div>
 
+      {successMessage && (
+        <Alert className="border-green-200 bg-green-50">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertDescription className="text-green-800">{successMessage}</AlertDescription>
+        </Alert>
+      )}
+
       {toggleError && (
         <Alert variant="destructive">
           <AlertDescription className="flex items-center justify-between">
@@ -479,7 +510,7 @@ export function ItemsPage() {
         confirmVariant={confirmToggle?.currentStatus ? 'destructive' : 'default'}
         onConfirm={() => {
           if (confirmToggle) {
-            void handleToggleStatus(confirmToggle.id, confirmToggle.currentStatus);
+            void handleToggleStatus(confirmToggle.id, confirmToggle.currentStatus, confirmToggle.itemCode);
             setConfirmToggle(null);
           }
         }}

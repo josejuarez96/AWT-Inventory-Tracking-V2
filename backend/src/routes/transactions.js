@@ -1,9 +1,37 @@
 const express = require('express');
+const crypto = require('crypto');
 const multer = require('multer');
+const bcrypt = require('bcryptjs');
 const { parse } = require('csv-parse/sync');
 const { body, query, validationResult } = require('express-validator');
 const prisma = require('../lib/prisma');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const { LOCATIONS } = require('../lib/locations');
+
+async function verifyAdminCredentials(authHeader) {
+  try {
+    if (!authHeader || !authHeader.startsWith('Basic ')) return false;
+    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
+    const colonIdx = decoded.indexOf(':');
+    if (colonIdx < 1) return false;
+    const username = decoded.slice(0, colonIdx);
+    const password = decoded.slice(colonIdx + 1);
+    if (!username || !password) return false;
+
+    const adminUser = await prisma.user.findUnique({
+      where: { username: username.toLowerCase() },
+    });
+    if (!adminUser || !adminUser.isActive || adminUser.role !== 'admin') return false;
+
+    return bcrypt.compare(password, adminUser.passwordHash);
+  } catch {
+    return false;
+  }
+}
+
+// Adjustment threshold — requires admin approval if exceeded
+const ADJ_THRESHOLD_PCT = 0.10; // 10% of current stock
+const ADJ_THRESHOLD_VALUE = 500; // $500 value impact
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -62,7 +90,7 @@ router.post(
   [
     body('itemId').isInt({ gt: 0 }).withMessage('itemId must be a positive integer'),
     body('vendorId').isInt({ gt: 0 }).withMessage('vendorId must be a positive integer'),
-    body('location').isIn(['ADEL', 'CALHOUN']).withMessage('location must be ADEL or CALHOUN'),
+    body('location').isIn(LOCATIONS).withMessage('location must be ADEL or CALHOUN'),
     body('quantity').isFloat({ gt: 0 }).withMessage('quantity must be greater than 0'),
     body('unitCost').isFloat({ gt: 0 }).withMessage('unitCost must be greater than 0'),
     body('transactionDate').isISO8601().withMessage('transactionDate must be a valid date'),
@@ -93,6 +121,27 @@ router.post(
       return res.status(404).json({ error: 'Vendor not found' });
     }
 
+    // Duplicate receipt detection (unless explicitly overridden)
+    if (!req.body.skipDuplicateCheck) {
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const duplicate = await prisma.transaction.findFirst({
+        where: {
+          transactionType: 'RECEIPT',
+          itemId,
+          vendorId,
+          quantity: { equals: quantity },
+          createdAt: { gte: oneDayAgo },
+        },
+        include: { item: { select: { itemCode: true } } },
+      });
+      if (duplicate) {
+        return res.status(409).json({
+          error: `Possible duplicate: a receipt for ${duplicate.item.itemCode} (qty ${Number(duplicate.quantity)}) from the same vendor was created recently. Submit again with skipDuplicateCheck to proceed.`,
+          isDuplicate: true,
+        });
+      }
+    }
+
     const created = await prisma.transaction.create({
       data: {
         transactionType: 'RECEIPT',
@@ -107,7 +156,7 @@ router.post(
         createdBy: req.user.id,
       },
       include: {
-        item: { select: { itemCode: true, description: true } },
+        item: { select: { id: true, itemCode: true, description: true } },
         vendor: { select: { vendorName: true } },
         user: { select: { fullName: true } },
       },
@@ -159,7 +208,7 @@ router.post(
   '/receipts/batch',
   [
     body('vendorId').isInt({ gt: 0 }).withMessage('vendorId must be a positive integer'),
-    body('location').isIn(['ADEL', 'CALHOUN']).withMessage('location must be ADEL or CALHOUN'),
+    body('location').isIn(LOCATIONS).withMessage('location must be ADEL or CALHOUN'),
     body('transactionDate').isISO8601().withMessage('transactionDate must be a valid date'),
     body('invoiceNumber').optional().trim(),
     body('notes').optional().trim(),
@@ -201,10 +250,13 @@ router.post(
       return res.status(404).json({ error: 'Some items not found', missingItemIds: missingItems });
     }
 
-    // Create all receipt transactions atomically
-    const created = await prisma.$transaction(
-      lineItems.map((li) =>
-        prisma.transaction.create({
+    // Create receipts, update reference prices, and update lastPurchaseCost atomically
+    const batchId = crypto.randomUUID();
+    const { created, lastPaidPrices } = await prisma.$transaction(async (tx) => {
+      // 1. Create all receipt transactions
+      const receipts = [];
+      for (const li of lineItems) {
+        const receipt = await tx.transaction.create({
           data: {
             transactionType: 'RECEIPT',
             itemId: li.itemId,
@@ -216,61 +268,58 @@ router.post(
             transactionDate: new Date(transactionDate),
             notes: notes || null,
             createdBy: req.user.id,
+            batchId,
           },
           include: {
             item: { select: { id: true, itemCode: true, description: true } },
             vendor: { select: { vendorName: true } },
             user: { select: { fullName: true } },
           },
-        })
-      )
-    );
+        });
+        receipts.push(receipt);
+      }
 
-    // Fetch last paid prices for variance warnings (excluding just-created transactions)
-    const createdIds = created.map((t) => t.id);
-    const lastPaidPrices = {};
+      // 2. Fetch last paid prices for variance warnings (excluding just-created)
+      const createdIds = receipts.map((t) => t.id);
+      const prices = {};
+      for (const id of itemIds) {
+        const lastPaid = await tx.transaction.findFirst({
+          where: {
+            itemId: id,
+            transactionType: 'RECEIPT',
+            unitCost: { not: null },
+            id: { notIn: createdIds },
+          },
+          orderBy: { transactionDate: 'desc' },
+          select: { unitCost: true },
+        });
+        prices[id] = lastPaid?.unitCost ? Number(lastPaid.unitCost) : null;
+      }
 
-    for (const id of itemIds) {
-      const lastPaid = await prisma.transaction.findFirst({
-        where: {
-          itemId: id,
-          transactionType: 'RECEIPT',
-          unitCost: { not: null },
-          id: { notIn: createdIds },
-        },
-        orderBy: { transactionDate: 'desc' },
-        select: { unitCost: true },
-      });
-      lastPaidPrices[id] = lastPaid?.unitCost ? Number(lastPaid.unitCost) : null;
-    }
+      // 3. Store referencePrice on each created transaction
+      for (const t of receipts) {
+        if (prices[t.itemId] !== null) {
+          await tx.transaction.update({
+            where: { id: t.id },
+            data: { referencePrice: prices[t.itemId] },
+          });
+        }
+      }
 
-    // Store referencePrice on each created transaction for variance tracking
-    const refPriceUpdates = created
-      .filter((t) => lastPaidPrices[t.itemId] !== null)
-      .map((t) =>
-        prisma.transaction.update({
-          where: { id: t.id },
-          data: { referencePrice: lastPaidPrices[t.itemId] },
-        })
-      );
-    if (refPriceUpdates.length > 0) {
-      await prisma.$transaction(refPriceUpdates);
-    }
+      // 4. Update lastPurchaseCost for each item
+      const lastCostPerItem = {};
+      for (const li of lineItems) {
+        lastCostPerItem[li.itemId] = li.unitCost;
+      }
+      for (const [id, cost] of Object.entries(lastCostPerItem)) {
+        await tx.item.update({
+          where: { id: parseInt(id) },
+          data: { lastPurchaseCost: parseFloat(cost) },
+        });
+      }
 
-    // Auto-update lastPurchaseCost for each item in the batch
-    const lastCostPerItem = {};
-    for (const li of lineItems) {
-      lastCostPerItem[li.itemId] = li.unitCost;
-    }
-    const itemCostUpdates = Object.entries(lastCostPerItem).map(([id, cost]) =>
-      prisma.item.update({
-        where: { id: parseInt(id) },
-        data: { lastPurchaseCost: parseFloat(cost) },
-      })
-    );
-    if (itemCostUpdates.length > 0) {
-      await prisma.$transaction(itemCostUpdates);
-    }
+      return { created: receipts, lastPaidPrices: prices };
+    });
 
     return res.status(201).json({
       transactions: created.map((t) => ({
@@ -292,7 +341,7 @@ router.post(
   requireAdmin,
   [
     body('itemId').isInt({ gt: 0 }).withMessage('itemId must be a positive integer'),
-    body('location').isIn(['ADEL', 'CALHOUN']).withMessage('location must be ADEL or CALHOUN'),
+    body('location').isIn(LOCATIONS).withMessage('location must be ADEL or CALHOUN'),
     body('quantity').isFloat({ gt: 0 }).withMessage('quantity must be greater than 0'),
     body('unitCost').optional().isFloat({ gt: 0 }).withMessage('unitCost must be greater than 0'),
     body('transactionDate').optional().isISO8601().withMessage('transactionDate must be a valid date'),
@@ -311,6 +360,16 @@ router.post(
       return res.status(404).json({ error: 'Item not found' });
     }
 
+    // Check for existing opening balance for this item+location
+    const existingOB = await prisma.transaction.findFirst({
+      where: { transactionType: 'OPENING_BALANCE', itemId, location },
+    });
+    if (existingOB) {
+      return res.status(409).json({
+        error: `Opening balance already exists for ${item.itemCode} at ${location}. Use an adjustment to correct quantities.`,
+      });
+    }
+
     const created = await prisma.transaction.create({
       data: {
         transactionType: 'OPENING_BALANCE',
@@ -323,7 +382,7 @@ router.post(
         createdBy: req.user.id,
       },
       include: {
-        item: { select: { itemCode: true, description: true } },
+        item: { select: { id: true, itemCode: true, description: true } },
         user: { select: { fullName: true } },
       },
     });
@@ -378,8 +437,8 @@ router.post(
         errors.push({ rowNumber, field: 'item_code', message: 'item_code is required' });
       }
 
-      if (!row.location || !['ADEL', 'CALHOUN'].includes(row.location.trim().toUpperCase())) {
-        errors.push({ rowNumber, field: 'location', message: 'location must be ADEL or CALHOUN' });
+      if (!row.location || !LOCATIONS.includes(row.location.trim().toUpperCase())) {
+        errors.push({ rowNumber, field: 'location', message: `location must be one of: ${LOCATIONS.join(', ')}` });
       } else {
         row.location = row.location.trim().toUpperCase();
       }
@@ -438,6 +497,26 @@ router.post(
       return res.status(400).json({ error: 'Some items not found', details: unknownErrors });
     }
 
+    // Check for existing opening balances (duplicate import protection)
+    const importPairs = rows.map((row) => ({
+      itemId: itemMap[row.item_code.trim()],
+      location: row.location.trim().toUpperCase(),
+    }));
+    const existingOBs = await prisma.transaction.findMany({
+      where: {
+        transactionType: 'OPENING_BALANCE',
+        OR: importPairs.map((p) => ({ itemId: p.itemId, location: p.location })),
+      },
+      include: { item: { select: { itemCode: true } } },
+    });
+    if (existingOBs.length > 0) {
+      const dupes = existingOBs.map((t) => `${t.item.itemCode} at ${t.location}`);
+      return res.status(409).json({
+        error: `Opening balances already exist for ${existingOBs.length} item(s). Use adjustments to correct quantities.`,
+        duplicates: dupes,
+      });
+    }
+
     // Create all opening balance transactions atomically
     const data = rows.map((row) => ({
       transactionType: 'OPENING_BALANCE',
@@ -464,7 +543,7 @@ router.post(
   '/adjustments',
   [
     body('itemId').isInt({ gt: 0 }).withMessage('itemId must be a positive integer'),
-    body('location').isIn(['ADEL', 'CALHOUN']).withMessage('location must be ADEL or CALHOUN'),
+    body('location').isIn(LOCATIONS).withMessage('location must be ADEL or CALHOUN'),
     body('quantity')
       .isFloat()
       .withMessage('quantity must be a number')
@@ -473,7 +552,15 @@ router.post(
     body('reason')
       .isIn(['Damage', 'Shrinkage', 'Correction', 'Other'])
       .withMessage('reason must be one of: Damage, Shrinkage, Correction, Other'),
-    body('notes').optional().trim(),
+    body('notes')
+      .optional()
+      .trim()
+      .custom((value, { req: r }) => {
+        if (r.body.reason === 'Other' && (!value || value.trim() === '')) {
+          throw new Error('Notes are required when reason is "Other"');
+        }
+        return true;
+      }),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -504,6 +591,57 @@ router.post(
 
     const formattedNotes = notes ? `[${reason}] ${notes}` : `[${reason}]`;
 
+    // Non-admin threshold check: large adjustments require admin authorization
+    if (req.user.role !== 'admin') {
+      const absQty = Math.abs(quantity);
+      // Get current stock for percentage check
+      const stockAgg = await prisma.transaction.aggregate({
+        where: { itemId, location },
+        _sum: { quantity: true },
+      });
+      const currentStock = Number(stockAgg._sum.quantity ?? 0);
+
+      // Get avg cost for value impact check
+      const costRow = await prisma.$queryRaw`
+        SELECT SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS "avgCost"
+        FROM transactions
+        WHERE transaction_type IN ('RECEIPT', 'OPENING_BALANCE', 'PRODUCTION')
+          AND unit_cost IS NOT NULL AND quantity > 0
+          AND item_id = ${itemId}
+      `;
+      const avgCost = costRow.length > 0 && costRow[0].avgCost ? Number(costRow[0].avgCost) : 0;
+      const valueImpact = absQty * avgCost;
+
+      const exceedsPct = currentStock > 0 && absQty / currentStock > ADJ_THRESHOLD_PCT;
+      const exceedsValue = valueImpact > ADJ_THRESHOLD_VALUE;
+
+      if (exceedsPct || exceedsValue) {
+        const adminAuthHeader = req.headers['x-admin-authorization'];
+        if (!adminAuthHeader) {
+          return res.status(403).json({
+            error: 'Admin authorization required for large adjustments',
+            requiresApproval: true,
+            threshold: {
+              adjustmentQty: quantity,
+              currentStock,
+              pctOfStock: currentStock > 0 ? Math.round((absQty / currentStock) * 100) : null,
+              valueImpact: Math.round(valueImpact * 100) / 100,
+              exceedsPct,
+              exceedsValue,
+            },
+          });
+        }
+
+        const isValidAdmin = await verifyAdminCredentials(adminAuthHeader);
+        if (!isValidAdmin) {
+          return res.status(403).json({
+            error: 'Invalid admin credentials',
+            requiresApproval: true,
+          });
+        }
+      }
+    }
+
     const created = await prisma.transaction.create({
       data: {
         transactionType: 'ADJUSTMENT',
@@ -515,7 +653,7 @@ router.post(
         createdBy: req.user.id,
       },
       include: {
-        item: { select: { itemCode: true, description: true } },
+        item: { select: { id: true, itemCode: true, description: true } },
         user: { select: { fullName: true } },
       },
     });
@@ -536,8 +674,8 @@ router.post(
   '/transfers',
   [
     body('itemId').isInt({ gt: 0 }).withMessage('itemId must be a positive integer'),
-    body('fromLocation').isIn(['ADEL', 'CALHOUN']).withMessage('fromLocation must be ADEL or CALHOUN'),
-    body('toLocation').isIn(['ADEL', 'CALHOUN']).withMessage('toLocation must be ADEL or CALHOUN'),
+    body('fromLocation').isIn(LOCATIONS).withMessage('fromLocation must be ADEL or CALHOUN'),
+    body('toLocation').isIn(LOCATIONS).withMessage('toLocation must be ADEL or CALHOUN'),
     body('quantity').isFloat({ gt: 0 }).withMessage('quantity must be greater than 0'),
     body('notes').optional().trim(),
   ],
@@ -559,6 +697,7 @@ router.post(
     }
 
     // Stock check + transfer creation in a serializable transaction to prevent race conditions
+    const transferBatchId = crypto.randomUUID();
     let outbound, inbound;
     try {
       [outbound, inbound] = await prisma.$transaction(async (tx) => {
@@ -582,9 +721,10 @@ router.post(
             transactionDate: new Date(),
             notes: notes || null,
             createdBy: req.user.id,
+            batchId: transferBatchId,
           },
           include: {
-            item: { select: { itemCode: true, description: true } },
+            item: { select: { id: true, itemCode: true, description: true } },
             user: { select: { fullName: true } },
           },
         });
@@ -597,9 +737,10 @@ router.post(
             transactionDate: new Date(),
             notes: notes || null,
             createdBy: req.user.id,
+            batchId: transferBatchId,
           },
           include: {
-            item: { select: { itemCode: true, description: true } },
+            item: { select: { id: true, itemCode: true, description: true } },
             user: { select: { fullName: true } },
           },
         });
@@ -644,11 +785,8 @@ router.get('/stock-position', async (req, res) => {
     itemWhere.category = category;
   }
 
-  const [grouped, items, itemCount, costRows] = await Promise.all([
-    prisma.transaction.groupBy({
-      by: ['itemId', 'location'],
-      _sum: { quantity: true },
-    }),
+  // First get page of items + count
+  const [items, itemCount] = await Promise.all([
     prisma.item.findMany({
       where: itemWhere,
       orderBy: { itemCode: 'asc' },
@@ -664,7 +802,19 @@ router.get('/stock-position', async (req, res) => {
       },
     }),
     prisma.item.count({ where: itemWhere }),
-    // Weighted average cost via raw SQL (no memory bloat)
+  ]);
+
+  const itemIds = items.map((i) => i.id);
+
+  // Only query transactions for items on the current page
+  const [grouped, costRows] = itemIds.length > 0 ? await Promise.all([
+    prisma.$queryRaw`
+      SELECT "item_id" AS "itemId", location,
+             SUM(quantity) AS "sumQty"
+      FROM transactions
+      WHERE "item_id" = ANY(${itemIds}::int[])
+      GROUP BY "item_id", location
+    `,
     prisma.$queryRaw`
       SELECT "item_id" AS "itemId",
              SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS "avgCost"
@@ -672,15 +822,16 @@ router.get('/stock-position', async (req, res) => {
       WHERE transaction_type IN ('RECEIPT', 'OPENING_BALANCE', 'PRODUCTION')
         AND unit_cost IS NOT NULL
         AND quantity > 0
+        AND "item_id" = ANY(${itemIds}::int[])
       GROUP BY "item_id"
     `,
-  ]);
+  ]) : [[], []];
 
   // Build lookup map: "itemId_location" → sumQty
   const qtyMap = {};
   for (const row of grouped) {
     const key = `${row.itemId}_${row.location}`;
-    qtyMap[key] = Number(row._sum.quantity ?? 0);
+    qtyMap[key] = Number(row.sumQty ?? 0);
   }
 
   // Build avg cost map from raw query results
@@ -690,9 +841,13 @@ router.get('/stock-position', async (req, res) => {
   }
 
   const positions = items.map((item) => {
-    const adelQty = qtyMap[`${item.id}_ADEL`] ?? 0;
-    const calhounQty = qtyMap[`${item.id}_CALHOUN`] ?? 0;
-    const totalQty = adelQty + calhounQty;
+    const qtyByLocation = {};
+    let totalQty = 0;
+    for (const loc of LOCATIONS) {
+      const qty = qtyMap[`${item.id}_${loc}`] ?? 0;
+      qtyByLocation[loc] = qty;
+      totalQty += qty;
+    }
     const avgCost = avgCostMap[item.id]
       ? Math.round(avgCostMap[item.id] * 100) / 100
       : null;
@@ -708,8 +863,7 @@ router.get('/stock-position', async (req, res) => {
         unitOfMeasure: item.unitOfMeasure,
         minQuantity: item.minQuantity ? Number(item.minQuantity) : null,
       },
-      adelQty,
-      calhounQty,
+      qtyByLocation,
       totalQty,
       avgCost,
       totalValue,
@@ -732,10 +886,11 @@ router.get(
   '/',
   [
     query('itemId').optional().isInt({ gt: 0 }),
-    query('location').optional().isIn(['ADEL', 'CALHOUN']),
+    query('location').optional().isIn(LOCATIONS),
     query('type').optional().isIn(['RECEIPT', 'ADJUSTMENT', 'TRANSFER', 'OPENING_BALANCE', 'CONSUMPTION', 'PRODUCTION']),
     query('from').optional().isISO8601(),
     query('to').optional().isISO8601(),
+    query('search').optional().trim(),
     query('page').optional().isInt({ gt: 0 }),
     query('limit').optional().isInt({ gt: 0, max: 200 }),
   ],
@@ -745,7 +900,7 @@ router.get(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { itemId, location, type, from, to } = req.query;
+    const { itemId, location, type, from, to, search } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
 
@@ -758,6 +913,14 @@ router.get(
       if (from) where.transactionDate.gte = new Date(from);
       if (to) where.transactionDate.lte = new Date(to);
     }
+    if (search) {
+      where.OR = [
+        { item: { itemCode: { contains: search, mode: 'insensitive' } } },
+        { item: { description: { contains: search, mode: 'insensitive' } } },
+        { vendor: { vendorName: { contains: search, mode: 'insensitive' } } },
+        { invoiceNumber: { contains: search, mode: 'insensitive' } },
+      ];
+    }
 
     const [transactions, total] = await Promise.all([
       prisma.transaction.findMany({
@@ -766,7 +929,7 @@ router.get(
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          item: { select: { itemCode: true, description: true } },
+          item: { select: { id: true, itemCode: true, description: true } },
           vendor: { select: { vendorName: true } },
           user: { select: { fullName: true } },
         },

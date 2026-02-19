@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
+import { FormDirtyProvider } from '@/context/FormDirtyContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { LoginPage } from '@/pages/LoginPage';
@@ -25,6 +26,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+      <FormDirtyProvider>
         <Routes>
           {/* Public */}
           <Route path="/login" element={<LoginPage />} />
@@ -47,12 +49,12 @@ export default function App() {
               <Route path="/cycle-counts/:id" element={<CycleCountDetailPage />} />
               <Route path="/kitting" element={<KittingPage />} />
               <Route path="/items" element={<ItemsPage />} />
+              <Route path="/vendors" element={<VendorsPage />} />
               <Route path="/account" element={<AccountSettingsPage />} />
 
               {/* Admin only */}
               <Route element={<ProtectedRoute requiredRole="admin" />}>
                 <Route path="/users" element={<UsersPage />} />
-                <Route path="/vendors" element={<VendorsPage />} />
                 <Route path="/import" element={<ImportPage />} />
                 <Route path="/opening-balances" element={<OpeningBalancePage />} />
                 <Route path="/boms" element={<BOMsPage />} />
@@ -63,6 +65,7 @@ export default function App() {
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+      </FormDirtyProvider>
       </AuthProvider>
     </BrowserRouter>
   );

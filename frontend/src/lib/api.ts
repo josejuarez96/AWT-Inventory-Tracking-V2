@@ -1,5 +1,54 @@
 export const API_BASE = (import.meta.env['VITE_API_URL'] as string | undefined) ?? 'http://localhost:3000';
 const TOKEN_KEY = 'awt_token';
+const REFRESH_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 1 day before expiry
+
+let refreshPromise: Promise<void> | null = null;
+
+function getTokenExpiry(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshTokenIfNeeded(): Promise<void> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return;
+
+  const expiry = getTokenExpiry(token);
+  if (!expiry) return;
+
+  const timeLeft = expiry - Date.now();
+  if (timeLeft > REFRESH_THRESHOLD_MS) return;
+  if (timeLeft <= 0) return; // Already expired, let the 401 handler deal with it
+
+  // Deduplicate concurrent refresh calls
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json() as { token: string };
+        localStorage.setItem(TOKEN_KEY, data.token);
+      }
+    } catch {
+      // Silent fail — next request will use existing token
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
 
 type RequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -19,6 +68,11 @@ export class ApiError extends Error {
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+  // Attempt token refresh before the actual request (non-blocking for refresh endpoint itself)
+  if (!endpoint.includes('/auth/refresh')) {
+    await refreshTokenIfNeeded();
+  }
+
   const { method = 'GET', body } = options;
   const token = localStorage.getItem(TOKEN_KEY);
 

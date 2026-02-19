@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { formatDate } from '@/lib/utils';
 
 type CycleCountLine = {
   id: number;
@@ -85,7 +86,7 @@ export function CycleCountPrintPage() {
             <p style={{ margin: 0, fontWeight: 600 }}>{cycleCount.countNumber}</p>
             <p style={{ margin: 0, color: '#666' }}>Location: {cycleCount.location}</p>
             <p style={{ margin: 0, color: '#666' }}>
-              Date: {new Date(cycleCount.createdAt).toLocaleDateString()}
+              Date: {formatDate(cycleCount.createdAt)}
             </p>
           </div>
         </div>

@@ -3,6 +3,7 @@ const { body, query, validationResult } = require('express-validator');
 const bcrypt = require('bcrypt');
 const prisma = require('../lib/prisma');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const { LOCATIONS } = require('../lib/locations');
 
 const router = express.Router();
 router.use(authenticate);
@@ -47,7 +48,7 @@ function isLargeVariance(systemQty, variance, varianceValue) {
 router.post(
   '/',
   [
-    body('location').isIn(['ADEL', 'CALHOUN']).withMessage('location must be ADEL or CALHOUN'),
+    body('location').isIn(LOCATIONS).withMessage('location must be ADEL or CALHOUN'),
     body('itemSelection').isIn(['all', 'category', 'manual']).withMessage('itemSelection must be all, category, or manual'),
     body('category').optional().trim(),
     body('itemIds').optional().isArray(),
@@ -212,7 +213,7 @@ router.get(
   '/',
   [
     query('status').optional().isIn(['DRAFT', 'IN_PROGRESS', 'COMPLETED', 'POSTED', 'VOID']),
-    query('location').optional().isIn(['ADEL', 'CALHOUN']),
+    query('location').optional().isIn(LOCATIONS),
     query('page').optional().isInt({ gt: 0 }),
     query('limit').optional().isInt({ gt: 0, max: 200 }),
   ],
@@ -725,7 +726,7 @@ router.post('/:id/post', async (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/cycle-counts/:id/void — Void/cancel a cycle count (admin only)
 // ---------------------------------------------------------------------------
-router.post('/:id/void', requireAdmin, async (req, res) => {
+router.post('/:id/void', async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid ID' });
 
@@ -737,6 +738,16 @@ router.post('/:id/void', requireAdmin, async (req, res) => {
 
   if (!['DRAFT', 'IN_PROGRESS', 'COMPLETED'].includes(cycleCount.status)) {
     return res.status(400).json({ error: `Cannot void a cycle count with status ${cycleCount.status}` });
+  }
+
+  // Non-admins can only void DRAFT/IN_PROGRESS counts they created or are assigned to
+  if (req.user.role !== 'admin') {
+    if (cycleCount.status === 'COMPLETED') {
+      return res.status(403).json({ error: 'Only admins can void a completed cycle count' });
+    }
+    if (cycleCount.createdBy !== req.user.id && cycleCount.assignedTo !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized to void this cycle count' });
+    }
   }
 
   await prisma.cycleCount.update({

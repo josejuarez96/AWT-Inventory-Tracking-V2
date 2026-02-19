@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PackageOpen, ArrowLeftRight, Truck, Users, AlertTriangle, TrendingDown, DollarSign, Activity, PackageX } from 'lucide-react';
@@ -48,11 +49,12 @@ type ActivityItem = {
 
 
 function formatActivityDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return formatDate(dateStr);
 }
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
@@ -113,11 +115,11 @@ export function DashboardPage() {
   }
 
   const STAT_CARDS = [
-    { title: 'Total Items', icon: PackageOpen, value: stats?.totalItems ?? 0, sub: 'Active catalog items' },
-    { title: 'Transactions (MTD)', icon: ArrowLeftRight, value: stats?.transactionsMTD ?? 0, sub: 'This month' },
-    { title: 'Active Vendors', icon: Truck, value: stats?.activeVendors ?? 0, sub: 'Suppliers on file' },
-    { title: 'Team Members', icon: Users, value: stats?.teamMembers ?? 0, sub: 'Active users' },
-    ...(stats?.overstockCount ? [{ title: 'Overstock', icon: PackageX, value: stats.overstockCount, sub: 'Items above max quantity' }] : []),
+    { title: 'Total Items', icon: PackageOpen, value: stats?.totalItems ?? 0, sub: 'Active catalog items', link: '/items' },
+    { title: 'Transactions (MTD)', icon: ArrowLeftRight, value: stats?.transactionsMTD ?? 0, sub: 'This month', link: '/transactions' },
+    { title: 'Active Vendors', icon: Truck, value: stats?.activeVendors ?? 0, sub: 'Suppliers on file', link: '/vendors' },
+    { title: 'Team Members', icon: Users, value: stats?.teamMembers ?? 0, sub: 'Active users', link: user?.role === 'admin' ? '/users' : undefined },
+    ...(stats?.overstockCount ? [{ title: 'Overstock', icon: PackageX, value: stats.overstockCount, sub: 'Items above max quantity', link: '/inventory' }] : []),
   ];
 
   return (
@@ -137,7 +139,11 @@ export function DashboardPage() {
         {STAT_CARDS.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={stat.title} className="shadow-sm">
+            <Card
+              key={stat.title}
+              className={`shadow-sm ${stat.link ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+              onClick={stat.link ? () => navigate(stat.link!) : undefined}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium text-gray-600">{stat.title}</CardTitle>
                 <Icon className="h-4 w-4 text-gray-400" />
@@ -235,7 +241,7 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent>
             {deadStock.length === 0 ? (
-              <p className="text-sm text-gray-400">No dead stock detected.</p>
+              <p className="text-sm text-gray-400">No dead stock detected — all items have recent activity.</p>
             ) : (
               <ul className="space-y-2">
                 {deadStock.map((item) => (

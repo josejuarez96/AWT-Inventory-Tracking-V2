@@ -3,8 +3,10 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '@/lib/api';
-import { formatCurrency } from '@/lib/utils';
+import { LOCATIONS, type Location } from '@/lib/locations';
+import { formatCurrency, todayLocalStr, parseDate } from '@/lib/utils';
 import { useAuthContext } from '@/context/AuthContext';
+import { useFormDirty } from '@/context/FormDirtyContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,7 +43,7 @@ const lineItemSchema = z.object({
 
 const receiptSchema = z.object({
   vendorId: z.string().min(1, 'Vendor is required'),
-  location: z.enum(['ADEL', 'CALHOUN'], { required_error: 'Location is required' }),
+  location: z.enum(LOCATIONS, { required_error: 'Location is required' }),
   transactionDate: z.string().min(1, 'Date is required'),
   invoiceNumber: z.string().optional(),
   notes: z.string().optional(),
@@ -56,13 +58,9 @@ type ReceiptFormValues = z.infer<typeof receiptSchema>;
 const WARN_DAYS = 7;
 const MAX_DAYS = 30;
 
-function toLocalDateStr(d: Date) {
-  return d.toISOString().split('T')[0];
-}
-
 /** How many days ago is this date string (negative = future)? */
 function daysAgo(dateStr: string): number {
-  const d = new Date(dateStr + 'T00:00:00');
+  const d = parseDate(dateStr);
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   return Math.floor((now.getTime() - d.getTime()) / 86_400_000);
@@ -94,8 +92,8 @@ export function ReceiptPage() {
     resolver: zodResolver(receiptSchema),
     defaultValues: {
       vendorId: '',
-      location: 'ADEL',
-      transactionDate: new Date().toISOString().split('T')[0],
+      location: LOCATIONS[0],
+      transactionDate: todayLocalStr(),
       invoiceNumber: '',
       notes: '',
       lineItems: [{ itemId: '', quantity: undefined as unknown as number, unitCost: undefined as unknown as number }],
@@ -118,6 +116,8 @@ export function ReceiptPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState<ReceiptFormValues | null>(null);
 
+  const { setDirty: setFormDirty } = useFormDirty();
+
   // Warn before browser close/refresh if form is dirty
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -129,6 +129,12 @@ export function ReceiptPage() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
+
+  // Sync form dirty state with global context (for logout warning)
+  useEffect(() => {
+    setFormDirty(isDirty);
+    return () => setFormDirty(false);
+  }, [isDirty, setFormDirty]);
 
   useEffect(() => {
     async function loadData() {
@@ -158,7 +164,7 @@ export function ReceiptPage() {
   // Date validation
   const watchedDate = watch('transactionDate');
   const dateStatus = useMemo(() => getDateStatus(watchedDate, isAdmin), [watchedDate, isAdmin]);
-  const todayStr = toLocalDateStr(new Date());
+  const todayStr = todayLocalStr();
   const dateBlocked = dateStatus === 'future' || dateStatus === 'blocked-hard' || dateStatus === 'blocked-role';
 
   // Compute line totals and receipt total
@@ -242,7 +248,7 @@ export function ReceiptPage() {
       form.reset({
         vendorId: '',
         location: prevLocation,
-        transactionDate: new Date().toISOString().split('T')[0],
+        transactionDate: todayLocalStr(),
         invoiceNumber: '',
         notes: '',
         lineItems: [{ itemId: '', quantity: undefined as unknown as number, unitCost: undefined as unknown as number }],
@@ -291,26 +297,27 @@ export function ReceiptPage() {
                 searchPlaceholder="Type to search vendors..."
               />
               {errors.vendorId && (
-                <p className="text-xs text-red-600">{errors.vendorId.message}</p>
+                <p className="text-xs text-red-600 animate-field-error">{errors.vendorId.message}</p>
               )}
             </div>
 
             <div className="space-y-1">
               <Label>Location <span className="text-red-500">*</span></Label>
               <Select
-                defaultValue="ADEL"
-                onValueChange={(v) => setValue('location', v as 'ADEL' | 'CALHOUN')}
+                defaultValue={LOCATIONS[0]}
+                onValueChange={(v) => setValue('location', v as Location)}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ADEL">ADEL</SelectItem>
-                  <SelectItem value="CALHOUN">CALHOUN</SelectItem>
+                  {LOCATIONS.map((loc) => (
+                    <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               {errors.location && (
-                <p className="text-xs text-red-600">{errors.location.message}</p>
+                <p className="text-xs text-red-600 animate-field-error">{errors.location.message}</p>
               )}
             </div>
           </div>
@@ -321,16 +328,16 @@ export function ReceiptPage() {
               <Label>Date <span className="text-red-500">*</span></Label>
               <Input type="date" max={todayStr} {...register('transactionDate')} />
               {errors.transactionDate && (
-                <p className="text-xs text-red-600">{errors.transactionDate.message}</p>
+                <p className="text-xs text-red-600 animate-field-error">{errors.transactionDate.message}</p>
               )}
               {dateStatus === 'future' && (
-                <p className="text-xs text-red-600">Future dates are not allowed.</p>
+                <p className="text-xs text-red-600 animate-field-error">Transaction date cannot be in the future. Please select today or an earlier date.</p>
               )}
               {dateStatus === 'blocked-hard' && (
-                <p className="text-xs text-red-600">Cannot post receipts older than {MAX_DAYS} days.</p>
+                <p className="text-xs text-red-600 animate-field-error">Cannot post receipts older than {MAX_DAYS} days.</p>
               )}
               {dateStatus === 'blocked-role' && (
-                <p className="text-xs text-red-600">
+                <p className="text-xs text-red-600 animate-field-error">
                   Dates older than {WARN_DAYS} days must be posted by an admin. Ask your admin to log in and enter this receipt.
                 </p>
               )}
@@ -437,20 +444,22 @@ export function ReceiptPage() {
                         )}
                       </TableCell>
                       <TableCell className="align-top">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          placeholder="0.00"
-                          className="h-9"
-                          {...register(`lineItems.${index}.unitCost`)}
-                        />
-                        {(() => {
-                          const lp = getLastPaid(index);
-                          return lp !== null ? (
-                            <p className="text-xs text-gray-400 mt-0.5 leading-none">Last: {formatCurrency(lp)}</p>
-                          ) : null;
-                        })()}
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            placeholder="0.00"
+                            className="h-9"
+                            {...register(`lineItems.${index}.unitCost`)}
+                          />
+                          {(() => {
+                            const lp = getLastPaid(index);
+                            return lp !== null ? (
+                              <p className="absolute text-xs text-gray-400 mt-0.5 leading-none whitespace-nowrap">Last: {formatCurrency(lp)}</p>
+                            ) : null;
+                          })()}
+                        </div>
                         {errors.lineItems?.[index]?.unitCost && (
                           <p className="text-xs text-red-600 mt-0.5">{errors.lineItems[index].unitCost?.message}</p>
                         )}

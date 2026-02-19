@@ -3,6 +3,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '@/lib/api';
+import { LOCATIONS, type Location } from '@/lib/locations';
+import { useFormDirty } from '@/context/FormDirtyContext';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,14 +24,13 @@ import { Combobox } from '@/components/ui/combobox';
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string };
 type StockPosition = {
   item: { id: number };
-  adelQty: number;
-  calhounQty: number;
+  qtyByLocation: Record<string, number>;
 };
 
 const schema = z.object({
   itemId: z.string().min(1, 'Item is required'),
-  fromLocation: z.enum(['ADEL', 'CALHOUN'], { required_error: 'From location is required' }),
-  toLocation: z.enum(['ADEL', 'CALHOUN']),
+  fromLocation: z.enum(LOCATIONS, { required_error: 'From location is required' }),
+  toLocation: z.enum(LOCATIONS),
   quantity: z.coerce.number({ invalid_type_error: 'Must be a number' }).positive('Must be greater than 0'),
   notes: z.string().optional(),
 });
@@ -48,14 +50,28 @@ export function TransferPage() {
     watch,
     setValue,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      fromLocation: 'ADEL',
-      toLocation: 'CALHOUN',
+      fromLocation: LOCATIONS[0],
+      toLocation: LOCATIONS[1],
     },
   });
+
+  const { setDirty: setFormDirty } = useFormDirty();
+  useEffect(() => {
+    setFormDirty(isDirty);
+    return () => setFormDirty(false);
+  }, [isDirty, setFormDirty]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   const fromLocation = watch('fromLocation');
   const selectedItemId = watch('itemId');
@@ -78,10 +94,15 @@ export function TransferPage() {
     loadData();
   }, []);
 
-  // Auto-set toLocation when fromLocation changes
+  const toLocation = watch('toLocation');
+
+  // When fromLocation changes, reset toLocation if it conflicts
   useEffect(() => {
-    setValue('toLocation', fromLocation === 'ADEL' ? 'CALHOUN' : 'ADEL');
-  }, [fromLocation, setValue]);
+    if (toLocation === fromLocation) {
+      const other = LOCATIONS.find((l) => l !== fromLocation);
+      if (other) setValue('toLocation', other);
+    }
+  }, [fromLocation, toLocation, setValue]);
 
   // Update source stock display when item or fromLocation changes
   useEffect(() => {
@@ -91,35 +112,39 @@ export function TransferPage() {
     }
     const position = positions.find((p) => p.item.id === parseInt(selectedItemId));
     if (position) {
-      setSourceStock(fromLocation === 'ADEL' ? position.adelQty : position.calhounQty);
+      setSourceStock(position.qtyByLocation[fromLocation] ?? 0);
     } else {
       setSourceStock(0);
     }
   }, [selectedItemId, fromLocation, positions]);
 
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
+
   const showStockWarning =
     sourceStock !== null && currentQty && Number(currentQty) > sourceStock;
 
-  async function onSubmit(values: FormValues) {
+  function onFormValid(values: FormValues) {
+    setPendingValues(values);
+    setConfirmOpen(true);
+  }
+
+  async function onConfirmed() {
+    if (!pendingValues) return;
+    setConfirmOpen(false);
     setSubmitError(null);
     setSuccessMessage(null);
     try {
-      const data = await api.post<{
-        transfer: {
-          outbound: { id: number; quantity: number };
-          inbound: { id: number; quantity: number };
-        };
-      }>('/api/transactions/transfers', {
-        itemId: parseInt(values.itemId),
-        fromLocation: values.fromLocation,
-        toLocation: values.toLocation,
-        quantity: values.quantity,
-        notes: values.notes || undefined,
+      await api.post('/api/transactions/transfers', {
+        itemId: parseInt(pendingValues.itemId),
+        fromLocation: pendingValues.fromLocation,
+        toLocation: pendingValues.toLocation,
+        quantity: pendingValues.quantity,
+        notes: pendingValues.notes || undefined,
       });
       setSuccessMessage(
-        `Transfer recorded. ${values.quantity} units moved from ${values.fromLocation} to ${values.toLocation}.`
+        `Transfer recorded. ${pendingValues.quantity} units moved from ${pendingValues.fromLocation} to ${pendingValues.toLocation}.`
       );
-      // Refresh stock positions
       try {
         const stockData = await api.get<{ positions: StockPosition[] }>(
           '/api/transactions/stock-position'
@@ -128,28 +153,28 @@ export function TransferPage() {
       } catch {
         // non-fatal
       }
-      const prevFrom = values.fromLocation;
+      const prevFrom = pendingValues.fromLocation;
+      const prevTo = pendingValues.toLocation;
       reset({
         itemId: '',
         fromLocation: prevFrom,
-        toLocation: prevFrom === 'ADEL' ? 'CALHOUN' : 'ADEL',
+        toLocation: prevTo,
         quantity: undefined,
         notes: '',
       });
+      setPendingValues(null);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to save transfer.';
       setSubmitError(message);
     }
   }
 
-  const toLocation = fromLocation === 'ADEL' ? 'CALHOUN' : 'ADEL';
-
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">New Transfer</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Move inventory between ADEL and CALHOUN locations.
+          Move inventory between locations.
         </p>
       </div>
 
@@ -160,7 +185,7 @@ export function TransferPage() {
         </Alert>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onFormValid)} className="space-y-6">
         {/* Row 1: Item */}
         <div className="space-y-1">
           <Label htmlFor="itemId">Item <span className="text-red-500">*</span></Label>
@@ -176,7 +201,7 @@ export function TransferPage() {
             searchPlaceholder="Type code or description..."
           />
           {errors.itemId && (
-            <p className="text-xs text-red-600">{errors.itemId.message}</p>
+            <p className="text-xs text-red-600 animate-field-error">{errors.itemId.message}</p>
           )}
         </div>
 
@@ -185,27 +210,41 @@ export function TransferPage() {
           <div className="space-y-1">
             <Label htmlFor="fromLocation">From <span className="text-red-500">*</span></Label>
             <Select
-              defaultValue="ADEL"
-              onValueChange={(v) => setValue('fromLocation', v as 'ADEL' | 'CALHOUN')}
+              defaultValue={LOCATIONS[0]}
+              onValueChange={(v) => setValue('fromLocation', v as Location)}
             >
               <SelectTrigger id="fromLocation">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ADEL">ADEL</SelectItem>
-                <SelectItem value="CALHOUN">CALHOUN</SelectItem>
+                {LOCATIONS.map((loc) => (
+                  <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             {errors.fromLocation && (
-              <p className="text-xs text-red-600">{errors.fromLocation.message}</p>
+              <p className="text-xs text-red-600 animate-field-error">{errors.fromLocation.message}</p>
             )}
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="toLocation">To</Label>
-            <div className="flex h-10 w-full items-center rounded-md border bg-gray-50 px-3 text-sm font-medium text-gray-700">
-              {toLocation}
-            </div>
+            <Label htmlFor="toLocation">To <span className="text-red-500">*</span></Label>
+            <Select
+              value={toLocation}
+              onValueChange={(v) => setValue('toLocation', v as Location)}
+            >
+              <SelectTrigger id="toLocation">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LOCATIONS.filter((loc) => loc !== fromLocation).map((loc) => (
+                  <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors.toLocation && (
+              <p className="text-xs text-red-600 animate-field-error">{errors.toLocation.message}</p>
+            )}
           </div>
         </div>
 
@@ -226,7 +265,7 @@ export function TransferPage() {
             </p>
           )}
           {errors.quantity && (
-            <p className="text-xs text-red-600">{errors.quantity.message}</p>
+            <p className="text-xs text-red-600 animate-field-error">{errors.quantity.message}</p>
           )}
         </div>
 
@@ -261,6 +300,24 @@ export function TransferPage() {
           </Button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Confirm Transfer"
+        confirmLabel="Submit Transfer"
+        description={
+          pendingValues && (
+            <div className="space-y-1 text-sm">
+              <p><span className="font-medium">Item:</span> {items.find((i) => String(i.id) === pendingValues.itemId)?.itemCode ?? '--'}</p>
+              <p><span className="font-medium">Quantity:</span> {pendingValues.quantity}</p>
+              <p><span className="font-medium">From:</span> {pendingValues.fromLocation}</p>
+              <p><span className="font-medium">To:</span> {pendingValues.toLocation}</p>
+            </div>
+          )
+        }
+        onConfirm={onConfirmed}
+      />
     </div>
   );
 }

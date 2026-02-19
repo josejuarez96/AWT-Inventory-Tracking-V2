@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
-import { formatCurrency } from '@/lib/utils';
+import { useFormDirty } from '@/context/FormDirtyContext';
+import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { AdminAuthDialog } from '@/components/AdminAuthDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -112,6 +113,8 @@ export function CycleCountDetailPage() {
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
   const [flaggedInfo, setFlaggedInfo] = useState<{ flaggedCount: number; flaggedLines: Array<{ itemCode: string; variance: number; varianceValue: number }> } | null>(null);
   const [voidConfirmOpen, setVoidConfirmOpen] = useState(false);
+  const [savedInputs, setSavedInputs] = useState<Record<number, string>>({});
+  const { setDirty: setFormDirty } = useFormDirty();
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -129,6 +132,7 @@ export function CycleCountDetailPage() {
         inputs[line.id] = line.countedQty !== null ? String(line.countedQty) : '';
       }
       setCountInputs(inputs);
+      setSavedInputs(inputs);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load cycle count';
       setError(message);
@@ -140,6 +144,24 @@ export function CycleCountDetailPage() {
   useEffect(() => {
     loadDetail();
   }, [loadDetail]);
+
+  // Track dirty state for logout warning
+  const isDirty = Object.keys(countInputs).some(
+    (key) => countInputs[Number(key)] !== savedInputs[Number(key)]
+  );
+
+  useEffect(() => {
+    setFormDirty(isDirty);
+    return () => setFormDirty(false);
+  }, [isDirty, setFormDirty]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   function handleCountChange(lineId: number, value: string) {
     setCountInputs((prev) => ({ ...prev, [lineId]: value }));
@@ -165,6 +187,37 @@ export function CycleCountDetailPage() {
       absValue > 500;
     return { variance, varianceValue, isLarge };
   }
+
+  // Live summary computed from current inputs (updates as user types)
+  const liveSummary = useMemo(() => {
+    if (!cycleCount) return null;
+    let countedLines = 0;
+    let linesWithVariance = 0;
+    let netVarianceValue = 0;
+    let largeVarianceCount = 0;
+
+    for (const line of cycleCount.lines) {
+      const rt = getRealtimeVariance(line);
+      if (rt.variance !== null) {
+        countedLines++;
+        if (rt.variance !== 0) {
+          linesWithVariance++;
+          netVarianceValue += rt.varianceValue ?? 0;
+        }
+        if (rt.isLarge) largeVarianceCount++;
+      }
+    }
+
+    return {
+      totalLines: cycleCount.lines.length,
+      countedLines,
+      linesWithVariance,
+      netVarianceValue: Math.round(netVarianceValue * 100) / 100,
+      largeVarianceCount,
+      requiresApproval: largeVarianceCount > 0,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cycleCount, countInputs]);
 
   async function handleSave() {
     if (!cycleCount) return;
@@ -310,12 +363,12 @@ export function CycleCountDetailPage() {
             </Button>
           )}
           {isCompleted && (
-            <Button size="sm" onClick={handlePost} disabled={posting}>
+            <Button size="sm" onClick={() => handlePost()} disabled={posting}>
               <CheckCircle className="mr-2 h-4 w-4" />
               {posting ? 'Posting...' : 'Post Adjustments'}
             </Button>
           )}
-          {isAdmin && !isPosted && !isVoid && (
+          {(isAdmin || ['DRAFT', 'IN_PROGRESS'].includes(cycleCount.status)) && !isPosted && !isVoid && (
             <Button variant="destructive" size="sm" onClick={() => setVoidConfirmOpen(true)} disabled={voiding}>
               <XCircle className="mr-2 h-4 w-4" />
               {voiding ? 'Voiding...' : 'Void'}
@@ -337,7 +390,9 @@ export function CycleCountDetailPage() {
             This cycle count has been voided. No adjustments were applied to inventory.
           </AlertDescription>
         </Alert>
-      ) : (
+      ) : (() => {
+        const s = isEditable && liveSummary ? liveSummary : summary;
+        return (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Card>
             <CardHeader className="pb-1 pt-4 px-4">
@@ -345,12 +400,12 @@ export function CycleCountDetailPage() {
             </CardHeader>
             <CardContent className="px-4 pb-4">
               <p className="text-lg font-semibold">
-                {summary.countedLines}/{summary.totalLines}
+                {s.countedLines}/{s.totalLines}
               </p>
               <div className="mt-1 h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-500 rounded-full"
-                  style={{ width: `${summary.totalLines > 0 ? (summary.countedLines / summary.totalLines) * 100 : 0}%` }}
+                  className="h-full bg-blue-500 rounded-full transition-all"
+                  style={{ width: `${s.totalLines > 0 ? (s.countedLines / s.totalLines) * 100 : 0}%` }}
                 />
               </div>
             </CardContent>
@@ -360,7 +415,7 @@ export function CycleCountDetailPage() {
               <CardTitle className="text-xs text-gray-500 font-normal">Lines with Variance</CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <p className="text-lg font-semibold">{summary.linesWithVariance}</p>
+              <p className="text-lg font-semibold">{s.linesWithVariance}</p>
             </CardContent>
           </Card>
           <Card>
@@ -368,8 +423,8 @@ export function CycleCountDetailPage() {
               <CardTitle className="text-xs text-gray-500 font-normal">Net Variance $</CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <p className={`text-lg font-semibold ${summary.netVarianceValue < 0 ? 'text-red-600' : summary.netVarianceValue > 0 ? 'text-green-600' : ''}`}>
-                {formatCurrency(summary.netVarianceValue)}
+              <p className={`text-lg font-semibold ${s.netVarianceValue < 0 ? 'text-red-600' : s.netVarianceValue > 0 ? 'text-green-600' : ''}`}>
+                {formatCurrency(s.netVarianceValue)}
               </p>
             </CardContent>
           </Card>
@@ -378,16 +433,17 @@ export function CycleCountDetailPage() {
               <CardTitle className="text-xs text-gray-500 font-normal">Large Variances</CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <p className={`text-lg font-semibold ${summary.largeVarianceCount > 0 ? 'text-red-600' : ''}`}>
-                {summary.largeVarianceCount}
+              <p className={`text-lg font-semibold ${s.largeVarianceCount > 0 ? 'text-red-600' : ''}`}>
+                {s.largeVarianceCount}
               </p>
-              {summary.requiresApproval && !isAdmin && (
+              {s.requiresApproval && !isAdmin && (
                 <p className="text-xs text-red-600 mt-1">Admin approval required</p>
               )}
             </CardContent>
           </Card>
         </div>
-      )}
+        );
+      })()}
 
       {/* Messages */}
       {saveMessage && (
@@ -489,13 +545,7 @@ export function CycleCountDetailPage() {
         <p className="text-sm text-gray-500">
           Posted by {cycleCount.poster.fullName} on{' '}
           {cycleCount.postedAt
-            ? new Date(cycleCount.postedAt).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-              })
+            ? formatDateTime(cycleCount.postedAt)
             : '—'}
         </p>
       )}

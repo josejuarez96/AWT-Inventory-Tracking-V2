@@ -489,4 +489,63 @@ router.patch(
   }
 );
 
+// ---------------------------------------------------------------------------
+// DELETE /api/items/:id — permanently delete item (admin only, only if never used)
+// ---------------------------------------------------------------------------
+router.delete(
+  '/:id',
+  requireAdmin,
+  [param('id').isInt({ gt: 0 }).withMessage('id must be a positive integer')],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const id = parseInt(req.params.id);
+    const item = await prisma.item.findUnique({ where: { id } });
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    // Check for any transaction history
+    const txCount = await prisma.transaction.count({ where: { itemId: id } });
+    if (txCount > 0) {
+      return res.status(400).json({
+        error: `Cannot delete "${item.itemCode}" — it has ${txCount} transaction(s). Deactivate it instead.`,
+      });
+    }
+
+    // Check for BOM line references
+    const bomLineCount = await prisma.bomLine.count({ where: { itemId: id } });
+    if (bomLineCount > 0) {
+      return res.status(400).json({
+        error: `Cannot delete "${item.itemCode}" — it is referenced in ${bomLineCount} BOM line(s). Remove those references first.`,
+      });
+    }
+
+    // Check if it's a finished good in any BOM
+    const bomFgCount = await prisma.bom.count({ where: { finishedGoodId: id } });
+    if (bomFgCount > 0) {
+      return res.status(400).json({
+        error: `Cannot delete "${item.itemCode}" — it is the finished good in ${bomFgCount} BOM(s). Delete those BOMs first.`,
+      });
+    }
+
+    // Check for cycle count line references
+    const ccLineCount = await prisma.cycleCountLine.count({ where: { itemId: id } });
+    if (ccLineCount > 0) {
+      return res.status(400).json({
+        error: `Cannot delete "${item.itemCode}" — it is referenced in ${ccLineCount} cycle count line(s). Deactivate it instead.`,
+      });
+    }
+
+    // Safe to delete — remove additional vendor links first, then the item
+    await prisma.itemVendor.deleteMany({ where: { itemId: id } });
+    await prisma.item.delete({ where: { id } });
+
+    return res.json({ message: `Item "${item.itemCode}" permanently deleted.` });
+  }
+);
+
 module.exports = router;

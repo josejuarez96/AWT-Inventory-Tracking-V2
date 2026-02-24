@@ -113,6 +113,8 @@ export function ItemsPage() {
   const [toggleError, setToggleError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState<{ id: number; currentStatus: boolean; itemCode: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: number; itemCode: string } | null>(null);
+  const [deleteError, setDeleteError] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<Item | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -232,6 +234,17 @@ export function ItemsPage() {
       void fetchItems();
     } catch (err) {
       setToggleError(err instanceof ApiError ? err.message : 'Failed to update item status');
+    }
+  }
+
+  async function handleDelete(id: number, itemCode: string) {
+    setDeleteError('');
+    try {
+      await api.delete(`/api/items/${id}`);
+      setSuccessMessage(`Item "${itemCode}" permanently deleted.`);
+      void fetchItems();
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete item');
     }
   }
 
@@ -532,6 +545,15 @@ export function ItemsPage() {
         </Alert>
       )}
 
+      {deleteError && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex items-center justify-between">
+            {deleteError}
+            <Button variant="ghost" size="sm" onClick={() => setDeleteError('')}>Dismiss</Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading items...</p>
       ) : filtered.length === 0 ? (
@@ -606,6 +628,12 @@ export function ItemsPage() {
                             onClick={() => setConfirmToggle({ id: item.id, currentStatus: item.isActive !== false, itemCode: item.itemCode })}
                           >
                             {item.isActive !== false ? 'Deactivate' : 'Activate'}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-red-600 focus:text-red-600"
+                            onClick={() => setConfirmDelete({ id: item.id, itemCode: item.itemCode })}
+                          >
+                            Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -748,6 +776,21 @@ export function ItemsPage() {
           if (confirmToggle) {
             void handleToggleStatus(confirmToggle.id, confirmToggle.currentStatus, confirmToggle.itemCode);
             setConfirmToggle(null);
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
+        title="Permanently Delete Item?"
+        description={`This will permanently remove "${confirmDelete?.itemCode}" from the system. This cannot be undone. Items with transaction history cannot be deleted.`}
+        confirmLabel="Delete Permanently"
+        confirmVariant="destructive"
+        onConfirm={() => {
+          if (confirmDelete) {
+            void handleDelete(confirmDelete.id, confirmDelete.itemCode);
+            setConfirmDelete(null);
           }
         }}
       />

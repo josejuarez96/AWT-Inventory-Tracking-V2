@@ -1,4 +1,4 @@
-export const API_BASE = (import.meta.env['VITE_API_URL'] as string | undefined) ?? 'http://localhost:3000';
+export const API_BASE = (import.meta.env['VITE_API_URL'] as string | undefined) ?? '';
 const TOKEN_KEY = 'awt_token';
 const REFRESH_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 1 day before expiry
 

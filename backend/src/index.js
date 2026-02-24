@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -91,6 +92,13 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/cycle-counts', cycleCountsRoutes);
 app.use('/api/boms', bomsRoutes);
 app.use('/api/production', productionRoutes);
+
+// --- Serve frontend static files (built React SPA) ---
+const frontendPath = path.join(__dirname, '../../frontend/dist');
+app.use(express.static(frontendPath));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(frontendPath, 'index.html'));
+});
 
 // Global error handler (Express 5 forwards async errors automatically)
 app.use((err, req, res, _next) => {

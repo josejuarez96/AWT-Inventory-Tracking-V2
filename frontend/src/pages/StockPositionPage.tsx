@@ -261,38 +261,38 @@ export function StockPositionPage() {
       ) : sorted.length === 0 ? (
         <p className="text-sm text-gray-500">No items match your search.</p>
       ) : (
-        <div className="rounded-md border">
-          <Table>
+        <div className="rounded-md border overflow-x-auto">
+          <Table className="table-fixed w-full">
             <TableHeader>
               <TableRow>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('itemCode')}>
+                <TableHead className="w-[12%] cursor-pointer select-none" onClick={() => toggleSort('itemCode')}>
                   Item Code <SortIcon column="itemCode" />
                 </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('description')}>
+                <TableHead className={`${hasReservations ? 'w-[14%]' : 'w-[18%]'} cursor-pointer select-none`} onClick={() => toggleSort('description')}>
                   Description <SortIcon column="description" />
                 </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort('category')}>
+                <TableHead className="w-[9%] cursor-pointer select-none" onClick={() => toggleSort('category')}>
                   Category <SortIcon column="category" />
                 </TableHead>
-                <TableHead className="text-right">UOM</TableHead>
+                <TableHead className="w-[5%] text-right">UOM</TableHead>
                 {LOCATIONS.map((loc) => (
-                  <TableHead key={loc} className="text-right cursor-pointer select-none" onClick={() => toggleSort(`loc_${loc}` as SortKey)}>
+                  <TableHead key={loc} className="w-[7%] text-right cursor-pointer select-none" onClick={() => toggleSort(`loc_${loc}` as SortKey)}>
                     {loc} <SortIcon column={`loc_${loc}` as SortKey} />
                   </TableHead>
                 ))}
-                <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort('totalQty')}>
+                <TableHead className="w-[7%] text-right cursor-pointer select-none" onClick={() => toggleSort('totalQty')}>
                   Total <SortIcon column="totalQty" />
                 </TableHead>
                 {hasReservations && (
                   <>
-                    <TableHead className="text-right text-amber-700">Reserved</TableHead>
-                    <TableHead className="text-right text-green-700">Available</TableHead>
+                    <TableHead className="w-[7%] text-right text-amber-700">Reserved</TableHead>
+                    <TableHead className="w-[7%] text-right text-green-700">Available</TableHead>
                   </>
                 )}
-                <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort('avgCost')}>
+                <TableHead className="w-[9%] text-right cursor-pointer select-none" onClick={() => toggleSort('avgCost')}>
                   Avg Cost <SortIcon column="avgCost" />
                 </TableHead>
-                <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort('totalValue')}>
+                <TableHead className="w-[9%] text-right cursor-pointer select-none" onClick={() => toggleSort('totalValue')}>
                   Value <SortIcon column="totalValue" />
                 </TableHead>
               </TableRow>

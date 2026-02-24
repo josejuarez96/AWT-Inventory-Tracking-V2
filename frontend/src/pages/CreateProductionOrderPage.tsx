@@ -71,6 +71,7 @@ export function CreateProductionOrderPage() {
 
   const [items, setItems] = useState<ItemOption[]>([]);
   const [boms, setBoms] = useState<BomOption[]>([]);
+  const [selectedBomDetail, setSelectedBomDetail] = useState<BomOption | null>(null);
   const [stockPositions, setStockPositions] = useState<StockPosition[]>([]);
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -143,7 +144,7 @@ export function CreateProductionOrderPage() {
 
   // When BOM is selected, load its components
   const handleBomChange = useCallback(
-    (bomIdStr: string) => {
+    async (bomIdStr: string) => {
       setValue('bomId', bomIdStr);
       if (!bomIdStr) return;
 
@@ -151,12 +152,23 @@ export function CreateProductionOrderPage() {
       if (!bom) return;
 
       setValue('finishedGoodId', String(bom.finishedGoodId));
-      replace(
-        bom.lines.map((line) => ({
-          itemId: String(line.itemId),
-          quantityPer: Number(line.quantityPer),
-        }))
-      );
+
+      // Fetch full BOM detail to get lines (list endpoint doesn't include them)
+      try {
+        const detail = await api.get<{ bom: BomOption }>(`/api/boms/${bomIdStr}`);
+        if (detail.bom?.lines) {
+          setSelectedBomDetail(detail.bom);
+          replace(
+            detail.bom.lines.map((line) => ({
+              itemId: String(line.itemId),
+              quantityPer: Number(line.quantityPer),
+            }))
+          );
+        }
+      } catch {
+        setSelectedBomDetail(null);
+        replace([]);
+      }
     },
     [boms, setValue, replace]
   );
@@ -201,9 +213,8 @@ export function CreateProductionOrderPage() {
   const finishedGoods = items.filter((i) => i.itemType === 'FINISHED');
   const componentItems = items.filter((i) => i.itemType !== 'FINISHED' || true); // All items can be components
 
-  // Lookup BOM to identify locked components
-  const selectedBom = watchedBomId ? boms.find((b) => b.id === parseInt(watchedBomId)) : null;
-  const bomItemIds = new Set(selectedBom?.lines.map((l) => l.itemId) ?? []);
+  // Lookup BOM to identify locked components (uses fetched detail which includes lines)
+  const bomItemIds = new Set(selectedBomDetail?.lines?.map((l) => l.itemId) ?? []);
 
   function onFormValid(values: FormValues) {
     setPendingValues(values);
@@ -483,7 +494,7 @@ export function CreateProductionOrderPage() {
               {fields.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-gray-400 py-8">
-                    {selectedBom
+                    {watchedBomId
                       ? 'Loading BOM components...'
                       : 'Select a BOM or add components manually'}
                   </TableCell>

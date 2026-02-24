@@ -564,7 +564,7 @@ router.post(
 
       await tx.productionOrder.update({
         where: { id: order.id },
-        data: { orderNumber: `PO-${order.id}` },
+        data: { orderNumber: `PRD-${order.id}` },
       });
 
       // Create one line per unit

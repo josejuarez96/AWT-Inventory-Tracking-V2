@@ -4,7 +4,24 @@
       "Bash(git init:*)",
       "Bash(npm create:*)",
       "Bash(npm install:*)",
-      "Bash(npx prisma:*)"
+      "Bash(npx prisma:*)",
+      "Bash(/opt/homebrew/opt/postgresql@14/bin/createdb:*)",
+      "Bash(lsof:*)",
+      "Bash(claude mcp list:*)",
+      "Bash(find:*)",
+      "mcp__TestSprite__testsprite_bootstrap",
+      "mcp__TestSprite__testsprite_generate_code_summary",
+      "mcp__TestSprite__testsprite_generate_backend_test_plan",
+      "mcp__TestSprite__testsprite_generate_standardized_prd",
+      "mcp__TestSprite__testsprite_generate_code_and_execute",
+      "Bash(node:*)",
+      "mcp__TestSprite__testsprite_rerun_tests",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(ls:*)",
+      "Read(//Users/josejuarez/Documents/All World Trailers/AWT Inventory Tracking V2/**)",
+      "Bash(npm run build:*)",
+      "Bash(npx vite build)"
     ]
   }
 }

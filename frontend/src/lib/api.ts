@@ -87,18 +87,32 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method,
     headers,
+    cache: 'no-store',
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   if (!response.ok) {
+    // On 401, clear token and redirect to login (prevents flash-of-error on protected pages)
+    if (response.status === 401 && !endpoint.includes('/auth/login')) {
+      localStorage.removeItem(TOKEN_KEY);
+      window.location.href = '/login';
+      // Return a never-resolving promise so callers don't process the error
+      return new Promise<T>(() => {});
+    }
+
     let message = 'Request failed';
     let data: Record<string, unknown> | null = null;
     try {
       const parsed = await response.json() as Record<string, unknown>;
-      message = (parsed.error ?? parsed.message ?? message) as string;
+      message = (
+        parsed.error ??
+        parsed.message ??
+        (Array.isArray(parsed.errors) ? (parsed.errors as Array<{ msg?: string }>)[0]?.msg : null) ??
+        message
+      ) as string;
       data = parsed;
     } catch { /* ignore */ }
-    throw new ApiError(response.status, message, data);
+    throw new ApiError(response.status, message, data ?? undefined);
   }
 
   if (response.status === 204) return undefined as T;

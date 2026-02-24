@@ -34,7 +34,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, Plus, Search, CheckCircle } from 'lucide-react';
+import { MoreHorizontal, Plus, Search, CheckCircle, X } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
 type Vendor = {
@@ -95,6 +95,13 @@ export function VendorsPage() {
   const [toggleError, setToggleError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (successMessage) {
+      const t = setTimeout(() => setSuccessMessage(null), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [successMessage]);
 
   async function fetchVendors() {
     setIsLoading(true);
@@ -212,7 +219,7 @@ export function VendorsPage() {
               </Button>
             </DialogTrigger>
           )}
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Vendor' : 'Create New Vendor'}</DialogTitle>
             </DialogHeader>
@@ -309,14 +316,27 @@ export function VendorsPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          placeholder="Search by code, name, or contact..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Search by code, name, or contact..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        {search && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-gray-500 hover:text-gray-700"
+            onClick={() => setSearch('')}
+          >
+            <X className="h-3 w-3 mr-1" />
+            Clear
+          </Button>
+        )}
       </div>
 
       {successMessage && (

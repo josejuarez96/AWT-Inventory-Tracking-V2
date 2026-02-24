@@ -36,7 +36,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Plus, Search, CheckCircle, Wand2 } from 'lucide-react';
+import { MoreHorizontal, Plus, Search, CheckCircle, X } from 'lucide-react';
+import { CATEGORIES } from '@/lib/categories';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
 
@@ -108,6 +109,13 @@ export function ItemsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState<{ id: number; currentStatus: boolean; itemCode: string } | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (successMessage) {
+      const t = setTimeout(() => setSuccessMessage(null), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [successMessage]);
 
   async function fetchItems() {
     setIsLoading(true);
@@ -220,7 +228,7 @@ export function ItemsPage() {
               </Button>
             </DialogTrigger>
           )}
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Item' : 'Create New Item'}</DialogTitle>
             </DialogHeader>
@@ -228,33 +236,13 @@ export function ItemsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="itemCode">Item Code <span className="text-red-500">*</span></Label>
-                  <div className="flex gap-1">
-                    <Input
-                      id="itemCode"
-                      value={form.itemCode}
-                      onChange={(e) => setForm((f) => ({ ...f, itemCode: e.target.value }))}
-                      maxLength={50}
-                      required
-                    />
-                    {!editingId && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="shrink-0"
-                        title="Auto-generate code"
-                        onClick={async () => {
-                          const prefix = form.itemType === 'FINISHED' ? 'FIN-' : form.itemType === 'OTHER' ? 'OTH-' : 'RAW-';
-                          try {
-                            const data = await api.get<{ nextCode: string }>(`/api/items/next-code?prefix=${prefix}`);
-                            setForm((f) => ({ ...f, itemCode: data.nextCode }));
-                          } catch { /* ignore */ }
-                        }}
-                      >
-                        <Wand2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
+                  <Input
+                    id="itemCode"
+                    value={form.itemCode}
+                    onChange={(e) => setForm((f) => ({ ...f, itemCode: e.target.value }))}
+                    maxLength={50}
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="unitOfMeasure">Unit of Measure</Label>
@@ -278,11 +266,20 @@ export function ItemsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="category">Category</Label>
-                  <Input
-                    id="category"
-                    value={form.category}
-                    onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                  />
+                  <Select
+                    value={form.category || ''}
+                    onValueChange={(val) => setForm((f) => ({ ...f, category: val === '__none__' ? '' : val }))}
+                  >
+                    <SelectTrigger id="category">
+                      <SelectValue placeholder="Select category..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— None —</SelectItem>
+                      {CATEGORIES.map((cat) => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="itemType">Item Type</Label>
@@ -335,6 +332,12 @@ export function ItemsPage() {
                     step="0.01"
                     value={form.standardCost}
                     onChange={(e) => setForm((f) => ({ ...f, standardCost: e.target.value }))}
+                    onBlur={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (!isNaN(val)) {
+                        setForm((f) => ({ ...f, standardCost: val.toFixed(2) }));
+                      }
+                    }}
                     placeholder="0.00"
                   />
                 </div>
@@ -382,14 +385,27 @@ export function ItemsPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          placeholder="Search by code, description, or category..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Search by code, description, or category..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        {search && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-gray-500 hover:text-gray-700"
+            onClick={() => setSearch('')}
+          >
+            <X className="h-3 w-3 mr-1" />
+            Clear
+          </Button>
+        )}
       </div>
 
       {successMessage && (

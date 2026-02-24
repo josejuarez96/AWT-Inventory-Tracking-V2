@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '@/lib/api';
 import { LOCATIONS, type Location } from '@/lib/locations';
+import { todayLocalStr } from '@/lib/utils';
 import { useFormDirty } from '@/context/FormDirtyContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
@@ -25,13 +26,16 @@ type Item = { id: number; itemCode: string; description: string; unitOfMeasure: 
 type StockPosition = {
   item: { id: number };
   qtyByLocation: Record<string, number>;
+  reservedByLocation: Record<string, number>;
+  availableByLocation: Record<string, number>;
 };
 
 const schema = z.object({
   itemId: z.string().min(1, 'Item is required'),
-  fromLocation: z.enum(LOCATIONS, { required_error: 'From location is required' }),
+  fromLocation: z.enum(LOCATIONS, { message: 'From location is required' }),
   toLocation: z.enum(LOCATIONS),
-  quantity: z.coerce.number({ invalid_type_error: 'Must be a number' }).positive('Must be greater than 0'),
+  transactionDate: z.string().min(1, 'Date is required'),
+  quantity: z.coerce.number({ message: 'Must be a number' }).positive('Must be greater than 0'),
   notes: z.string().optional(),
 });
 
@@ -52,26 +56,42 @@ export function TransferPage() {
     reset,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(schema) as any,
     defaultValues: {
       fromLocation: LOCATIONS[0],
       toLocation: LOCATIONS[1],
+      transactionDate: todayLocalStr(),
     },
   });
 
   const { setDirty: setFormDirty } = useFormDirty();
+  const [userInteracted, setUserInteracted] = useState(false);
+
   useEffect(() => {
-    setFormDirty(isDirty);
+    const sub = watch(() => setUserInteracted(true));
+    return () => sub.unsubscribe();
+  }, [watch]);
+
+  useEffect(() => {
+    setFormDirty(isDirty && userInteracted);
     return () => setFormDirty(false);
-  }, [isDirty, setFormDirty]);
+  }, [isDirty, userInteracted, setFormDirty]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+      if (isDirty && userInteracted) { e.preventDefault(); e.returnValue = ''; }
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
+  }, [isDirty, userInteracted]);
+
+  // Auto-dismiss success message after 5 seconds
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => setSuccessMessage(null), 5000);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
 
   const fromLocation = watch('fromLocation');
   const selectedItemId = watch('itemId');
@@ -105,16 +125,22 @@ export function TransferPage() {
   }, [fromLocation, toLocation, setValue]);
 
   // Update source stock display when item or fromLocation changes
+  const [sourceReserved, setSourceReserved] = useState(0);
   useEffect(() => {
     if (!selectedItemId) {
       setSourceStock(null);
+      setSourceReserved(0);
       return;
     }
     const position = positions.find((p) => p.item.id === parseInt(selectedItemId));
     if (position) {
-      setSourceStock(position.qtyByLocation[fromLocation] ?? 0);
+      const onHand = position.qtyByLocation[fromLocation] ?? 0;
+      const reserved = position.reservedByLocation?.[fromLocation] ?? 0;
+      setSourceStock(onHand - reserved);
+      setSourceReserved(reserved);
     } else {
       setSourceStock(0);
+      setSourceReserved(0);
     }
   }, [selectedItemId, fromLocation, positions]);
 
@@ -140,10 +166,12 @@ export function TransferPage() {
         fromLocation: pendingValues.fromLocation,
         toLocation: pendingValues.toLocation,
         quantity: pendingValues.quantity,
-        notes: pendingValues.notes || undefined,
+        transactionDate: pendingValues.transactionDate,
+        notes: pendingValues.notes?.trim() || '',
       });
+      const itemCode = items.find((i) => String(i.id) === pendingValues.itemId)?.itemCode ?? '';
       setSuccessMessage(
-        `Transfer recorded. ${pendingValues.quantity} units moved from ${pendingValues.fromLocation} to ${pendingValues.toLocation}.`
+        `Transfer recorded. ${pendingValues.quantity} ${itemCode} moved from ${pendingValues.fromLocation} to ${pendingValues.toLocation}.`
       );
       try {
         const stockData = await api.get<{ positions: StockPosition[] }>(
@@ -155,11 +183,14 @@ export function TransferPage() {
       }
       const prevFrom = pendingValues.fromLocation;
       const prevTo = pendingValues.toLocation;
+      setUserInteracted(false);
+      setFormDirty(false);
       reset({
         itemId: '',
         fromLocation: prevFrom,
         toLocation: prevTo,
-        quantity: undefined,
+        transactionDate: todayLocalStr(),
+        quantity: '' as unknown as number,
         notes: '',
       });
       setPendingValues(null);
@@ -186,23 +217,40 @@ export function TransferPage() {
       )}
 
       <form onSubmit={handleSubmit(onFormValid)} className="space-y-6">
-        {/* Row 1: Item */}
-        <div className="space-y-1">
-          <Label htmlFor="itemId">Item <span className="text-red-500">*</span></Label>
-          <Combobox
-            options={items.map((item) => ({
-              value: String(item.id),
-              label: `${item.itemCode} — ${item.description}`,
-              searchText: `${item.itemCode} ${item.description}`,
-            }))}
-            value={watch('itemId')}
-            onValueChange={(v) => setValue('itemId', v)}
-            placeholder="Search items..."
-            searchPlaceholder="Type code or description..."
-          />
-          {errors.itemId && (
-            <p className="text-xs text-red-600 animate-field-error">{errors.itemId.message}</p>
-          )}
+        {/* Row 1: Part # + Description */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label>Part # <span className="text-red-500">*</span></Label>
+            <Combobox
+              options={items.map((item) => ({
+                value: String(item.id),
+                label: item.itemCode,
+                searchText: item.itemCode,
+              }))}
+              value={watch('itemId')}
+              onValueChange={(v) => setValue('itemId', v)}
+              placeholder="Select part #..."
+              searchPlaceholder="Search part #..."
+            />
+            {errors.itemId && (
+              <p className="text-xs text-red-600 animate-field-error">{errors.itemId.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label>Description</Label>
+            <Combobox
+              options={items.map((item) => ({
+                value: String(item.id),
+                label: item.description,
+                searchText: item.description,
+              }))}
+              value={watch('itemId')}
+              onValueChange={(v) => setValue('itemId', v)}
+              placeholder="Select description..."
+              searchPlaceholder="Search description..."
+            />
+          </div>
         </div>
 
         {/* Row 2: From Location + To Location */}
@@ -248,25 +296,46 @@ export function TransferPage() {
           </div>
         </div>
 
-        {/* Row 3: Quantity */}
+        {/* Row 3: Date + Quantity */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label>Date <span className="text-red-500">*</span></Label>
+            <Input type="date" max={todayLocalStr()} {...register('transactionDate')} />
+            {errors.transactionDate && (
+              <p className="text-xs text-red-600 animate-field-error">{errors.transactionDate.message}</p>
+            )}
+          </div>
+
         <div className="space-y-1">
           <Label htmlFor="quantity">Quantity <span className="text-red-500">*</span></Label>
           <Input
             id="quantity"
             type="number"
-            step="0.01"
+            step="any"
             min="0.01"
             placeholder="0"
-            {...register('quantity')}
+            {...register('quantity', {
+              validate: (v) => {
+                const item = items.find((i) => String(i.id) === watch('itemId'));
+                if (item && ['EA', 'SET', 'PAIR'].includes(item.unitOfMeasure.toUpperCase()) && v !== undefined && v % 1 !== 0) {
+                  return `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`;
+                }
+                return true;
+              },
+            })}
           />
           {sourceStock !== null && (
             <p className="text-xs text-gray-500">
               Available at {fromLocation}: <span className="font-semibold">{sourceStock}</span>
+              {sourceReserved > 0 && (
+                <span className="text-amber-600 ml-1">(On hand: {sourceStock + sourceReserved}, Reserved: {sourceReserved})</span>
+              )}
             </p>
           )}
           {errors.quantity && (
             <p className="text-xs text-red-600 animate-field-error">{errors.quantity.message}</p>
           )}
+        </div>
         </div>
 
         {/* Stock warning */}
@@ -295,8 +364,8 @@ export function TransferPage() {
         )}
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving...' : 'Save Transfer'}
+          <Button type="submit" disabled={isSubmitting || !!showStockWarning}>
+            {isSubmitting ? 'Saving...' : 'Submit Transfer'}
           </Button>
         </div>
       </form>
@@ -311,7 +380,7 @@ export function TransferPage() {
             <div className="space-y-1 text-sm">
               <p><span className="font-medium">Item:</span> {items.find((i) => String(i.id) === pendingValues.itemId)?.itemCode ?? '--'}</p>
               <p><span className="font-medium">Quantity:</span> {pendingValues.quantity}</p>
-              <p><span className="font-medium">From:</span> {pendingValues.fromLocation}</p>
+              <p><span className="font-medium">From:</span> {pendingValues.fromLocation}{sourceStock !== null ? ` (${sourceStock} available)` : ''}</p>
               <p><span className="font-medium">To:</span> {pendingValues.toLocation}</p>
             </div>
           )

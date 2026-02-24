@@ -37,13 +37,13 @@ type Item = { id: number; itemCode: string; description: string; category?: stri
 
 const lineItemSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
-  quantity: z.coerce.number({ invalid_type_error: 'Required' }).positive('Must be > 0'),
-  unitCost: z.coerce.number({ invalid_type_error: 'Required' }).positive('Must be > 0'),
+  quantity: z.coerce.number({ message: 'Required' }).positive('Must be > 0'),
+  unitCost: z.coerce.number({ message: 'Required' }).positive('Must be > 0'),
 });
 
 const receiptSchema = z.object({
   vendorId: z.string().min(1, 'Vendor is required'),
-  location: z.enum(LOCATIONS, { required_error: 'Location is required' }),
+  location: z.enum(LOCATIONS, { message: 'Location is required' }),
   transactionDate: z.string().min(1, 'Date is required'),
   invoiceNumber: z.string().optional(),
   notes: z.string().optional(),
@@ -89,7 +89,8 @@ export function ReceiptPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const form = useForm<ReceiptFormValues>({
-    resolver: zodResolver(receiptSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(receiptSchema) as any,
     defaultValues: {
       vendorId: '',
       location: LOCATIONS[0],
@@ -117,24 +118,38 @@ export function ReceiptPage() {
   const [pendingValues, setPendingValues] = useState<ReceiptFormValues | null>(null);
 
   const { setDirty: setFormDirty } = useFormDirty();
+  const [userInteracted, setUserInteracted] = useState(false);
+
+  // Detect actual user interaction (watch fires only after subscription, not on mount)
+  useEffect(() => {
+    const sub = watch(() => setUserInteracted(true));
+    return () => sub.unsubscribe();
+  }, [watch]);
 
   // Warn before browser close/refresh if form is dirty
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) {
+      if (isDirty && userInteracted) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
+  }, [isDirty, userInteracted]);
 
-  // Sync form dirty state with global context (for logout warning)
+  // Sync form dirty state with global context (for sidebar/logout warning)
   useEffect(() => {
-    setFormDirty(isDirty);
+    setFormDirty(isDirty && userInteracted);
     return () => setFormDirty(false);
-  }, [isDirty, setFormDirty]);
+  }, [isDirty, userInteracted, setFormDirty]);
+
+  // Auto-dismiss success message after 5 seconds
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => setSuccessMessage(null), 5000);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
 
   useEffect(() => {
     async function loadData() {
@@ -230,7 +245,7 @@ export function ReceiptPage() {
         location: pendingValues.location,
         transactionDate: pendingValues.transactionDate,
         invoiceNumber: pendingValues.invoiceNumber || undefined,
-        notes: pendingValues.notes || undefined,
+        notes: pendingValues.notes?.trim() || '',
         lineItems: pendingValues.lineItems.map((li) => ({
           itemId: parseInt(li.itemId),
           quantity: li.quantity,
@@ -240,18 +255,21 @@ export function ReceiptPage() {
 
       setLastPaidPrices(data.lastPaidPrices);
       const count = data.transactions.length;
+      const vendorName = vendors.find((v) => String(v.id) === pendingValues.vendorId)?.vendorName ?? '';
       setSuccessMessage(
-        `Receipt saved: ${count} item${count !== 1 ? 's' : ''} received successfully.`
+        `Receipt saved: ${count} item${count !== 1 ? 's' : ''} received from ${vendorName} at ${pendingValues.location}.`
       );
 
       const prevLocation = pendingValues.location;
+      setUserInteracted(false);
+      setFormDirty(false);
       form.reset({
         vendorId: '',
         location: prevLocation,
         transactionDate: todayLocalStr(),
         invoiceNumber: '',
         notes: '',
-        lineItems: [{ itemId: '', quantity: undefined as unknown as number, unitCost: undefined as unknown as number }],
+        lineItems: [{ itemId: '', quantity: '' as unknown as number, unitCost: '' as unknown as number }],
       });
       setPendingValues(null);
     } catch (err: unknown) {
@@ -288,8 +306,8 @@ export function ReceiptPage() {
               <Combobox
                 options={vendors.map((v) => ({
                   value: String(v.id),
-                  label: v.vendorName,
-                  searchText: `${v.vendorCode} ${v.vendorName}`,
+                  label: v.vendorName.trim(),
+                  searchText: `${v.vendorCode} ${v.vendorName.trim()}`,
                 }))}
                 value={watch('vendorId')}
                 onValueChange={(v) => setValue('vendorId', v)}
@@ -388,9 +406,10 @@ export function ReceiptPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">#</TableHead>
-                  <TableHead>Item</TableHead>
+                  <TableHead className="w-36">Part #</TableHead>
+                  <TableHead>Description</TableHead>
                   <TableHead className="w-28">Qty</TableHead>
-                  <TableHead className="w-32">Unit Cost ($)</TableHead>
+                  <TableHead className="w-44">Unit Cost ($)</TableHead>
                   <TableHead className="w-28 text-right">Line Total</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
@@ -405,13 +424,13 @@ export function ReceiptPage() {
                         <Combobox
                           options={items.map((item) => ({
                             value: String(item.id),
-                            label: `${item.itemCode} — ${item.description}`,
-                            searchText: `${item.itemCode} ${item.description} ${item.category ?? ''}`,
+                            label: item.itemCode,
+                            searchText: `${item.itemCode} ${item.category ?? ''}`,
                           }))}
                           value={watchedLines[index]?.itemId}
                           onValueChange={(v) => setValue(`lineItems.${index}.itemId`, v)}
-                          placeholder="Search items..."
-                          searchPlaceholder="Type code or description..."
+                          placeholder="Part #..."
+                          searchPlaceholder="Search part #..."
                           triggerClassName="h-9"
                         />
                         {errors.lineItems?.[index]?.itemId && (
@@ -419,19 +438,34 @@ export function ReceiptPage() {
                         )}
                       </TableCell>
                       <TableCell>
+                        <Combobox
+                          options={items.map((item) => ({
+                            value: String(item.id),
+                            label: item.description,
+                            searchText: item.description,
+                          }))}
+                          value={watchedLines[index]?.itemId}
+                          onValueChange={(v) => setValue(`lineItems.${index}.itemId`, v)}
+                          placeholder="Description..."
+                          searchPlaceholder="Search description..."
+                          triggerClassName="h-9"
+                        />
+                      </TableCell>
+                      <TableCell>
                         {(() => {
                           const wholeUnit = isWholeUnitItem(index);
+                          const itemForValidation = itemMap.get(watchedLines[index]?.itemId);
                           return (
                             <Input
                               type="number"
-                              step={wholeUnit ? '1' : '0.01'}
-                              min={wholeUnit ? '1' : '0.01'}
+                              step="any"
+                              min="0.01"
                               placeholder={wholeUnit ? '0' : '0.00'}
                               className="h-9"
                               {...register(`lineItems.${index}.quantity`, {
                                 validate: (v) => {
                                   if (wholeUnit && v !== undefined && v % 1 !== 0) {
-                                    return 'Whole numbers only for this item';
+                                    return `${itemForValidation?.itemCode ?? 'Item'} is measured in ${itemForValidation?.unitOfMeasure ?? 'EA'} — quantity must be a whole number.`;
                                   }
                                   return true;
                                 },
@@ -443,25 +477,34 @@ export function ReceiptPage() {
                           <p className="text-xs text-red-600 mt-0.5">{errors.lineItems[index].quantity?.message}</p>
                         )}
                       </TableCell>
-                      <TableCell className="align-top">
-                        <div className="relative">
+                      <TableCell className="relative">
+                        <div className="flex items-center gap-1.5">
                           <Input
                             type="number"
                             step="0.01"
                             min="0.01"
                             placeholder="0.00"
-                            className="h-9"
+                            className="h-9 w-24"
                             {...register(`lineItems.${index}.unitCost`)}
+                            onBlur={(e) => {
+                              const val = parseFloat(e.target.value);
+                              if (!isNaN(val)) {
+                                e.target.value = val.toFixed(2);
+                                setValue(`lineItems.${index}.unitCost`, val);
+                              }
+                            }}
                           />
                           {(() => {
                             const lp = getLastPaid(index);
                             return lp !== null ? (
-                              <p className="absolute text-xs text-gray-400 mt-0.5 leading-none whitespace-nowrap">Last: {formatCurrency(lp)}</p>
+                              <span className="text-xs text-gray-400 whitespace-nowrap" title={`Last paid: ${formatCurrency(lp)}`}>
+                                {formatCurrency(lp)}
+                              </span>
                             ) : null;
                           })()}
                         </div>
                         {errors.lineItems?.[index]?.unitCost && (
-                          <p className="text-xs text-red-600 mt-0.5">{errors.lineItems[index].unitCost?.message}</p>
+                          <p className="text-xs text-red-600 mt-0.5 absolute">{errors.lineItems[index].unitCost?.message}</p>
                         )}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
@@ -486,7 +529,7 @@ export function ReceiptPage() {
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={4} className="text-right font-medium">
+                  <TableCell colSpan={5} className="text-right font-medium">
                     Receipt Total
                   </TableCell>
                   <TableCell className="text-right font-mono font-bold">
@@ -522,7 +565,7 @@ export function ReceiptPage() {
           <Button type="submit" disabled={isSubmitting || dateBlocked}>
             {isSubmitting
               ? 'Saving...'
-              : `Save Receipt (${fields.length} item${fields.length !== 1 ? 's' : ''})`
+              : `Submit Receipt (${fields.length} item${fields.length !== 1 ? 's' : ''})`
             }
           </Button>
         </div>
@@ -532,14 +575,25 @@ export function ReceiptPage() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Confirm Receipt"
-        confirmLabel="Save Receipt"
+        confirmLabel="Submit Receipt"
         description={
           pendingValues && (
             <div className="space-y-1 text-sm">
               <p><span className="font-medium">Vendor:</span> {vendors.find((v) => String(v.id) === pendingValues.vendorId)?.vendorName ?? '--'}</p>
               <p><span className="font-medium">Location:</span> {pendingValues.location}</p>
               <p><span className="font-medium">Items:</span> {pendingValues.lineItems.length}</p>
-              <p><span className="font-medium">Total:</span> {formatCurrency(receiptTotal)}</p>
+              <div className="mt-2 border rounded-md divide-y text-xs">
+                {pendingValues.lineItems.map((li, idx) => {
+                  const item = items.find((i) => String(i.id) === li.itemId);
+                  return (
+                    <div key={idx} className="flex justify-between px-2 py-1">
+                      <span>{item?.itemCode ?? '--'}</span>
+                      <span>{li.quantity} x {formatCurrency(li.unitCost)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-1"><span className="font-medium">Total:</span> {formatCurrency(receiptTotal)}</p>
               {pendingValues.invoiceNumber && (
                 <p><span className="font-medium">Invoice:</span> {pendingValues.invoiceNumber}</p>
               )}

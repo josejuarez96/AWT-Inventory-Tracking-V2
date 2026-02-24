@@ -113,6 +113,7 @@ export function CycleCountDetailPage() {
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
   const [flaggedInfo, setFlaggedInfo] = useState<{ flaggedCount: number; flaggedLines: Array<{ itemCode: string; variance: number; varianceValue: number }> } | null>(null);
   const [voidConfirmOpen, setVoidConfirmOpen] = useState(false);
+  const [postConfirmOpen, setPostConfirmOpen] = useState(false);
   const [savedInputs, setSavedInputs] = useState<Record<number, string>>({});
   const { setDirty: setFormDirty } = useFormDirty();
 
@@ -363,7 +364,7 @@ export function CycleCountDetailPage() {
             </Button>
           )}
           {isCompleted && (
-            <Button size="sm" onClick={() => handlePost()} disabled={posting}>
+            <Button size="sm" onClick={() => setPostConfirmOpen(true)} disabled={posting}>
               <CheckCircle className="mr-2 h-4 w-4" />
               {posting ? 'Posting...' : 'Post Adjustments'}
             </Button>
@@ -551,6 +552,24 @@ export function CycleCountDetailPage() {
       )}
 
       {/* Void confirmation dialog */}
+      <Dialog open={postConfirmOpen} onOpenChange={setPostConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-blue-500" />
+              Post Adjustments
+            </DialogTitle>
+            <DialogDescription>
+              This will create inventory adjustment transactions for all counted variances in <strong>{cycleCount.countNumber}</strong>. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setPostConfirmOpen(false)}>Cancel</Button>
+            <Button onClick={() => { setPostConfirmOpen(false); handlePost(); }}>Post Adjustments</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={voidConfirmOpen} onOpenChange={setVoidConfirmOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

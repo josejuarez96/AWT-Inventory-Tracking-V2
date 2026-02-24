@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { LOCATIONS } from '@/lib/locations';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -21,7 +21,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 type Transaction = {
   id: number;
@@ -37,6 +38,7 @@ type Transaction = {
   item: { itemCode: string; description: string };
   vendor: { vendorName: string } | null;
   user: { fullName: string };
+  productionOrder: { id: number; orderNumber: string } | null;
 };
 
 type PaginatedResponse = {
@@ -70,6 +72,20 @@ export function TransactionHistoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Map batchId → lowest transaction ID in the batch for display
+  const batchFirstIdMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const t of transactions) {
+      if (t.batchId) {
+        const existing = map.get(t.batchId);
+        if (existing === undefined || t.id < existing) {
+          map.set(t.batchId, t.id);
+        }
+      }
+    }
+    return map;
+  }, [transactions]);
+
   const [search, setSearch] = useState('');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
@@ -81,41 +97,88 @@ export function TransactionHistoryPage() {
   const [total, setTotal] = useState(0);
   const limit = 50;
 
-  useEffect(() => {
-    async function load() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const params = new URLSearchParams();
-        if (search.trim()) params.set('search', search.trim());
-        if (filterFrom) params.set('from', filterFrom);
-        if (filterTo) params.set('to', filterTo);
-        if (filterType !== 'ALL') params.set('type', filterType);
-        if (filterLocation !== 'ALL') params.set('location', filterLocation);
-        params.set('page', String(page));
-        params.set('limit', String(limit));
+  // Use ref to track latest request and avoid stale responses
+  const requestIdRef = useRef(0);
 
-        const data = await api.get<PaginatedResponse>(
-          `/api/transactions?${params.toString()}`
-        );
+  const fetchTransactions = useCallback(async (searchVal: string, fromVal: string, toVal: string, typeVal: string, locationVal: string, pageVal: number) => {
+    const thisRequest = ++requestIdRef.current;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (searchVal.trim()) params.set('search', searchVal.trim());
+      if (fromVal) params.set('from', fromVal);
+      if (toVal) params.set('to', toVal);
+      if (typeVal !== 'ALL') params.set('type', typeVal);
+      if (locationVal !== 'ALL') params.set('location', locationVal);
+      params.set('page', String(pageVal));
+      params.set('limit', String(limit));
+
+      const data = await api.get<PaginatedResponse>(
+        `/api/transactions?${params.toString()}`
+      );
+      // Only update state if this is still the latest request
+      if (thisRequest === requestIdRef.current) {
         setTransactions(data.transactions);
         setTotal(data.total);
         setTotalPages(data.totalPages);
-      } catch {
+        setIsLoading(false);
+      }
+    } catch {
+      if (thisRequest === requestIdRef.current) {
         setError('Failed to load transactions.');
-      } finally {
         setIsLoading(false);
       }
     }
-    load();
-  }, [search, filterFrom, filterTo, filterType, filterLocation, page]);
+  }, []);
 
-  // Reset to page 1 when filters change
+  // Initial load
   useEffect(() => {
+    fetchTransactions(search, filterFrom, filterTo, filterType, filterLocation, page);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced search — fetch 300ms after user stops typing
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  function handleSearchChange(val: string) {
+    setSearch(val);
     setPage(1);
-  }, [search, filterFrom, filterTo, filterType, filterLocation]);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchTransactions(val, filterFrom, filterTo, filterType, filterLocation, 1);
+    }, 300);
+  }
 
+  // Immediate fetch when dropdown/date filters change
+  function handleFilterChange(setter: (v: string) => void, val: string) {
+    setter(val);
+    setPage(1);
+    // Use setTimeout(0) to ensure state is updated before fetch reads refs
+    setTimeout(() => {
+      const searchVal = search;
+      const fromVal = setter === setFilterFrom ? val : filterFrom;
+      const toVal = setter === setFilterTo ? val : filterTo;
+      const typeVal = setter === setFilterType ? val : filterType;
+      const locVal = setter === setFilterLocation ? val : filterLocation;
+      fetchTransactions(searchVal, fromVal, toVal, typeVal, locVal, 1);
+    }, 0);
+  }
 
+  function handlePageChange(newPage: number) {
+    setPage(newPage);
+    fetchTransactions(search, filterFrom, filterTo, filterType, filterLocation, newPage);
+  }
+
+  const hasActiveFilters = !!(search || filterFrom || filterTo || filterType !== 'ALL' || filterLocation !== 'ALL');
+
+  function clearAllFilters() {
+    setSearch('');
+    setFilterFrom('');
+    setFilterTo('');
+    setFilterType('ALL');
+    setFilterLocation('ALL');
+    setPage(1);
+    fetchTransactions('', '', '', 'ALL', 'ALL', 1);
+  }
 
   // Extract adjustment reason from notes "[Reason] optional text"
   function parseNotes(t: Transaction): { reason: string | null; text: string | null } {
@@ -142,9 +205,9 @@ export function TransactionHistoryPage() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
-              placeholder="Item, vendor, invoice #..."
+              placeholder="ID, item, vendor, invoice #..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-9 w-56"
             />
           </div>
@@ -154,7 +217,7 @@ export function TransactionHistoryPage() {
           <Input
             type="date"
             value={filterFrom}
-            onChange={(e) => setFilterFrom(e.target.value)}
+            onChange={(e) => handleFilterChange(setFilterFrom, e.target.value)}
             className="w-40"
           />
         </div>
@@ -163,13 +226,13 @@ export function TransactionHistoryPage() {
           <Input
             type="date"
             value={filterTo}
-            onChange={(e) => setFilterTo(e.target.value)}
+            onChange={(e) => handleFilterChange(setFilterTo, e.target.value)}
             className="w-40"
           />
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-gray-500">Type</Label>
-          <Select value={filterType} onValueChange={setFilterType}>
+          <Select value={filterType} onValueChange={(v) => handleFilterChange(setFilterType, v)}>
             <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
@@ -186,7 +249,7 @@ export function TransactionHistoryPage() {
         </div>
         <div className="space-y-1">
           <Label className="text-xs text-gray-500">Location</Label>
-          <Select value={filterLocation} onValueChange={setFilterLocation}>
+          <Select value={filterLocation} onValueChange={(v) => handleFilterChange(setFilterLocation, v)}>
             <SelectTrigger className="w-36">
               <SelectValue />
             </SelectTrigger>
@@ -198,6 +261,20 @@ export function TransactionHistoryPage() {
             </SelectContent>
           </Select>
         </div>
+        {hasActiveFilters && (
+          <div className="space-y-1">
+            <Label className="text-xs text-gray-500">&nbsp;</Label>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-gray-500 hover:text-gray-700"
+              onClick={clearAllFilters}
+            >
+              <X className="h-3 w-3 mr-1" />
+              Clear Filters
+            </Button>
+          </div>
+        )}
       </div>
 
       {isLoading ? (
@@ -205,12 +282,29 @@ export function TransactionHistoryPage() {
       ) : error ? (
         <p className="text-sm text-red-600">{error}</p>
       ) : transactions.length === 0 ? (
-        <p className="text-sm text-gray-500">No transactions found for the selected filters.</p>
+        <div className="text-sm text-gray-500 space-y-1">
+          <p>No transactions found for the selected filters.</p>
+          {hasActiveFilters && (
+            <p className="text-xs text-gray-400">
+              Active filters: {[
+                search && `search "${search}"`,
+                filterType !== 'ALL' && `type: ${TYPE_LABELS[filterType] ?? filterType}`,
+                filterLocation !== 'ALL' && `location: ${filterLocation}`,
+                filterFrom && `from: ${filterFrom}`,
+                filterTo && `to: ${filterTo}`,
+              ].filter(Boolean).join(', ')}.{' '}
+              <button className="text-blue-600 hover:underline" onClick={clearAllFilters}>
+                Clear all filters
+              </button>
+            </p>
+          )}
+        </div>
       ) : (
         <div className="rounded-md border">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-16">ID</TableHead>
                 <TableHead className="w-28">Date</TableHead>
                 <TableHead className="w-24">Type</TableHead>
                 <TableHead>Item Code</TableHead>
@@ -235,6 +329,11 @@ export function TransactionHistoryPage() {
                   : false;
                 return (
                   <TableRow key={t.id} className={t.batchId ? 'border-l-2 border-l-blue-300' : ''}>
+                    {/* Transaction ID — show batch ref (lowest ID in batch) for grouped transactions */}
+                    <TableCell className="font-mono text-xs text-gray-400">
+                      {t.batchId ? (batchFirstIdMap.get(t.batchId) ?? t.id) : t.id}
+                    </TableCell>
+
                     {/* Date */}
                     <TableCell className="text-sm text-gray-600 whitespace-nowrap">
                       {formatDate(t.transactionDate)}
@@ -293,7 +392,7 @@ export function TransactionHistoryPage() {
                           </span>
                         )}
                         {t.vendor?.vendorName && (
-                          <span className="text-gray-700">{t.vendor.vendorName}</span>
+                          <span className="text-gray-700">{t.vendor.vendorName.trim()}</span>
                         )}
                         {t.invoiceNumber && (
                           <span className="text-xs text-gray-400">#{t.invoiceNumber}</span>
@@ -306,7 +405,15 @@ export function TransactionHistoryPage() {
                             {text}
                           </span>
                         )}
-                        {t.transactionType !== 'TRANSFER' && !t.vendor?.vendorName && !t.invoiceNumber && !reason && !text && (
+                        {t.productionOrder && (
+                          <Link
+                            to={`/in-production/${t.productionOrder.id}`}
+                            className="text-xs font-medium text-blue-600 hover:underline"
+                          >
+                            {t.productionOrder.orderNumber}
+                          </Link>
+                        )}
+                        {t.transactionType !== 'TRANSFER' && !t.vendor?.vendorName && !t.invoiceNumber && !reason && !text && !t.productionOrder && (
                           <span className="text-gray-300">—</span>
                         )}
                       </div>
@@ -336,7 +443,7 @@ export function TransactionHistoryPage() {
                 variant="outline"
                 size="sm"
                 disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
+                onClick={() => handlePageChange(page - 1)}
               >
                 <ChevronLeft className="h-4 w-4" />
                 Prev
@@ -348,7 +455,7 @@ export function TransactionHistoryPage() {
                 variant="outline"
                 size="sm"
                 disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => handlePageChange(page + 1)}
               >
                 Next
                 <ChevronRight className="h-4 w-4" />

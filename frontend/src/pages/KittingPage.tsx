@@ -32,6 +32,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { AlertTriangle, CheckCircle, Plus, X } from 'lucide-react';
+import { Combobox } from '@/components/ui/combobox';
 
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; itemType?: string };
 
@@ -53,20 +54,21 @@ type BomDetail = BomOption & {
 type StockPosition = {
   itemId: number;
   qtyByLocation: Record<string, number>;
+  availableByLocation: Record<string, number>;
   avgCost: number | null;
 };
 
 const componentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
-  quantityPer: z.coerce.number({ invalid_type_error: 'Required' }).positive('Must be > 0'),
+  quantityPer: z.coerce.number({ message: 'Required' }).positive('Must be > 0'),
   fromBom: z.boolean().default(false),
 });
 
 const kittingSchema = z.object({
   bomId: z.string().optional(),
   finishedGoodId: z.string().min(1, 'Finished good is required'),
-  location: z.enum(LOCATIONS, { required_error: 'Location is required' }),
-  quantityProduced: z.coerce.number({ invalid_type_error: 'Required' }).positive('Must be > 0'),
+  location: z.enum(LOCATIONS, { message: 'Location is required' }),
+  quantityProduced: z.coerce.number({ message: 'Required' }).positive('Must be > 0'),
   notes: z.string().optional(),
   components: z.array(componentSchema).min(1, 'At least one component is required'),
 });
@@ -75,7 +77,7 @@ type KittingFormValues = z.infer<typeof kittingSchema>;
 
 export function KittingPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  void user; // available for future admin-specific UI
   const [items, setItems] = useState<Item[]>([]);
   const [activeBoms, setActiveBoms] = useState<BomOption[]>([]);
   const [stockMap, setStockMap] = useState<Map<number, StockPosition>>(new Map());
@@ -86,7 +88,8 @@ export function KittingPage() {
   const [adminAuthSubmitting, setAdminAuthSubmitting] = useState(false);
 
   const form = useForm<KittingFormValues>({
-    resolver: zodResolver(kittingSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(kittingSchema) as any,
     defaultValues: {
       bomId: '',
       finishedGoodId: '',
@@ -115,23 +118,35 @@ export function KittingPage() {
   const [pendingValues, setPendingValues] = useState<KittingFormValues | null>(null);
 
   const { setDirty: setFormDirty } = useFormDirty();
+  const [userInteracted, setUserInteracted] = useState(false);
 
-  // Warn before browser close/refresh if form is dirty
+  useEffect(() => {
+    const sub = watch(() => setUserInteracted(true));
+    return () => sub.unsubscribe();
+  }, [watch]);
+
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) {
+      if (isDirty && userInteracted) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
+  }, [isDirty, userInteracted]);
 
   useEffect(() => {
-    setFormDirty(isDirty);
+    setFormDirty(isDirty && userInteracted);
     return () => setFormDirty(false);
-  }, [isDirty, setFormDirty]);
+  }, [isDirty, userInteracted, setFormDirty]);
+
+  // Auto-dismiss success message after 5 seconds
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => setSuccessMessage(null), 5000);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
 
   const watchedLocation = watch('location');
   const watchedComponents = watch('components');
@@ -161,6 +176,7 @@ export function KittingPage() {
         positions: Array<{
           item: { id: number };
           qtyByLocation: Record<string, number>;
+          availableByLocation: Record<string, number>;
           avgCost: number | null;
         }>;
       }>('/api/transactions/stock-position?limit=9999');
@@ -169,6 +185,7 @@ export function KittingPage() {
         map.set(p.item.id, {
           itemId: p.item.id,
           qtyByLocation: p.qtyByLocation,
+          availableByLocation: p.availableByLocation ?? p.qtyByLocation,
           avgCost: p.avgCost,
         });
       }
@@ -204,6 +221,7 @@ export function KittingPage() {
   // When user selects a finished good directly, auto-load its active BOM
   async function handleFinishedGoodChange(itemId: string) {
     setValue('finishedGoodId', itemId);
+    setSubmitError(null);
     try {
       const data = await api.get<{ boms: BomOption[] }>(
         `/api/boms?finishedGoodId=${itemId}&status=ACTIVE&limit=1`
@@ -212,9 +230,13 @@ export function KittingPage() {
         const bom = data.boms[0];
         setValue('bomId', String(bom.id));
         await loadBomTemplate(String(bom.id));
+      } else {
+        setValue('bomId', '');
+        replace([{ itemId: '', quantityPer: undefined as unknown as number, fromBom: false }]);
+        setSubmitError('No active BOM found for this finished good. Select a BOM template or add components manually.');
       }
     } catch {
-      // non-fatal — no active BOM for this item, user adds components manually
+      setSubmitError('Failed to look up BOM for this item. Select a BOM template or add components manually.');
     }
   }
 
@@ -222,7 +244,7 @@ export function KittingPage() {
     if (!itemId) return null;
     const pos = stockMap.get(parseInt(itemId));
     if (!pos) return 0;
-    return pos.qtyByLocation[watchedLocation] ?? 0;
+    return pos.availableByLocation[watchedLocation] ?? 0;
   }
 
   function getAvgCost(itemId: string): number | null {
@@ -253,8 +275,17 @@ export function KittingPage() {
   const unitCost = watchedQtyProduced > 0 ? totalCost / watchedQtyProduced : 0;
   const hasInsufficientStock = insufficientLines.length > 0;
 
+  const watchedFgId = watch('finishedGoodId');
+  const fgItem = items.find((i) => String(i.id) === watchedFgId);
+  const fgIsWholeUnit = fgItem && ['EA', 'SET', 'PAIR'].includes(fgItem.unitOfMeasure.toUpperCase());
+
   function onFormValid(values: KittingFormValues) {
-    // Enforce whole numbers for EA items
+    // Enforce whole numbers for EA finished goods
+    if (fgIsWholeUnit && !Number.isInteger(values.quantityProduced)) {
+      setSubmitError(`${fgItem!.itemCode} is measured in ${fgItem!.unitOfMeasure} — quantity produced must be a whole number.`);
+      return;
+    }
+    // Enforce whole numbers for EA component items
     for (const comp of values.components) {
       const item = items.find((i) => i.id === parseInt(comp.itemId));
       if (item && item.unitOfMeasure.toUpperCase() === 'EA' && !Number.isInteger(comp.quantityPer)) {
@@ -273,7 +304,7 @@ export function KittingPage() {
       finishedGoodId: parseInt(values.finishedGoodId),
       location: values.location,
       quantityProduced: values.quantityProduced,
-      notes: values.notes || undefined,
+      notes: values.notes?.trim() || '',
       components: values.components.map((c) => ({
         itemId: parseInt(c.itemId),
         quantityPer: c.quantityPer,
@@ -282,19 +313,21 @@ export function KittingPage() {
   }
 
   function handleKitSuccess(data: { order: { orderNumber: string; totalCost: number; quantityProduced: number } }) {
+    const fgCode = items.find((i) => String(i.id) === pendingValues?.finishedGoodId)?.itemCode ?? '';
     setSuccessMessage(
-      `Kitting order ${data.order.orderNumber} created successfully. ` +
-      `Produced ${data.order.quantityProduced} unit(s), total cost ${formatCurrency(Number(data.order.totalCost))}.`
+      `Kitting order ${data.order.orderNumber} created — ${data.order.quantityProduced} ${fgCode} produced, total cost ${formatCurrency(Number(data.order.totalCost))}.`
     );
 
     const prevLocation = pendingValues?.location ?? LOCATIONS[0];
+    setUserInteracted(false);
+    setFormDirty(false);
     reset({
       bomId: '',
       finishedGoodId: '',
       location: prevLocation,
-      quantityProduced: undefined as unknown as number,
+      quantityProduced: '' as unknown as number,
       notes: '',
-      components: [{ itemId: '', quantityPer: undefined as unknown as number, fromBom: false }],
+      components: [{ itemId: '', quantityPer: '' as unknown as number, fromBom: false }],
     });
     setPendingValues(null);
     void loadStock();
@@ -348,7 +381,7 @@ export function KittingPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-6xl">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Kitting / Production</h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -368,8 +401,8 @@ export function KittingPage() {
         <div className="rounded-lg border bg-white p-4 space-y-4">
           <h2 className="text-sm font-medium text-gray-700">Production Details</h2>
 
-          {/* Row 1: BOM Template + Finished Good */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Row 1: BOM Template + FG Part # + FG Description */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1">
               <Label>BOM Template <span className="text-gray-400">(optional)</span></Label>
               <Select
@@ -392,25 +425,35 @@ export function KittingPage() {
             </div>
 
             <div className="space-y-1">
-              <Label>Finished Good <span className="text-red-500">*</span></Label>
-              <Select
+              <Label>FG Part # <span className="text-red-500">*</span></Label>
+              <Combobox
+                options={items.filter((i) => i.itemType === 'FINISHED').map((item) => ({
+                  value: String(item.id),
+                  label: item.itemCode,
+                  searchText: item.itemCode,
+                }))}
                 value={watch('finishedGoodId')}
                 onValueChange={(v) => void handleFinishedGoodChange(v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select finished good..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {items.filter((i) => i.itemType === 'FINISHED').map((item) => (
-                    <SelectItem key={item.id} value={String(item.id)}>
-                      {item.itemCode} — {item.description}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Select part #..."
+                searchPlaceholder="Search part #..."
+              />
               {errors.finishedGoodId && (
                 <p className="text-xs text-red-600 animate-field-error">{errors.finishedGoodId.message}</p>
               )}
+            </div>
+            <div className="space-y-1">
+              <Label>FG Description</Label>
+              <Combobox
+                options={items.filter((i) => i.itemType === 'FINISHED').map((item) => ({
+                  value: String(item.id),
+                  label: item.description,
+                  searchText: item.description,
+                }))}
+                value={watch('finishedGoodId')}
+                onValueChange={(v) => void handleFinishedGoodChange(v)}
+                placeholder="Select description..."
+                searchPlaceholder="Search description..."
+              />
             </div>
           </div>
 
@@ -440,10 +483,17 @@ export function KittingPage() {
               <Label>Quantity Produced <span className="text-red-500">*</span></Label>
               <Input
                 type="number"
-                step="1"
-                min="1"
-                placeholder="1"
-                {...register('quantityProduced')}
+                step="any"
+                min="0.01"
+                placeholder={fgIsWholeUnit ? '1' : '0.01'}
+                {...register('quantityProduced', {
+                  validate: (v) => {
+                    if (fgIsWholeUnit && v !== undefined && v % 1 !== 0) {
+                      return `${fgItem?.itemCode} is measured in ${fgItem?.unitOfMeasure} — quantity must be a whole number.`;
+                    }
+                    return true;
+                  },
+                })}
               />
               {errors.quantityProduced && (
                 <p className="text-xs text-red-600 animate-field-error">{errors.quantityProduced.message}</p>
@@ -495,7 +545,8 @@ export function KittingPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">#</TableHead>
-                  <TableHead>Component Item</TableHead>
+                  <TableHead className="w-36">Part #</TableHead>
+                  <TableHead>Description</TableHead>
                   <TableHead className="w-24">Qty/Unit</TableHead>
                   <TableHead className="w-24 text-right">Required</TableHead>
                   <TableHead className="w-28 text-right">Available</TableHead>
@@ -524,29 +575,43 @@ export function KittingPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Select
+                        <Combobox
+                          options={items
+                            .filter((i) => i.itemType !== 'FINISHED' && String(i.id) !== watch('finishedGoodId'))
+                            .map((item) => ({
+                              value: String(item.id),
+                              label: item.itemCode,
+                              searchText: item.itemCode,
+                            }))}
                           value={comp?.itemId || ''}
                           onValueChange={(v) => setValue(`components.${index}.itemId`, v)}
+                          placeholder="Part #..."
+                          searchPlaceholder="Search part #..."
+                          triggerClassName="h-9"
                           disabled={isBomLocked}
-                        >
-                          <SelectTrigger className={`h-9 ${isBomLocked ? 'opacity-75 bg-gray-50' : ''}`}>
-                            <SelectValue placeholder="Select component..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {items
-                              .filter((i) => i.itemType !== 'FINISHED' && String(i.id) !== watch('finishedGoodId'))
-                              .map((item) => (
-                                <SelectItem key={item.id} value={String(item.id)}>
-                                  {item.itemCode} — {item.description}
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
+                        />
                         {errors.components?.[index]?.itemId && (
                           <p className="text-xs text-red-600 mt-0.5">
                             {errors.components[index].itemId?.message}
                           </p>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        <Combobox
+                          options={items
+                            .filter((i) => i.itemType !== 'FINISHED' && String(i.id) !== watch('finishedGoodId'))
+                            .map((item) => ({
+                              value: String(item.id),
+                              label: item.description,
+                              searchText: item.description,
+                            }))}
+                          value={comp?.itemId || ''}
+                          onValueChange={(v) => setValue(`components.${index}.itemId`, v)}
+                          placeholder="Description..."
+                          searchPlaceholder="Search description..."
+                          triggerClassName="h-9"
+                          disabled={isBomLocked}
+                        />
                       </TableCell>
                       <TableCell>
                         <Input
@@ -602,7 +667,7 @@ export function KittingPage() {
               </TableBody>
               <TableFooter>
                 <TableRow>
-                  <TableCell colSpan={6} className="text-right font-medium">
+                  <TableCell colSpan={7} className="text-right font-medium">
                     Total Cost
                   </TableCell>
                   <TableCell className="text-right font-mono font-bold">
@@ -612,7 +677,7 @@ export function KittingPage() {
                 </TableRow>
                 {watchedQtyProduced > 0 && totalCost > 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-right text-sm text-gray-500">
+                    <TableCell colSpan={7} className="text-right text-sm text-gray-500">
                       Cost Per Unit
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm text-gray-500">

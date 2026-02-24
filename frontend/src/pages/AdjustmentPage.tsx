@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api, ApiError } from '@/lib/api';
 import { LOCATIONS, type Location } from '@/lib/locations';
+import { todayLocalStr } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useFormDirty } from '@/context/FormDirtyContext';
 import { AdminAuthDialog } from '@/components/AdminAuthDialog';
@@ -27,6 +28,8 @@ type Item = { id: number; itemCode: string; description: string; unitOfMeasure: 
 type StockPosition = {
   item: { id: number };
   qtyByLocation: Record<string, number>;
+  reservedByLocation: Record<string, number>;
+  availableByLocation: Record<string, number>;
 };
 
 const REASONS = ['Damage', 'Shrinkage', 'Correction', 'Other'] as const;
@@ -40,19 +43,23 @@ type AdjustmentDirection = 'decrease' | 'increase';
 
 const schema = z.object({
   itemId: z.string().min(1, 'Item is required'),
-  location: z.enum(LOCATIONS, { required_error: 'Location is required' }),
+  location: z.enum(LOCATIONS, { message: 'Location is required' }),
+  transactionDate: z.string().min(1, 'Date is required'),
   quantity: z.coerce
-    .number({ invalid_type_error: 'Must be a number' })
+    .number({ message: 'Must be a number' })
     .positive('Must be greater than 0'),
-  reason: z.enum(REASONS, { required_error: 'Reason is required' }),
-  direction: z.enum(['decrease', 'increase']),
+  reason: z.enum(REASONS, { message: 'Reason is required' }),
+  direction: z.enum(['decrease', 'increase'] as const),
   notes: z.string().optional(),
-});
+}).refine(
+  (data) => data.reason !== 'Other' || (data.notes && data.notes.trim().length > 0),
+  { message: 'Notes are required when reason is "Other"', path: ['notes'] }
+);
 
 type FormValues = z.infer<typeof schema>;
 
 export function AdjustmentPage() {
-  const { user } = useAuth();
+  useAuth(); // ensures auth context is available
   const [items, setItems] = useState<Item[]>([]);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -69,26 +76,42 @@ export function AdjustmentPage() {
     reset,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(schema) as any,
     defaultValues: {
       location: LOCATIONS[0],
+      transactionDate: todayLocalStr(),
       direction: 'decrease',
     },
   });
 
   const { setDirty: setFormDirty } = useFormDirty();
+  const [userInteracted, setUserInteracted] = useState(false);
+
   useEffect(() => {
-    setFormDirty(isDirty);
+    const sub = watch(() => setUserInteracted(true));
+    return () => sub.unsubscribe();
+  }, [watch]);
+
+  useEffect(() => {
+    setFormDirty(isDirty && userInteracted);
     return () => setFormDirty(false);
-  }, [isDirty, setFormDirty]);
+  }, [isDirty, userInteracted, setFormDirty]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+      if (isDirty && userInteracted) { e.preventDefault(); e.returnValue = ''; }
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
+  }, [isDirty, userInteracted]);
+
+  // Auto-dismiss success message after 5 seconds
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => setSuccessMessage(null), 5000);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
@@ -114,19 +137,35 @@ export function AdjustmentPage() {
     }).catch(() => {});
   }, []);
 
+  const selectedItemId = watch('itemId');
+  const selectedLocation = watch('location');
+  const onHandStock = (() => {
+    if (!selectedItemId) return null;
+    const pos = positions.find((p) => p.item.id === parseInt(selectedItemId));
+    return pos ? (pos.qtyByLocation[selectedLocation] ?? 0) : 0;
+  })();
+  const reservedStock = (() => {
+    if (!selectedItemId) return 0;
+    const pos = positions.find((p) => p.item.id === parseInt(selectedItemId));
+    return pos ? (pos.reservedByLocation?.[selectedLocation] ?? 0) : 0;
+  })();
+  const availableStock = onHandStock !== null ? onHandStock - reservedStock : null;
+  const exceedsStock = selectedDirection === 'decrease' && availableStock !== null && watchedQty > 0 && watchedQty > availableStock;
+
   const isDecreaseOnly = selectedReason ? DECREASE_REASONS.includes(selectedReason) : false;
-  const isFlexible = selectedReason ? FLEXIBLE_REASONS.includes(selectedReason) : true;
+  // isFlexible used for future direction-toggle UX
+  void (selectedReason ? FLEXIBLE_REASONS.includes(selectedReason) : true);
 
   function onFormValid(values: FormValues) {
     // Pre-check: block negative stock before showing confirm dialog
     if (values.direction === 'decrease') {
       const pos = positions.find((p) => p.item.id === parseInt(values.itemId));
-      const currentStock = pos
-        ? (pos.qtyByLocation[values.location] ?? 0)
-        : 0;
-      if (values.quantity > currentStock) {
+      const onHand = pos ? (pos.qtyByLocation[values.location] ?? 0) : 0;
+      const reserved = pos ? (pos.reservedByLocation?.[values.location] ?? 0) : 0;
+      const available = onHand - reserved;
+      if (values.quantity > available) {
         setSubmitError(
-          `Cannot remove ${values.quantity} units — only ${currentStock} available at ${values.location}.`
+          `Cannot remove ${values.quantity} units — only ${available} available at ${values.location}${reserved > 0 ? ` (${reserved} reserved for production)` : ''}.`
         );
         return;
       }
@@ -143,23 +182,32 @@ export function AdjustmentPage() {
       location: values.location,
       quantity: finalQty,
       reason: values.reason,
-      notes: values.notes || undefined,
+      notes: values.notes?.trim() || '',
+      transactionDate: values.transactionDate,
     };
   }
 
   function handleAdjSuccess(data: { transaction: { id: number } }, values: FormValues) {
     const action = values.direction === 'decrease' ? 'removed from' : 'added to';
-    setSuccessMessage(`Adjustment #${data.transaction.id} recorded — ${values.quantity} units ${action} inventory.`);
+    const itemCode = items.find((i) => String(i.id) === values.itemId)?.itemCode ?? '';
+    setSuccessMessage(`Adjustment #${data.transaction.id} recorded — ${values.quantity} ${itemCode} ${action} ${values.location}.`);
     const prevLocation = values.location;
+    setUserInteracted(false);
+    setFormDirty(false);
     reset({
       itemId: '',
       location: prevLocation,
-      quantity: undefined,
+      transactionDate: todayLocalStr(),
+      quantity: '' as unknown as number,
       direction: 'decrease',
       reason: undefined,
       notes: '',
     });
     setPendingValues(null);
+    // Refresh stock positions for next adjustment
+    api.get<{ positions: StockPosition[] }>('/api/transactions/stock-position')
+      .then((stockData) => setPositions(stockData.positions))
+      .catch(() => {});
   }
 
   async function onConfirmed() {
@@ -227,24 +275,39 @@ export function AdjustmentPage() {
       )}
 
       <form onSubmit={handleSubmit(onFormValid)} className="space-y-6">
-        {/* Row 1: Item + Location */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* Row 1: Part # + Description + Location */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="space-y-1">
-            <Label htmlFor="itemId">Item <span className="text-red-500">*</span></Label>
+            <Label>Part # <span className="text-red-500">*</span></Label>
             <Combobox
               options={items.map((item) => ({
                 value: String(item.id),
-                label: `${item.itemCode} — ${item.description}`,
-                searchText: `${item.itemCode} ${item.description}`,
+                label: item.itemCode,
+                searchText: item.itemCode,
               }))}
               value={watch('itemId')}
               onValueChange={(v) => setValue('itemId', v)}
-              placeholder="Search items..."
-              searchPlaceholder="Type code or description..."
+              placeholder="Select part #..."
+              searchPlaceholder="Search part #..."
             />
             {errors.itemId && (
               <p className="text-xs text-red-600 animate-field-error">{errors.itemId.message}</p>
             )}
+          </div>
+
+          <div className="space-y-1">
+            <Label>Description</Label>
+            <Combobox
+              options={items.map((item) => ({
+                value: String(item.id),
+                label: item.description,
+                searchText: item.description,
+              }))}
+              value={watch('itemId')}
+              onValueChange={(v) => setValue('itemId', v)}
+              placeholder="Select description..."
+              searchPlaceholder="Search description..."
+            />
           </div>
 
           <div className="space-y-1">
@@ -264,6 +327,14 @@ export function AdjustmentPage() {
             </Select>
             {errors.location && (
               <p className="text-xs text-red-600 animate-field-error">{errors.location.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label>Date <span className="text-red-500">*</span></Label>
+            <Input type="date" max={todayLocalStr()} {...register('transactionDate')} />
+            {errors.transactionDate && (
+              <p className="text-xs text-red-600 animate-field-error">{errors.transactionDate.message}</p>
             )}
           </div>
         </div>
@@ -327,11 +398,27 @@ export function AdjustmentPage() {
             <Input
               id="quantity"
               type="number"
-              step="0.01"
+              step="any"
               min="0.01"
               placeholder="Enter quantity..."
-              {...register('quantity')}
+              {...register('quantity', {
+                validate: (v) => {
+                  const item = items.find((i) => String(i.id) === watch('itemId'));
+                  if (item && ['EA', 'SET', 'PAIR'].includes(item.unitOfMeasure.toUpperCase()) && v !== undefined && v % 1 !== 0) {
+                    return `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`;
+                  }
+                  return true;
+                },
+              })}
             />
+            {availableStock !== null && selectedDirection === 'decrease' && (
+              <p className="text-xs text-gray-500">
+                Available: <span className="font-semibold">{availableStock}</span>
+                {reservedStock > 0 && (
+                  <span className="text-amber-600 ml-1">(On hand: {onHandStock}, Reserved: {reservedStock})</span>
+                )}
+              </p>
+            )}
             {errors.quantity && (
               <p className="text-xs text-red-600 animate-field-error">{errors.quantity.message}</p>
             )}
@@ -354,13 +441,16 @@ export function AdjustmentPage() {
 
         {/* Notes */}
         <div className="space-y-1">
-          <Label htmlFor="notes">Notes <span className="text-gray-400">(optional)</span></Label>
+          <Label htmlFor="notes">Notes {selectedReason === 'Other' ? <span className="text-red-500">*</span> : <span className="text-gray-400">(optional)</span>}</Label>
           <Textarea
             id="notes"
             placeholder="Details about this adjustment..."
             rows={3}
             {...register('notes')}
           />
+          {errors.notes && (
+            <p className="text-xs text-red-600 animate-field-error">{errors.notes.message}</p>
+          )}
         </div>
 
         {submitError && (
@@ -368,8 +458,8 @@ export function AdjustmentPage() {
         )}
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving...' : 'Save Adjustment'}
+          <Button type="submit" disabled={isSubmitting || exceedsStock}>
+            {isSubmitting ? 'Saving...' : 'Submit Adjustment'}
           </Button>
         </div>
       </form>
@@ -378,7 +468,7 @@ export function AdjustmentPage() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Confirm Adjustment"
-        confirmLabel="Save Adjustment"
+        confirmLabel="Submit Adjustment"
         confirmVariant={pendingValues?.direction === 'decrease' ? 'destructive' : 'default'}
         description={
           pendingValues && (
@@ -390,6 +480,9 @@ export function AdjustmentPage() {
               </p>
               <p><span className="font-medium">Reason:</span> {pendingValues.reason}</p>
               <p><span className="font-medium">Location:</span> {pendingValues.location}</p>
+              {pendingValues.reason === 'Other' && pendingValues.notes && (
+                <p><span className="font-medium">Notes:</span> {pendingValues.notes}</p>
+              )}
             </div>
           )
         }

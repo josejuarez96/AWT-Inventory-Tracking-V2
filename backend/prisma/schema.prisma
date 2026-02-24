@@ -29,6 +29,9 @@ model User {
   cycleCountsPosted     CycleCount[] @relation("cycleCountPoster")
   bomsCreated           Bom[]             @relation("bomCreator")
   productionOrders      ProductionOrder[] @relation("productionCreator")
+  productionLinesPosted   ProductionOrderLine[] @relation("linePostUser")
+  productionLinesVoided   ProductionOrderLine[] @relation("lineVoidUser")
+  productionLinesReversed ProductionOrderLine[] @relation("lineReverseUser")
 
   @@map("users")
 }
@@ -201,6 +204,9 @@ model ProductionOrder {
   location         String    @db.VarChar(50)
   quantityProduced Decimal   @map("quantity_produced") @db.Decimal(10, 2)
   totalCost        Decimal   @map("total_cost") @db.Decimal(12, 2)
+  totalQuantity    Decimal?  @map("total_quantity") @db.Decimal(10, 2)
+  status           String    @default("OPEN") @db.VarChar(20) // 'OPEN', 'PARTIAL', 'COMPLETED'
+  orderType        String    @default("STAGED") @map("order_type") @db.VarChar(20) // 'STAGED' or 'INSTANT'
   notes            String?
   hasDeviations    Boolean   @default(false) @map("has_deviations")
   deviationNotes   String?   @map("deviation_notes")
@@ -211,8 +217,39 @@ model ProductionOrder {
   finishedGood     Item      @relation("productionFinishedGood", fields: [finishedGoodId], references: [id])
   creator          User      @relation("productionCreator", fields: [createdBy], references: [id])
   transactions     Transaction[]
+  lines            ProductionOrderLine[]
 
   @@index([finishedGoodId])
   @@index([location])
+  @@index([status])
+  @@index([orderType])
   @@map("production_orders")
+}
+
+model ProductionOrderLine {
+  id                 Int       @id @default(autoincrement())
+  productionOrderId  Int       @map("production_order_id")
+  lineNumber         Int       @map("line_number")
+  status             String    @default("STAGED") @db.VarChar(20) // 'STAGED', 'POSTED', 'VOIDED', 'REVERSED'
+  componentSnapshot  Json      @map("component_snapshot") // [{itemId, itemCode, description, quantityPer}]
+  lineCost           Decimal   @default(0) @map("line_cost") @db.Decimal(12, 2)
+  postedAt           DateTime? @map("posted_at")
+  postedBy           Int?      @map("posted_by")
+  voidedAt           DateTime? @map("voided_at")
+  voidedBy           Int?      @map("voided_by")
+  reversedAt         DateTime? @map("reversed_at")
+  reversedBy         Int?      @map("reversed_by")
+  notes              String?
+  batchId            String?   @map("batch_id") @db.VarChar(36)
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  productionOrder    ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  poster             User?           @relation("linePostUser", fields: [postedBy], references: [id])
+  voider             User?           @relation("lineVoidUser", fields: [voidedBy], references: [id])
+  reverser           User?           @relation("lineReverseUser", fields: [reversedBy], references: [id])
+
+  @@unique([productionOrderId, lineNumber])
+  @@index([productionOrderId])
+  @@index([status])
+  @@map("production_order_lines")
 }

@@ -1,12 +1,13 @@
 const express = require('express');
 const crypto = require('crypto');
 const multer = require('multer');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const { parse } = require('csv-parse/sync');
 const { body, query, validationResult } = require('express-validator');
 const prisma = require('../lib/prisma');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { LOCATIONS } = require('../lib/locations');
+const { getReservedQuantitiesMap, getReservedQty } = require('../lib/reservations');
 
 async function verifyAdminCredentials(authHeader) {
   try {
@@ -32,6 +33,19 @@ async function verifyAdminCredentials(authHeader) {
 // Adjustment threshold — requires admin approval if exceeded
 const ADJ_THRESHOLD_PCT = 0.10; // 10% of current stock
 const ADJ_THRESHOLD_VALUE = 500; // $500 value impact
+
+// Whole-unit UOM types — decimal quantities are invalid for these
+const WHOLE_UNIT_UOMS = ['EA', 'SET', 'PAIR'];
+
+function requiresWholeUnit(unitOfMeasure) {
+  return WHOLE_UNIT_UOMS.includes(unitOfMeasure?.toUpperCase());
+}
+
+/** Parse a YYYY-MM-DD string as local noon to avoid UTC timezone shift */
+function parseDateLocal(dateStr) {
+  if (!dateStr) return new Date();
+  return new Date(String(dateStr).slice(0, 10) + 'T12:00:00');
+}
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -151,7 +165,7 @@ router.post(
         quantity,
         unitCost,
         invoiceNumber: invoiceNumber || null,
-        transactionDate: new Date(transactionDate),
+        transactionDate: parseDateLocal(transactionDate),
         notes: notes || null,
         createdBy: req.user.id,
       },
@@ -241,13 +255,23 @@ router.post(
     const itemIds = [...new Set(lineItems.map((li) => li.itemId))];
     const items = await prisma.item.findMany({
       where: { id: { in: itemIds }, isActive: true },
-      select: { id: true, itemCode: true, description: true },
+      select: { id: true, itemCode: true, description: true, unitOfMeasure: true },
     });
     const itemMap = new Map(items.map((i) => [i.id, i]));
 
     const missingItems = itemIds.filter((id) => !itemMap.has(id));
     if (missingItems.length > 0) {
       return res.status(404).json({ error: 'Some items not found', missingItemIds: missingItems });
+    }
+
+    // Block decimal quantities for whole-unit items (EA, SET, PAIR)
+    for (const li of lineItems) {
+      const liItem = itemMap.get(li.itemId);
+      if (liItem && requiresWholeUnit(liItem.unitOfMeasure) && !Number.isInteger(li.quantity)) {
+        return res.status(400).json({
+          error: `${liItem.itemCode} is measured in ${liItem.unitOfMeasure} — quantity must be a whole number.`,
+        });
+      }
     }
 
     // Create receipts, update reference prices, and update lastPurchaseCost atomically
@@ -265,7 +289,7 @@ router.post(
             quantity: li.quantity,
             unitCost: li.unitCost,
             invoiceNumber: invoiceNumber || null,
-            transactionDate: new Date(transactionDate),
+            transactionDate: parseDateLocal(transactionDate),
             notes: notes || null,
             createdBy: req.user.id,
             batchId,
@@ -360,6 +384,13 @@ router.post(
       return res.status(404).json({ error: 'Item not found' });
     }
 
+    // Block decimal quantities for whole-unit items (EA, SET, PAIR)
+    if (requiresWholeUnit(item.unitOfMeasure) && !Number.isInteger(quantity)) {
+      return res.status(400).json({
+        error: `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`,
+      });
+    }
+
     // Check for existing opening balance for this item+location
     const existingOB = await prisma.transaction.findFirst({
       where: { transactionType: 'OPENING_BALANCE', itemId, location },
@@ -377,7 +408,7 @@ router.post(
         location,
         quantity,
         unitCost: unitCost ?? null,
-        transactionDate: transactionDate ? new Date(transactionDate) : new Date(),
+        transactionDate: transactionDate ? parseDateLocal(transactionDate) : new Date(),
         notes: notes || null,
         createdBy: req.user.id,
       },
@@ -549,6 +580,7 @@ router.post(
       .withMessage('quantity must be a number')
       .custom((value) => value !== 0)
       .withMessage('quantity cannot be zero'),
+    body('transactionDate').optional().isISO8601().withMessage('transactionDate must be a valid date'),
     body('reason')
       .isIn(['Damage', 'Shrinkage', 'Correction', 'Other'])
       .withMessage('reason must be one of: Damage, Shrinkage, Correction, Other'),
@@ -568,23 +600,40 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { itemId, location, quantity, reason, notes } = req.body;
+    const { itemId, location, quantity, reason, notes, transactionDate } = req.body;
+
+    // Date validation (if provided)
+    if (transactionDate) {
+      const dateError = validateTransactionDate(transactionDate, req.user.role);
+      if (dateError) {
+        return res.status(400).json({ error: dateError });
+      }
+    }
 
     const item = await prisma.item.findUnique({ where: { id: itemId } });
     if (!item || !item.isActive) {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    // Block negative adjustments that would make stock go below zero
+    // Block decimal quantities for whole-unit items (EA, SET, PAIR)
+    if (requiresWholeUnit(item.unitOfMeasure) && !Number.isInteger(quantity)) {
+      return res.status(400).json({
+        error: `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`,
+      });
+    }
+
+    // Block negative adjustments that would make available stock go below zero
     if (quantity < 0) {
       const stockResult = await prisma.transaction.aggregate({
         where: { itemId, location },
         _sum: { quantity: true },
       });
       const currentStock = Number(stockResult._sum.quantity ?? 0);
-      if (currentStock + quantity < 0) {
+      const reserved = await getReservedQty(itemId, location);
+      const available = currentStock - reserved;
+      if (available + quantity < 0) {
         return res.status(400).json({
-          error: `Adjustment would result in negative stock. Current stock at ${location}: ${currentStock}, Adjustment: ${quantity}`,
+          error: `Adjustment would result in negative available stock. On hand: ${currentStock}, Reserved: ${reserved}, Available: ${available}, Adjustment: ${quantity}`,
         });
       }
     }
@@ -594,12 +643,14 @@ router.post(
     // Non-admin threshold check: large adjustments require admin authorization
     if (req.user.role !== 'admin') {
       const absQty = Math.abs(quantity);
-      // Get current stock for percentage check
+      // Get available stock for percentage check (on hand - reserved)
       const stockAgg = await prisma.transaction.aggregate({
         where: { itemId, location },
         _sum: { quantity: true },
       });
-      const currentStock = Number(stockAgg._sum.quantity ?? 0);
+      const onHand = Number(stockAgg._sum.quantity ?? 0);
+      const reservedForThreshold = await getReservedQty(itemId, location);
+      const currentStock = onHand - reservedForThreshold;
 
       // Get avg cost for value impact check
       const costRow = await prisma.$queryRaw`
@@ -648,7 +699,7 @@ router.post(
         itemId,
         location,
         quantity,
-        transactionDate: new Date(),
+        transactionDate: transactionDate ? parseDateLocal(transactionDate) : new Date(),
         notes: formattedNotes,
         createdBy: req.user.id,
       },
@@ -677,6 +728,7 @@ router.post(
     body('fromLocation').isIn(LOCATIONS).withMessage('fromLocation must be ADEL or CALHOUN'),
     body('toLocation').isIn(LOCATIONS).withMessage('toLocation must be ADEL or CALHOUN'),
     body('quantity').isFloat({ gt: 0 }).withMessage('quantity must be greater than 0'),
+    body('transactionDate').optional().isISO8601().withMessage('transactionDate must be a valid date'),
     body('notes').optional().trim(),
   ],
   async (req, res) => {
@@ -685,7 +737,15 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { itemId, fromLocation, toLocation, quantity, notes } = req.body;
+    const { itemId, fromLocation, toLocation, quantity, notes, transactionDate } = req.body;
+
+    // Date validation (if provided)
+    if (transactionDate) {
+      const dateError = validateTransactionDate(transactionDate, req.user.role);
+      if (dateError) {
+        return res.status(400).json({ error: dateError });
+      }
+    }
 
     if (fromLocation === toLocation) {
       return res.status(400).json({ error: 'From and To locations must be different' });
@@ -694,6 +754,13 @@ router.post(
     const item = await prisma.item.findUnique({ where: { id: itemId } });
     if (!item || !item.isActive) {
       return res.status(404).json({ error: 'Item not found' });
+    }
+
+    // Block decimal quantities for whole-unit items (EA, SET, PAIR)
+    if (requiresWholeUnit(item.unitOfMeasure) && !Number.isInteger(quantity)) {
+      return res.status(400).json({
+        error: `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`,
+      });
     }
 
     // Stock check + transfer creation in a serializable transaction to prevent race conditions
@@ -707,9 +774,11 @@ router.post(
           _sum: { quantity: true },
         });
         const currentStock = Number(stockResult._sum.quantity ?? 0);
+        const reserved = await getReservedQty(itemId, fromLocation);
+        const available = currentStock - reserved;
 
-        if (currentStock < quantity) {
-          throw new Error(`Insufficient stock at ${fromLocation}. Available: ${currentStock}, Requested: ${quantity}`);
+        if (available < quantity) {
+          throw new Error(`Insufficient available stock at ${fromLocation}. On hand: ${currentStock}, Reserved: ${reserved}, Available: ${available}, Requested: ${quantity}`);
         }
 
         const out = await tx.transaction.create({
@@ -718,7 +787,7 @@ router.post(
             itemId,
             location: fromLocation,
             quantity: -quantity,
-            transactionDate: new Date(),
+            transactionDate: transactionDate ? parseDateLocal(transactionDate) : new Date(),
             notes: notes || null,
             createdBy: req.user.id,
             batchId: transferBatchId,
@@ -734,7 +803,7 @@ router.post(
             itemId,
             location: toLocation,
             quantity: quantity,
-            transactionDate: new Date(),
+            transactionDate: transactionDate ? parseDateLocal(transactionDate) : new Date(),
             notes: notes || null,
             createdBy: req.user.id,
             batchId: transferBatchId,
@@ -840,14 +909,25 @@ router.get('/stock-position', async (req, res) => {
     avgCostMap[row.itemId] = Number(row.avgCost ?? 0);
   }
 
+  // Get reserved quantities from staged production order lines
+  const reservedMap = await getReservedQuantitiesMap();
+
   const positions = items.map((item) => {
     const qtyByLocation = {};
+    const reservedByLocation = {};
+    const availableByLocation = {};
     let totalQty = 0;
+    let totalReserved = 0;
     for (const loc of LOCATIONS) {
       const qty = qtyMap[`${item.id}_${loc}`] ?? 0;
+      const reserved = reservedMap.get(`${item.id}_${loc}`) || 0;
       qtyByLocation[loc] = qty;
+      reservedByLocation[loc] = reserved;
+      availableByLocation[loc] = qty - reserved;
       totalQty += qty;
+      totalReserved += reserved;
     }
+    const totalAvailable = totalQty - totalReserved;
     const avgCost = avgCostMap[item.id]
       ? Math.round(avgCostMap[item.id] * 100) / 100
       : null;
@@ -864,7 +944,11 @@ router.get('/stock-position', async (req, res) => {
         minQuantity: item.minQuantity ? Number(item.minQuantity) : null,
       },
       qtyByLocation,
+      reservedByLocation,
+      availableByLocation,
       totalQty,
+      totalReserved,
+      totalAvailable,
       avgCost,
       totalValue,
     };
@@ -914,12 +998,40 @@ router.get(
       if (to) where.transactionDate.lte = new Date(to);
     }
     if (search) {
-      where.OR = [
-        { item: { itemCode: { contains: search, mode: 'insensitive' } } },
-        { item: { description: { contains: search, mode: 'insensitive' } } },
-        { vendor: { vendorName: { contains: search, mode: 'insensitive' } } },
-        { invoiceNumber: { contains: search, mode: 'insensitive' } },
-      ];
+      // Pre-query matching items and vendors by ID to avoid nested relation
+      // filters inside OR (which can produce incorrect results in Prisma)
+      const [matchingItems, matchingVendors] = await Promise.all([
+        prisma.item.findMany({
+          where: {
+            OR: [
+              { itemCode: { contains: search, mode: 'insensitive' } },
+              { description: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+          select: { id: true },
+        }),
+        prisma.vendor.findMany({
+          where: { vendorName: { contains: search, mode: 'insensitive' } },
+          select: { id: true },
+        }),
+      ]);
+
+      const orConditions = [];
+      if (matchingItems.length > 0) {
+        orConditions.push({ itemId: { in: matchingItems.map((i) => i.id) } });
+      }
+      if (matchingVendors.length > 0) {
+        orConditions.push({ vendorId: { in: matchingVendors.map((v) => v.id) } });
+      }
+      orConditions.push({ invoiceNumber: { contains: search, mode: 'insensitive' } });
+      // Notes search (e.g. cycle count references, adjustment reasons)
+      orConditions.push({ notes: { contains: search, mode: 'insensitive' } });
+      // Allow searching by transaction ID
+      const searchId = parseInt(search);
+      if (!isNaN(searchId) && searchId > 0) {
+        orConditions.push({ id: searchId });
+      }
+      where.OR = orConditions;
     }
 
     const [transactions, total] = await Promise.all([
@@ -932,6 +1044,7 @@ router.get(
           item: { select: { id: true, itemCode: true, description: true } },
           vendor: { select: { vendorName: true } },
           user: { select: { fullName: true } },
+          productionOrder: { select: { id: true, orderNumber: true } },
         },
       }),
       prisma.transaction.count({ where }),

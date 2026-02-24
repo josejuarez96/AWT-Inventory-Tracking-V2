@@ -499,12 +499,71 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 | **Phase 4E** | UX Audit Fixes (P1 + P2) | ✅ Complete — server-side filtering, confirmation dialogs, dirty form guards, UI consistency |
 | **Bug Backlog** | B-001 to B-038 (all 38 bugs) | ✅ Complete — deploy blockers, recommended fixes, and polish items all resolved |
 
+### Phase 4F: Stability & Adoption Hardening ⬜ IN PROGRESS
+**Goal**: Fix data integrity gaps and UX friction discovered during comprehensive testing. These issues surfaced after the Zod v3→v4 migration and deeper manual testing. Must be resolved before deploy.
+
+**Updated 2026-02-20**
+
+#### Phase 4F-1: Data Integrity Fixes (deploy blockers)
+
+**Backend — EA decimal validation (4 endpoints)**:
+Server-side validation missing for whole-number enforcement on EA/SET/PAIR unit-of-measure items.
+- [ ] `POST /api/transactions/adjustments` — block decimal qty for EA items
+- [ ] `POST /api/transactions/receipts/batch` — block decimal qty per line for EA items
+- [ ] `POST /api/transactions/opening-balances` — block decimal qty for EA items
+- [ ] `POST /api/production/kit` — block decimal qty for both finished good and components
+
+**Backend — Item deactivation logic gap**:
+- [ ] `PATCH /api/items/:id/status` — block deactivation if item is a finished good in an ACTIVE BOM (currently only checks if item is a component)
+
+**Frontend — Notes serialization (3 pages)**:
+Notes field sends `undefined` instead of empty string, which omits the field from JSON and can bypass backend validation. AdjustmentPage already fixed.
+- [x] AdjustmentPage — fixed (`notes: values.notes?.trim() || ''`)
+- [ ] TransferPage — still uses `notes: pendingValues.notes || undefined`
+- [ ] OpeningBalancePage — still uses `notes: pendingValues.notes || undefined`
+- [ ] KittingPage — still uses `notes: values.notes || undefined`
+
+#### Phase 4F-2: Adoption Friction Fixes (pre-deploy, high impact for non-tech users)
+
+**Success message improvements** — workers entering multiple transactions in a row can't tell which one just saved:
+- [ ] Auto-dismiss success messages after 5 seconds (all 5 form pages)
+- [ ] Add context to success messages: item code, location, vendor where applicable
+  - Receipt: include vendor name and location
+  - Adjustment: include item code and location
+  - Transfer: include item code
+  - Opening Balance: include item code and location
+  - Kitting: include finished good item code
+
+**Submit button disabling** — buttons stay enabled when validation would clearly fail, causing click-nothing-happens confusion:
+- [ ] AdjustmentPage: disable submit when qty exceeds available stock (decrease direction)
+- [ ] TransferPage: disable submit when qty exceeds available stock
+
+**Confirmation dialog enrichment** — workers can't verify what they're about to submit:
+- [ ] AdjustmentPage: show notes in confirmation when reason is "Other"
+- [ ] TransferPage: show current stock at source location in confirmation
+- [ ] ReceiptPage: show line item details (item code, qty, cost) in confirmation
+
+#### Phase 4F-3: Post-Deploy Polish (nice-to-have, not blocking go-live)
+
+- [ ] Add active/inactive status filter to Items page
+- [ ] Add active/inactive status filter to Vendors page
+- [ ] Add item type filter (RAW/FINISHED/OTHER) to Stock Position page
+- [ ] Add visual indicator for active date range filters on Transaction History
+- [ ] Standardize empty state messaging across all pages
+- [ ] Dashboard low-stock widget: sort by urgency (days remaining ascending)
+- [ ] Table responsive improvements for tablet screens
+
+---
+
 ### Remaining — Build Order
 
 | Priority | Phase | Focus | What It Unlocks |
 |----------|-------|-------|-----------------|
-| **Next** | **Deploy** | Push to Railway/Vercel | Cloud access for Alix and warehouse staff |
-| **After deploy** | **Phase 5** | Mobile, Reporting, Barcode, Notifications | Enhancement: driven by real usage feedback |
+| **Now** | **4F-1** | Backend EA validation + notes serialization + item deactivation guard | Data integrity — prevents bad data from entering the system |
+| **Next** | **4F-2** | Success messages, submit disabling, confirmation enrichment | Adoption — reduces confusion for non-tech warehouse staff |
+| **Then** | **Deploy** | Push to Railway/Vercel | Cloud access for Alix and warehouse staff |
+| **Post-deploy** | **4F-3** | Filters, empty states, table polish | Quality of life — driven by real usage feedback |
+| **After feedback** | **Phase 5** | Mobile, Reporting, Barcode, Notifications | Enhancement: driven by real usage feedback |
 
 ### Key Milestones
 
@@ -515,6 +574,8 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 - ✅ **Manufacturing-Ready**: Phase 4C complete — BOMs, kitting with cost rollup, cycle counts with variance tracking
 - ✅ **User-Tested & Hardened**: Phase 4D complete — role permissions, item types, admin auth popup, kitting guardrails
 - ✅ **UX Audit Hardened**: Phase 4E complete — confirmation dialogs, server-side filtering, dirty form guards, UI consistency
+- ✅ **Bug Backlog Clear**: B-001 through B-038 resolved
+- 🔶 **Stability Pass**: Phase 4F — fixing Zod v4 regressions, backend validation gaps, adoption friction
 - ⬜ **Deploy to Cloud**: Push to Railway/Vercel (~30 minutes)
 - ⬜ **Feature Complete**: Phase 5 — based on real-world feedback post-launch
 
@@ -522,7 +583,7 @@ The following ideas were evaluated and intentionally deferred. They can be revis
 
 ## 🚀 Deployment Strategy
 
-All development phases are complete. Next step is cloud deployment.
+Phase 4F (stability & adoption hardening) is in progress. Deploy after 4F-1 and 4F-2 are complete.
 
 ### Hosting Stack
 

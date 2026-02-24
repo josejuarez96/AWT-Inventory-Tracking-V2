@@ -21,6 +21,9 @@ import { CycleCountDetailPage } from '@/pages/CycleCountDetailPage';
 import { CycleCountPrintPage } from '@/pages/CycleCountPrintPage';
 import { BOMsPage } from '@/pages/BOMsPage';
 import { KittingPage } from '@/pages/KittingPage';
+import { CreateProductionOrderPage } from '@/pages/CreateProductionOrderPage';
+import { InProductionPage } from '@/pages/InProductionPage';
+import { ProductionOrderDetailPage } from '@/pages/ProductionOrderDetailPage';
 
 export default function App() {
   return (
@@ -48,6 +51,9 @@ export default function App() {
               <Route path="/cycle-counts" element={<CycleCountsPage />} />
               <Route path="/cycle-counts/:id" element={<CycleCountDetailPage />} />
               <Route path="/kitting" element={<KittingPage />} />
+              <Route path="/production/create" element={<CreateProductionOrderPage />} />
+              <Route path="/in-production" element={<InProductionPage />} />
+              <Route path="/in-production/:id" element={<ProductionOrderDetailPage />} />
               <Route path="/items" element={<ItemsPage />} />
               <Route path="/vendors" element={<VendorsPage />} />
               <Route path="/account" element={<AccountSettingsPage />} />

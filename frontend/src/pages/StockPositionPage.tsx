@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ArrowUp, ArrowDown, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowUpDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 type StockItem = {
   id: number;
@@ -34,7 +34,11 @@ type StockItem = {
 type StockPosition = {
   item: StockItem;
   qtyByLocation: Record<string, number>;
+  reservedByLocation: Record<string, number>;
+  availableByLocation: Record<string, number>;
   totalQty: number;
+  totalReserved: number;
+  totalAvailable: number;
   avgCost: number | null;
   totalValue: number | null;
 };
@@ -147,8 +151,8 @@ export function StockPositionPage() {
         default:
           if (sortKey.startsWith('loc_')) {
             const loc = sortKey.slice(4);
-            valA = a.qtyByLocation[loc] ?? 0;
-            valB = b.qtyByLocation[loc] ?? 0;
+            valA = a.qtyByLocation?.[loc] ?? 0;
+            valB = b.qtyByLocation?.[loc] ?? 0;
             break;
           }
           return 0;
@@ -182,8 +186,14 @@ export function StockPositionPage() {
       : <ArrowDown className="ml-1 inline h-3 w-3" />;
   };
 
+  // Check if any reservations exist across all positions
+  const hasReservations = useMemo(
+    () => sorted.some((p) => p.totalReserved > 0),
+    [sorted]
+  );
+
   const isLowStock = (p: StockPosition) =>
-    p.item.minQuantity !== null && p.totalQty <= p.item.minQuantity;
+    p.item.minQuantity !== null && p.item.minQuantity > 0 && p.totalAvailable <= p.item.minQuantity;
 
   // Totals for current page
   const { grandTotal, locationTotals } = useMemo(() => {
@@ -194,7 +204,7 @@ export function StockPositionPage() {
       const cost = p.avgCost ?? 0;
       if (p.totalValue !== null) value += p.totalValue;
       for (const loc of LOCATIONS) {
-        locTotals[loc] += (p.qtyByLocation[loc] ?? 0) * cost;
+        locTotals[loc] += (p.qtyByLocation?.[loc] ?? 0) * cost;
       }
     });
     for (const loc of LOCATIONS) locTotals[loc] = Math.round(locTotals[loc] * 100) / 100;
@@ -231,6 +241,17 @@ export function StockPositionPage() {
             ))}
           </SelectContent>
         </Select>
+        {(search || categoryFilter !== 'ALL') && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-gray-500 hover:text-gray-700"
+            onClick={() => { setSearch(''); setCategoryFilter('ALL'); }}
+          >
+            <X className="h-3 w-3 mr-1" />
+            Clear Filters
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -262,6 +283,12 @@ export function StockPositionPage() {
                 <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort('totalQty')}>
                   Total <SortIcon column="totalQty" />
                 </TableHead>
+                {hasReservations && (
+                  <>
+                    <TableHead className="text-right text-amber-700">Reserved</TableHead>
+                    <TableHead className="text-right text-green-700">Available</TableHead>
+                  </>
+                )}
                 <TableHead className="text-right cursor-pointer select-none" onClick={() => toggleSort('avgCost')}>
                   Avg Cost <SortIcon column="avgCost" />
                 </TableHead>
@@ -285,9 +312,15 @@ export function StockPositionPage() {
                   <TableCell className="text-gray-500">{p.item.category ?? '--'}</TableCell>
                   <TableCell className="text-right text-gray-500">{p.item.unitOfMeasure}</TableCell>
                   {LOCATIONS.map((loc) => (
-                    <TableCell key={loc} className="text-right font-medium">{p.qtyByLocation[loc] ?? 0}</TableCell>
+                    <TableCell key={loc} className="text-right font-medium">{p.qtyByLocation?.[loc] ?? 0}</TableCell>
                   ))}
                   <TableCell className="text-right font-bold">{p.totalQty}</TableCell>
+                  {hasReservations && (
+                    <>
+                      <TableCell className="text-right text-amber-700">{p.totalReserved > 0 ? p.totalReserved : '--'}</TableCell>
+                      <TableCell className="text-right font-bold text-green-700">{p.totalAvailable}</TableCell>
+                    </>
+                  )}
                   <TableCell className="text-right text-sm">{formatCurrency(p.avgCost)}</TableCell>
                   <TableCell className="text-right text-sm font-medium">{formatCurrency(p.totalValue)}</TableCell>
                 </TableRow>
@@ -299,6 +332,12 @@ export function StockPositionPage() {
                   <TableCell key={loc} className="text-right">{formatCurrency(locationTotals[loc])}</TableCell>
                 ))}
                 <TableCell />
+                {hasReservations && (
+                  <>
+                    <TableCell />
+                    <TableCell />
+                  </>
+                )}
                 <TableCell />
                 <TableCell className="text-right">{formatCurrency(grandTotal)}</TableCell>
               </TableRow>

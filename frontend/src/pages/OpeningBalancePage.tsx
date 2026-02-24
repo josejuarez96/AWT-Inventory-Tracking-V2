@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { LOCATIONS, type Location } from '@/lib/locations';
 import { useFormDirty } from '@/context/FormDirtyContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,9 +27,9 @@ type Item = { id: number; itemCode: string; description: string; unitOfMeasure: 
 
 const schema = z.object({
   itemId: z.string().min(1, 'Item is required'),
-  location: z.enum(LOCATIONS, { required_error: 'Location is required' }),
-  quantity: z.coerce.number({ invalid_type_error: 'Must be a number' }).positive('Must be greater than 0'),
-  unitCost: z.coerce.number({ invalid_type_error: 'Must be a number' }).positive('Must be greater than 0').optional().or(z.literal(NaN).transform(() => undefined)),
+  location: z.enum(LOCATIONS, { message: 'Location is required' }),
+  quantity: z.coerce.number({ message: 'Must be a number' }).positive('Must be greater than 0'),
+  unitCost: z.coerce.number({ message: 'Must be a number' }).positive('Must be greater than 0').optional().or(z.literal(NaN).transform(() => undefined)),
   notes: z.string().optional(),
 });
 
@@ -43,28 +44,44 @@ export function OpeningBalancePage() {
     register,
     handleSubmit,
     setValue,
+    watch,
     reset,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(schema) as any,
     defaultValues: {
       location: LOCATIONS[0],
     },
   });
 
   const { setDirty: setFormDirty } = useFormDirty();
+  const [userInteracted, setUserInteracted] = useState(false);
+
   useEffect(() => {
-    setFormDirty(isDirty);
+    const sub = watch(() => setUserInteracted(true));
+    return () => sub.unsubscribe();
+  }, [watch]);
+
+  useEffect(() => {
+    setFormDirty(isDirty && userInteracted);
     return () => setFormDirty(false);
-  }, [isDirty, setFormDirty]);
+  }, [isDirty, userInteracted, setFormDirty]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+      if (isDirty && userInteracted) { e.preventDefault(); e.returnValue = ''; }
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [isDirty]);
+  }, [isDirty, userInteracted]);
+
+  // Auto-dismiss success message after 5 seconds
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => setSuccessMessage(null), 5000);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
@@ -94,16 +111,19 @@ export function OpeningBalancePage() {
           location: pendingValues.location,
           quantity: pendingValues.quantity,
           unitCost: pendingValues.unitCost || undefined,
-          notes: pendingValues.notes || undefined,
+          notes: pendingValues.notes?.trim() || '',
         }
       );
-      setSuccessMessage(`Opening balance #${data.transaction.id} recorded successfully.`);
+      const itemCode = items.find((i) => String(i.id) === pendingValues.itemId)?.itemCode ?? '';
+      setSuccessMessage(`Opening balance #${data.transaction.id} recorded — ${pendingValues.quantity} ${itemCode} at ${pendingValues.location}.`);
       const prevLocation = pendingValues.location;
+      setUserInteracted(false);
+      setFormDirty(false);
       reset({
         itemId: '',
         location: prevLocation,
-        quantity: undefined,
-        unitCost: undefined,
+        quantity: '' as unknown as number,
+        unitCost: '' as unknown as number,
         notes: '',
       });
       setPendingValues(null);
@@ -138,25 +158,39 @@ export function OpeningBalancePage() {
             )}
 
             <form onSubmit={handleSubmit(onFormValid)} className="space-y-6">
-              {/* Row 1: Item + Location */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Row 1: Part # + Description + Location */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1">
-                  <Label htmlFor="itemId">Item <span className="text-red-500">*</span></Label>
-                  <Select onValueChange={(v) => setValue('itemId', v)}>
-                    <SelectTrigger id="itemId">
-                      <SelectValue placeholder="Select item..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {items.map((item) => (
-                        <SelectItem key={item.id} value={String(item.id)}>
-                          {item.itemCode} — {item.description}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Part # <span className="text-red-500">*</span></Label>
+                  <Combobox
+                    options={items.map((item) => ({
+                      value: String(item.id),
+                      label: item.itemCode,
+                      searchText: item.itemCode,
+                    }))}
+                    value={watch('itemId')}
+                    onValueChange={(v) => setValue('itemId', v, { shouldDirty: true })}
+                    placeholder="Select part #..."
+                    searchPlaceholder="Search part #..."
+                  />
                   {errors.itemId && (
                     <p className="text-xs text-red-600 animate-field-error">{errors.itemId.message}</p>
                   )}
+                </div>
+
+                <div className="space-y-1">
+                  <Label>Description</Label>
+                  <Combobox
+                    options={items.map((item) => ({
+                      value: String(item.id),
+                      label: item.description,
+                      searchText: item.description,
+                    }))}
+                    value={watch('itemId')}
+                    onValueChange={(v) => setValue('itemId', v, { shouldDirty: true })}
+                    placeholder="Select description..."
+                    searchPlaceholder="Search description..."
+                  />
                 </div>
 
                 <div className="space-y-1">
@@ -182,20 +216,35 @@ export function OpeningBalancePage() {
 
               {/* Row 2: Quantity + Unit Cost */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="quantity">Quantity <span className="text-red-500">*</span></Label>
-                  <Input
-                    id="quantity"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    placeholder="0"
-                    {...register('quantity')}
-                  />
-                  {errors.quantity && (
-                    <p className="text-xs text-red-600 animate-field-error">{errors.quantity.message}</p>
-                  )}
-                </div>
+                {(() => {
+                  const watchedItemId = watch('itemId');
+                  const selectedItem = items.find((i) => String(i.id) === watchedItemId);
+                  const isWholeUnit = selectedItem && ['EA', 'SET', 'PAIR'].includes(selectedItem.unitOfMeasure.toUpperCase());
+                  return (
+                    <div className="space-y-1">
+                      <Label htmlFor="quantity">Quantity <span className="text-red-500">*</span></Label>
+                      <Input
+                        id="quantity"
+                        type="number"
+                        step="any"
+                        min="0.01"
+                        placeholder={isWholeUnit ? '0' : '0.00'}
+                        {...register('quantity', {
+                          validate: (v) => {
+                            if (isWholeUnit && v !== undefined && v % 1 !== 0) {
+                              return `${selectedItem?.itemCode ?? 'Item'} is measured in ${selectedItem?.unitOfMeasure ?? 'EA'} — quantity must be a whole number.`;
+                            }
+                            return true;
+                          },
+                        })}
+                      />
+                      {errors.quantity && (
+                        <p className="text-xs text-red-600 animate-field-error">{errors.quantity.message}</p>
+                      )}
+                    </div>
+                  );
+                })()}
+
 
                 <div className="space-y-1">
                   <Label htmlFor="unitCost">Unit Cost ($) <span className="text-gray-400">(optional)</span></Label>
@@ -230,7 +279,7 @@ export function OpeningBalancePage() {
 
               <div className="flex justify-end">
                 <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? 'Saving...' : 'Save Opening Balance'}
+                  {isSubmitting ? 'Saving...' : 'Submit Opening Balance'}
                 </Button>
               </div>
             </form>
@@ -251,7 +300,7 @@ export function OpeningBalancePage() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Confirm Opening Balance"
-        confirmLabel="Save Opening Balance"
+        confirmLabel="Submit Opening Balance"
         description={
           pendingValues && (
             <div className="space-y-1 text-sm">

@@ -36,6 +36,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { MoreHorizontal, Plus, Search, X } from 'lucide-react';
+import { Combobox } from '@/components/ui/combobox';
 
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; category?: string | null; itemType?: string };
 
@@ -104,7 +105,15 @@ export function BOMsPage() {
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [actionSuccess, setActionSuccess] = useState('');
   const [confirmStatus, setConfirmStatus] = useState<{ id: number; newStatus: string; name: string } | null>(null);
+
+  useEffect(() => {
+    if (actionSuccess) {
+      const t = setTimeout(() => setActionSuccess(''), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [actionSuccess]);
 
   const fetchBoms = useCallback(async () => {
     setIsLoading(true);
@@ -242,8 +251,12 @@ export function BOMsPage() {
 
   async function handleStatusChange(id: number, status: string) {
     setActionError('');
+    setActionSuccess('');
     try {
       await api.patch(`/api/boms/${id}/status`, { status });
+      const bom = boms.find((b) => b.id === id);
+      const action = status === 'ACTIVE' ? 'activated' : status === 'RETIRED' ? 'retired' : 'updated';
+      setActionSuccess(`BOM "${bom?.bomCode ?? id}" ${action} successfully.`);
       void fetchBoms();
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Failed to change status');
@@ -293,13 +306,13 @@ export function BOMsPage() {
               New BOM
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
+          <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>{viewOnly ? 'View BOM' : editingId ? 'Edit BOM' : 'Create New BOM'}</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4 pt-2">
               {/* Header fields */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="bomCode">BOM Code <span className="text-red-500">*</span></Label>
                   <Input
@@ -313,35 +326,34 @@ export function BOMsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="finishedGoodId">Finished Good <span className="text-red-500">*</span></Label>
-                  <Select
+                  <Label>FG Part # <span className="text-red-500">*</span></Label>
+                  <Combobox
+                    options={[...finishedGoodItems, ...otherItems].map((item) => ({
+                      value: String(item.id),
+                      label: item.itemCode,
+                      searchText: item.itemCode,
+                    }))}
                     value={form.finishedGoodId}
                     onValueChange={handleFinishedGoodChange}
+                    placeholder="Select part #..."
+                    searchPlaceholder="Search part #..."
                     disabled={viewOnly}
-                  >
-                    <SelectTrigger id="finishedGoodId">
-                      <SelectValue placeholder="Select finished good..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {finishedGoodItems.length > 0 && (
-                        <>
-                          {finishedGoodItems.map((item) => (
-                            <SelectItem key={item.id} value={String(item.id)}>
-                              {item.itemCode} — {item.description}
-                            </SelectItem>
-                          ))}
-                          {otherItems.length > 0 && (
-                            <div className="px-2 py-1.5 text-xs text-gray-400 border-t mt-1 pt-1">Other Items</div>
-                          )}
-                        </>
-                      )}
-                      {otherItems.map((item) => (
-                        <SelectItem key={item.id} value={String(item.id)}>
-                          {item.itemCode} — {item.description}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>FG Description</Label>
+                  <Combobox
+                    options={[...finishedGoodItems, ...otherItems].map((item) => ({
+                      value: String(item.id),
+                      label: item.description,
+                      searchText: item.description,
+                    }))}
+                    value={form.finishedGoodId}
+                    onValueChange={handleFinishedGoodChange}
+                    placeholder="Select description..."
+                    searchPlaceholder="Search description..."
+                    disabled={viewOnly}
+                  />
                 </div>
               </div>
               <div className="space-y-2">
@@ -383,7 +395,8 @@ export function BOMsPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-10">#</TableHead>
-                        <TableHead>Component Item</TableHead>
+                        <TableHead className="w-36">Part #</TableHead>
+                        <TableHead>Description</TableHead>
                         <TableHead className="w-28">Qty Per Unit</TableHead>
                         <TableHead className="w-36">Notes</TableHead>
                         <TableHead className="w-10" />
@@ -394,32 +407,50 @@ export function BOMsPage() {
                         <TableRow key={index}>
                           <TableCell className="text-gray-400 text-sm">{index + 1}</TableCell>
                           <TableCell>
-                            <Select
+                            <Combobox
+                              options={componentItems.map((item) => ({
+                                value: String(item.id),
+                                label: item.itemCode,
+                                searchText: item.itemCode,
+                              }))}
                               value={line.itemId}
                               onValueChange={(v) => updateLine(index, 'itemId', v)}
+                              placeholder="Part #..."
+                              searchPlaceholder="Search part #..."
+                              triggerClassName="h-9"
                               disabled={viewOnly}
-                            >
-                              <SelectTrigger className="h-9">
-                                <SelectValue placeholder="Select component..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {componentItems.map((item) => (
-                                  <SelectItem key={item.id} value={String(item.id)}>
-                                    {item.itemCode} — {item.description}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Combobox
+                              options={componentItems.map((item) => ({
+                                value: String(item.id),
+                                label: item.description,
+                                searchText: item.description,
+                              }))}
+                              value={line.itemId}
+                              onValueChange={(v) => updateLine(index, 'itemId', v)}
+                              placeholder="Description..."
+                              searchPlaceholder="Search description..."
+                              triggerClassName="h-9"
+                              disabled={viewOnly}
+                            />
                           </TableCell>
                           <TableCell>
                             <Input
                               type="number"
-                              step="0.0001"
-                              min="0.0001"
+                              step="any"
+                              min="0.01"
                               placeholder="1"
                               className="h-9"
                               value={line.quantityPer}
                               onChange={(e) => updateLine(index, 'quantityPer', e.target.value)}
+                              onBlur={(e) => {
+                                const val = parseFloat(e.target.value);
+                                if (!isNaN(val)) {
+                                  updateLine(index, 'quantityPer', String(parseFloat(val.toFixed(4))));
+                                }
+                              }}
                               disabled={viewOnly}
                             />
                           </TableCell>
@@ -496,7 +527,24 @@ export function BOMsPage() {
             <SelectItem value="RETIRED">Retired</SelectItem>
           </SelectContent>
         </Select>
+        {(search || statusFilter !== 'ALL') && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-gray-500 hover:text-gray-700"
+            onClick={() => { setSearch(''); setStatusFilter('ALL'); }}
+          >
+            <X className="h-3 w-3 mr-1" />
+            Clear Filters
+          </Button>
+        )}
       </div>
+
+      {actionSuccess && (
+        <Alert className="border-green-200 bg-green-50">
+          <AlertDescription className="text-green-800">{actionSuccess}</AlertDescription>
+        </Alert>
+      )}
 
       {actionError && (
         <Alert variant="destructive">

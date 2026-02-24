@@ -20,6 +20,7 @@ export type ComboboxOption = {
   value: string;
   label: string;
   searchText?: string; // extra text to search against (e.g. description)
+  renderLabel?: React.ReactNode; // custom JSX for dropdown & trigger display
 };
 
 type ComboboxProps = {
@@ -31,6 +32,7 @@ type ComboboxProps = {
   emptyText?: string;
   className?: string;
   triggerClassName?: string;
+  disabled?: boolean;
 };
 
 export function Combobox({
@@ -42,26 +44,29 @@ export function Combobox({
   emptyText = 'No results found.',
   className,
   triggerClassName,
+  disabled,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
 
   const selected = options.find((opt) => opt.value === value);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={disabled ? false : open} onOpenChange={disabled ? undefined : setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          disabled={disabled}
           className={cn(
             'w-full justify-between font-normal',
             !selected && 'text-muted-foreground',
+            disabled && 'opacity-75 bg-gray-50',
             triggerClassName,
           )}
         >
           <span className="truncate">
-            {selected ? selected.label : placeholder}
+            {selected ? (selected.renderLabel ?? selected.label) : placeholder}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -87,7 +92,7 @@ export function Combobox({
                       value === option.value ? 'opacity-100' : 'opacity-0',
                     )}
                   />
-                  {option.label}
+                  {option.renderLabel ?? option.label}
                 </CommandItem>
               ))}
             </CommandGroup>

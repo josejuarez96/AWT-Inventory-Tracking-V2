@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
 const { authenticate } = require('../middleware/auth');
+const { getReservedQuantitiesMap } = require('../lib/reservations');
 
 const router = express.Router();
 
@@ -64,8 +65,8 @@ router.get('/low-stock', async (req, res) => {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  // Fetch all data in parallel — 3 queries total (was 2 + N)
-  const [stockMap, items, burnRateRows] = await Promise.all([
+  // Fetch all data in parallel — 4 queries total
+  const [stockMap, items, burnRateRows, reservedMap] = await Promise.all([
     getStockMap(),
     prisma.item.findMany({
       where: { isActive: true, minQuantity: { not: null } },
@@ -79,7 +80,6 @@ router.get('/low-stock', async (req, res) => {
         safetyStock: true,
       },
     }),
-    // Single grouped query replaces per-item N+1 loop
     prisma.transaction.groupBy({
       by: ['itemId'],
       where: {
@@ -88,9 +88,17 @@ router.get('/low-stock', async (req, res) => {
       },
       _sum: { quantity: true },
     }),
+    getReservedQuantitiesMap(),
   ]);
 
   const totalStock = getTotalStockPerItem(stockMap);
+
+  // Build total reserved per item (sum across locations)
+  const totalReservedPerItem = {};
+  for (const [key, qty] of reservedMap) {
+    const itemId = parseInt(key.split('_')[0]);
+    totalReservedPerItem[itemId] = (totalReservedPerItem[itemId] ?? 0) + qty;
+  }
 
   // Build burn rate lookup: itemId → totalOutgoing (absolute value)
   const burnRateMap = {};
@@ -100,16 +108,18 @@ router.get('/low-stock', async (req, res) => {
 
   const lowStockItems = [];
   for (const item of items) {
-    const currentStock = totalStock[item.id] ?? 0;
+    const onHand = totalStock[item.id] ?? 0;
+    const reserved = totalReservedPerItem[item.id] ?? 0;
+    const available = onHand - reserved;
     const minQty = Number(item.minQuantity);
     const safety = Number(item.safetyStock ?? 0);
     const threshold = minQty + safety;
-    if (currentStock > threshold) continue;
+    if (available > threshold) continue;
 
     const totalOutgoing = burnRateMap[item.id] ?? 0;
     const burnRate = totalOutgoing > 0 ? totalOutgoing / 30 : null;
-    const daysRemaining = burnRate !== null && currentStock > 0
-      ? Math.floor(currentStock / burnRate)
+    const daysRemaining = burnRate !== null && available > 0
+      ? Math.floor(available / burnRate)
       : null;
 
     lowStockItems.push({
@@ -118,7 +128,9 @@ router.get('/low-stock', async (req, res) => {
       description: item.description,
       category: item.category,
       unitOfMeasure: item.unitOfMeasure,
-      currentStock,
+      currentStock: onHand,
+      reserved,
+      available,
       minQuantity: minQty,
       safetyStock: safety,
       burnRate: burnRate !== null ? Math.round(burnRate * 100) / 100 : null,
@@ -288,6 +300,40 @@ router.get('/activity', async (req, res) => {
   }
 
   return res.json({ activity });
+});
+
+// GET /api/dashboard/stale-orders — production orders older than 14 days still open
+router.get('/stale-orders', async (req, res) => {
+  const fourteenDaysAgo = new Date();
+  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+  const staleOrders = await prisma.productionOrder.findMany({
+    where: {
+      orderType: 'STAGED',
+      status: { in: ['OPEN', 'PARTIAL'] },
+      createdAt: { lt: fourteenDaysAgo },
+    },
+    include: {
+      finishedGood: { select: { itemCode: true, description: true } },
+      creator: { select: { fullName: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  return res.json({
+    count: staleOrders.length,
+    orders: staleOrders.map((o) => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      finishedGood: o.finishedGood,
+      location: o.location,
+      status: o.status,
+      totalQuantity: Number(o.totalQuantity),
+      creator: o.creator.fullName,
+      createdAt: o.createdAt,
+      ageDays: Math.floor((Date.now() - o.createdAt.getTime()) / (1000 * 60 * 60 * 24)),
+    })),
+  });
 });
 
 module.exports = router;

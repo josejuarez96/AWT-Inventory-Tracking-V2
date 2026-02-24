@@ -36,10 +36,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Plus, Search, CheckCircle, X } from 'lucide-react';
+import { MoreHorizontal, Plus, Search, CheckCircle, X, Trash2 } from 'lucide-react';
 import { CATEGORIES } from '@/lib/categories';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
+
+type ItemVendorEntry = { id: number; vendor: Vendor };
 
 type Item = {
   id: number;
@@ -53,6 +55,7 @@ type Item = {
   lastPurchaseCost: number | null;
   defaultVendorId: number | null;
   defaultVendor: Vendor | null;
+  additionalVendors?: ItemVendorEntry[];
   itemType?: string;
   isActive?: boolean;
   notes?: string | null;
@@ -68,6 +71,7 @@ type ItemForm = {
   maxQuantity: string;
   standardCost: string;
   defaultVendorId: string;
+  additionalVendorIds: string[];
   notes: string;
   itemType: string;
 };
@@ -81,6 +85,7 @@ const EMPTY_FORM: ItemForm = {
   maxQuantity: '',
   standardCost: '',
   defaultVendorId: '',
+  additionalVendorIds: [],
   notes: '',
   itemType: 'RAW',
 };
@@ -109,6 +114,9 @@ export function ItemsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState<{ id: number; currentStatus: boolean; itemCode: string } | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [detailItem, setDetailItem] = useState<Item | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     if (successMessage) {
@@ -139,8 +147,17 @@ export function ItemsPage() {
     setDialogOpen(true);
   }
 
-  function openEdit(item: Item) {
+  async function openEdit(item: Item) {
     setEditingId(item.id);
+    setFormError('');
+    // Fetch full item detail to get additional vendors
+    let additionalVendorIds: string[] = [];
+    try {
+      const detail = await api.get<{ item: Item }>(`/api/items/${item.id}`);
+      additionalVendorIds = (detail.item.additionalVendors ?? []).map((av) => String(av.vendor.id));
+    } catch {
+      // Fall back to no additional vendors
+    }
     setForm({
       itemCode: item.itemCode,
       description: item.description,
@@ -150,11 +167,25 @@ export function ItemsPage() {
       maxQuantity: item.maxQuantity != null ? String(item.maxQuantity) : '',
       standardCost: item.standardCost != null ? String(item.standardCost) : '',
       defaultVendorId: item.defaultVendorId != null ? String(item.defaultVendorId) : '',
+      additionalVendorIds,
       notes: item.notes ?? '',
       itemType: item.itemType ?? 'RAW',
     });
-    setFormError('');
     setDialogOpen(true);
+  }
+
+  async function openDetail(item: Item) {
+    setDetailLoading(true);
+    setDetailItem(item);
+    setDetailOpen(true);
+    try {
+      const detail = await api.get<{ item: Item }>(`/api/items/${item.id}`);
+      setDetailItem(detail.item);
+    } catch {
+      // Show what we have from the list
+    } finally {
+      setDetailLoading(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -171,6 +202,7 @@ export function ItemsPage() {
       maxQuantity: form.maxQuantity ? parseFloat(form.maxQuantity) : null,
       standardCost: form.standardCost ? parseFloat(form.standardCost) : null,
       defaultVendorId: form.defaultVendorId ? parseInt(form.defaultVendorId) : null,
+      additionalVendorIds: form.additionalVendorIds.filter((id) => id).map((id) => parseInt(id)),
       notes: form.notes.trim() || null,
       itemType: form.itemType,
     };
@@ -361,6 +393,82 @@ export function ItemsPage() {
                   </Select>
                 </div>
               </div>
+              {/* Additional Vendors */}
+              <div className="space-y-2">
+                <Label className="block">Additional Vendors</Label>
+                {form.additionalVendorIds.map((vid, idx) => {
+                  // Filter out default vendor and already-selected vendors (except this slot)
+                  const usedIds = new Set([
+                    form.defaultVendorId,
+                    ...form.additionalVendorIds.filter((_, i) => i !== idx),
+                  ]);
+                  const available = vendors.filter((v) => !usedIds.has(String(v.id)));
+                  return (
+                    <div key={idx} className="flex items-center gap-2">
+                      <Select
+                        value={vid}
+                        onValueChange={(val) => {
+                          setForm((f) => {
+                            const updated = [...f.additionalVendorIds];
+                            updated[idx] = val;
+                            return { ...f, additionalVendorIds: updated };
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder="Select vendor..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* Keep the currently selected vendor visible even if it would be filtered */}
+                          {vid && !available.find((v) => String(v.id) === vid) && (() => {
+                            const current = vendors.find((v) => String(v.id) === vid);
+                            return current ? (
+                              <SelectItem key={current.id} value={String(current.id)}>
+                                {current.vendorCode} — {current.vendorName}
+                              </SelectItem>
+                            ) : null;
+                          })()}
+                          {available.map((v) => (
+                            <SelectItem key={v.id} value={String(v.id)}>
+                              {v.vendorCode} — {v.vendorName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 text-gray-400 hover:text-red-600"
+                        onClick={() => {
+                          setForm((f) => ({
+                            ...f,
+                            additionalVendorIds: f.additionalVendorIds.filter((_, i) => i !== idx),
+                          }));
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })}
+                {/* Only show Add button if there are vendors available to add */}
+                {(() => {
+                  const usedIds = new Set([form.defaultVendorId, ...form.additionalVendorIds]);
+                  const availableCount = vendors.filter((v) => !usedIds.has(String(v.id))).length;
+                  return availableCount > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setForm((f) => ({ ...f, additionalVendorIds: [...f.additionalVendorIds, ''] }))}
+                    >
+                      <Plus className="mr-1 h-3 w-3" />
+                      Add Vendor
+                    </Button>
+                  ) : null;
+                })()}
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="notes">Notes</Label>
                 <Textarea
@@ -451,7 +559,11 @@ export function ItemsPage() {
             </TableHeader>
             <TableBody>
               {filtered.map((item) => (
-                <TableRow key={item.id} className={item.isActive === false ? 'opacity-50' : ''}>
+                <TableRow
+                  key={item.id}
+                  className={`cursor-pointer hover:bg-gray-50 ${item.isActive === false ? 'opacity-50' : ''}`}
+                  onClick={() => openDetail(item)}
+                >
                   <TableCell className="font-mono text-sm">{item.itemCode}</TableCell>
                   <TableCell className="text-sm">{item.description}</TableCell>
                   <TableCell className="text-sm text-gray-500">{item.category ?? '—'}</TableCell>
@@ -479,7 +591,7 @@ export function ItemsPage() {
                     </Badge>
                   </TableCell>
                   {isAdmin && (
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -512,6 +624,114 @@ export function ItemsPage() {
           {search && ` matching "${search}"`}
         </p>
       )}
+
+      {/* Item Detail View Dialog */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="font-mono">{detailItem?.itemCode}</span>
+              {detailItem && (
+                <Badge variant={detailItem.isActive !== false ? 'outline' : 'destructive'}>
+                  {detailItem.isActive !== false ? 'Active' : 'Inactive'}
+                </Badge>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {detailItem && (
+            <div className="space-y-4 pt-2">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <div>
+                  <p className="text-gray-500">Description</p>
+                  <p className="font-medium">{detailItem.description}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Item Type</p>
+                  <p className="font-medium">{detailItem.itemType ?? 'RAW'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Category</p>
+                  <p className="font-medium">{detailItem.category ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Unit of Measure</p>
+                  <p className="font-medium">{detailItem.unitOfMeasure}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Min Quantity</p>
+                  <p className="font-medium">{detailItem.minQuantity ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Max Quantity</p>
+                  <p className="font-medium">{detailItem.maxQuantity ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Standard Cost</p>
+                  <p className="font-medium">{detailItem.standardCost != null ? `$${detailItem.standardCost.toFixed(2)}` : '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Last Purchase Cost</p>
+                  <p className="font-medium">{detailItem.lastPurchaseCost != null ? `$${detailItem.lastPurchaseCost.toFixed(2)}` : '—'}</p>
+                </div>
+              </div>
+
+              {/* Vendors Section */}
+              <div className="border-t pt-3 space-y-2">
+                <p className="text-sm font-medium text-gray-700">Vendors</p>
+                <div className="text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-semibold">{detailItem.defaultVendor?.vendorCode ?? '—'}</span>
+                    {detailItem.defaultVendor && (
+                      <>
+                        <span className="text-gray-500">{detailItem.defaultVendor.vendorName}</span>
+                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">Default</Badge>
+                      </>
+                    )}
+                    {!detailItem.defaultVendor && <span className="text-gray-400">No default vendor</span>}
+                  </div>
+                </div>
+                {detailLoading ? (
+                  <p className="text-xs text-gray-400">Loading additional vendors...</p>
+                ) : (detailItem.additionalVendors ?? []).length > 0 ? (
+                  <div className="space-y-1 text-sm">
+                    {detailItem.additionalVendors!.map((av) => (
+                      <div key={av.id} className="flex items-center gap-2">
+                        <span className="font-mono font-semibold">{av.vendor.vendorCode}</span>
+                        <span className="text-gray-500">{av.vendor.vendorName}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              {detailItem.notes && (
+                <div className="border-t pt-3">
+                  <p className="text-sm text-gray-500">Notes</p>
+                  <p className="text-sm">{detailItem.notes}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setDetailOpen(false);
+                      openEdit(detailItem);
+                    }}
+                  >
+                    Edit Item
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => setDetailOpen(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={confirmToggle !== null}

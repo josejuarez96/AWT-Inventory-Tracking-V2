@@ -50,6 +50,7 @@ model Vendor {
 
   transactions  Transaction[]
   defaultItems  Item[] @relation("defaultVendorItems")
+  itemVendors   ItemVendor[]
 
   @@map("vendors")
 }
@@ -72,6 +73,7 @@ model Item {
   createdAt       DateTime  @default(now()) @map("created_at")
 
   defaultVendor   Vendor?   @relation("defaultVendorItems", fields: [defaultVendorId], references: [id])
+  additionalVendors ItemVendor[]
   transactions    Transaction[]
   cycleCountLines CycleCountLine[]
   bomsAsFinishedGood             Bom[]             @relation("bomFinishedGood")
@@ -252,4 +254,18 @@ model ProductionOrderLine {
   @@index([productionOrderId])
   @@index([status])
   @@map("production_order_lines")
+}
+
+model ItemVendor {
+  id       Int     @id @default(autoincrement())
+  itemId   Int     @map("item_id")
+  vendorId Int     @map("vendor_id")
+  notes    String?
+
+  item     Item    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  vendor   Vendor  @relation(fields: [vendorId], references: [id])
+
+  @@unique([itemId, vendorId])
+  @@index([itemId])
+  @@map("item_vendors")
 }

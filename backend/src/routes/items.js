@@ -237,7 +237,13 @@ router.get(
 
     const item = await prisma.item.findUnique({
       where: { id: parseInt(req.params.id) },
-      include: { defaultVendor: { select: VENDOR_SELECT } },
+      include: {
+        defaultVendor: { select: VENDOR_SELECT },
+        additionalVendors: {
+          include: { vendor: { select: VENDOR_SELECT } },
+          orderBy: { id: 'asc' },
+        },
+      },
     });
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
@@ -287,6 +293,8 @@ router.post(
       }
     }
 
+    const additionalVendorIds = req.body.additionalVendorIds ?? [];
+
     const item = await prisma.item.create({
       data: {
         itemCode,
@@ -299,8 +307,19 @@ router.post(
         defaultVendorId: defaultVendorId ?? null,
         notes: notes || null,
         itemType: req.body.itemType || 'RAW',
+        ...(additionalVendorIds.length > 0 && {
+          additionalVendors: {
+            create: additionalVendorIds.map((vid) => ({ vendorId: vid })),
+          },
+        }),
       },
-      include: { defaultVendor: { select: VENDOR_SELECT } },
+      include: {
+        defaultVendor: { select: VENDOR_SELECT },
+        additionalVendors: {
+          include: { vendor: { select: VENDOR_SELECT } },
+          orderBy: { id: 'asc' },
+        },
+      },
     });
 
     return res.status(201).json({ item: serializeItem(item) });
@@ -368,10 +387,26 @@ router.put(
     if (notes !== undefined) data.notes = notes || null;
     if (req.body.itemType !== undefined) data.itemType = req.body.itemType;
 
+    // Sync additional vendors if provided
+    const additionalVendorIds = req.body.additionalVendorIds;
+    if (additionalVendorIds !== undefined) {
+      // Delete-and-recreate pattern for simplicity
+      data.additionalVendors = {
+        deleteMany: {},
+        create: (additionalVendorIds || []).map((vid) => ({ vendorId: vid })),
+      };
+    }
+
     const updated = await prisma.item.update({
       where: { id },
       data,
-      include: { defaultVendor: { select: VENDOR_SELECT } },
+      include: {
+        defaultVendor: { select: VENDOR_SELECT },
+        additionalVendors: {
+          include: { vendor: { select: VENDOR_SELECT } },
+          orderBy: { id: 'asc' },
+        },
+      },
     });
     return res.json({ item: serializeItem(updated) });
   }

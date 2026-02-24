@@ -96,8 +96,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     if (response.status === 401 && !endpoint.includes('/auth/login')) {
       localStorage.removeItem(TOKEN_KEY);
       window.location.href = '/login';
-      // Return a never-resolving promise so callers don't process the error
-      return new Promise<T>(() => {});
+      throw new ApiError(401, 'Session expired');
     }
 
     let message = 'Request failed';

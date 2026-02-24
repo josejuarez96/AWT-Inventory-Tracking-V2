@@ -64,7 +64,10 @@ const WARN_BACKDATE_DAYS = 7;
 const MAX_BACKDATE_DAYS = 30;
 
 function toDateStr(d) {
-  return d.toISOString().slice(0, 10); // "YYYY-MM-DD"
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function validateTransactionDate(dateStr, userRole) {
@@ -774,7 +777,7 @@ router.post(
           _sum: { quantity: true },
         });
         const currentStock = Number(stockResult._sum.quantity ?? 0);
-        const reserved = await getReservedQty(itemId, fromLocation);
+        const reserved = await getReservedQty(itemId, fromLocation, tx);
         const available = currentStock - reserved;
 
         if (available < quantity) {
@@ -817,7 +820,7 @@ router.post(
         return [out, inc];
       }, { isolationLevel: 'Serializable' });
     } catch (err) {
-      if (err.message.startsWith('Insufficient stock')) {
+      if (err.message.startsWith('Insufficient')) {
         return res.status(400).json({ error: err.message });
       }
       throw err;

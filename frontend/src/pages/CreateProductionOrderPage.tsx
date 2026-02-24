@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -142,45 +142,43 @@ export function CreateProductionOrderPage() {
     });
   }, []);
 
-  // When BOM is selected, load its components
-  const handleBomChange = useCallback(
-    async (bomIdStr: string) => {
-      setValue('bomId', bomIdStr);
-      if (!bomIdStr) return;
-
-      const bom = boms.find((b) => b.id === parseInt(bomIdStr));
-      if (!bom) return;
-
-      setValue('finishedGoodId', String(bom.finishedGoodId));
-
-      // Fetch full BOM detail to get lines (list endpoint doesn't include them)
-      try {
-        const detail = await api.get<{ bom: BomOption }>(`/api/boms/${bomIdStr}`);
-        if (detail.bom?.lines) {
-          setSelectedBomDetail(detail.bom);
-          replace(
-            detail.bom.lines.map((line) => ({
-              itemId: String(line.itemId),
-              quantityPer: Number(line.quantityPer),
-            }))
-          );
-        }
-      } catch {
-        setSelectedBomDetail(null);
-        replace([]);
+  // Fetch full BOM detail and populate component lines
+  async function loadBomTemplate(bomIdStr: string) {
+    try {
+      const detail = await api.get<{ bom: BomOption }>(`/api/boms/${bomIdStr}`);
+      if (detail.bom?.lines) {
+        setSelectedBomDetail(detail.bom);
+        setValue('finishedGoodId', String(detail.bom.finishedGoodId));
+        replace(
+          detail.bom.lines.map((line) => ({
+            itemId: String(line.itemId),
+            quantityPer: Number(line.quantityPer),
+          }))
+        );
       }
-    },
-    [boms, setValue, replace]
-  );
+    } catch {
+      setSelectedBomDetail(null);
+      replace([]);
+    }
+  }
+
+  // When BOM is selected from dropdown
+  function handleBomChange(bomIdStr: string) {
+    setValue('bomId', bomIdStr);
+    if (!bomIdStr) return;
+    loadBomTemplate(bomIdStr);
+  }
 
   // When finished good changes and matches a BOM, auto-select it
   useEffect(() => {
     if (!watchedFinishedGoodId || watchedBomId) return;
     const matchingBom = boms.find((b) => b.finishedGoodId === parseInt(watchedFinishedGoodId));
     if (matchingBom) {
-      handleBomChange(String(matchingBom.id));
+      setValue('bomId', String(matchingBom.id));
+      loadBomTemplate(String(matchingBom.id));
     }
-  }, [watchedFinishedGoodId, watchedBomId, boms, handleBomChange]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedFinishedGoodId, watchedBomId, boms]);
 
   // Get available stock for a component at the selected location
   function getAvailable(itemId: string): number | null {

@@ -3,6 +3,19 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
+// --- Startup validation ---
+const WEAK_JWT_SECRET = 'your-secret-key-change-this-in-production';
+
+if (!process.env.DATABASE_URL) {
+  console.error('FATAL: DATABASE_URL is not set. Cannot start without a database connection string.');
+  process.exit(1);
+}
+
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET === WEAK_JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET is not set or is using the insecure default value. Set a strong secret before starting the server.');
+  process.exit(1);
+}
+
 const authRoutes = require('./routes/auth');
 const usersRoutes = require('./routes/users');
 const vendorsRoutes = require('./routes/vendors');

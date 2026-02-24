@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 
 // --- Startup validation ---
@@ -29,6 +31,11 @@ const productionRoutes = require('./routes/production');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust Railway's reverse proxy so rate limiting uses the real client IP
+app.set('trust proxy', 1);
+
+app.use(helmet());
+app.use(compression());
 app.use(cors({
   origin: process.env.FRONTEND_URL || /^http:\/\/localhost:\d+$/,
   credentials: false,
@@ -56,11 +63,19 @@ const apiLimiter = rateLimit({
 
 app.use('/api', apiLimiter);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    message: 'AWT Inventory Tracker API is running',
+// Health check (includes database connectivity for Railway health checks)
+const prisma = require('./lib/prisma');
+app.get('/api/health', async (req, res) => {
+  let dbStatus = 'ok';
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch {
+    dbStatus = 'unreachable';
+  }
+  const status = dbStatus === 'ok' ? 'ok' : 'degraded';
+  res.status(status === 'ok' ? 200 : 503).json({
+    status,
+    database: dbStatus,
     timestamp: new Date().toISOString(),
   });
 });

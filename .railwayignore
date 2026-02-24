@@ -1,0 +1,7 @@
+frontend/
+testsprite_tests/
+Testing Notes/
+UI Design Inspo/
+*.md
+tests/
+playwright.config.ts

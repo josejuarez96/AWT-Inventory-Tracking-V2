@@ -41,7 +41,7 @@ lerna-debug.log*
 *.db
 *.db-journal
 inventory.db
-prisma/migrations/
+# prisma/migrations/ — removed: migrations must be committed for production deploys
 
 # TestSprite ephemeral data (API keys, tunnel config, raw results)
 testsprite_tests/tmp/
@@ -59,3 +59,20 @@ testsprite_tests/tmp/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# Claude Code internals
+.claude/
+
+# Personal reference materials
+Testing Notes/
+UI Design Inspo/
+
+# Root-level test scripts (kept locally, not in repo)
+/manual-test.js
+/test-*.js
+/playwright.config.ts
+/tests/
+
+# Root package.json (only exists for Playwright devDeps)
+/package.json
+/package-lock.json

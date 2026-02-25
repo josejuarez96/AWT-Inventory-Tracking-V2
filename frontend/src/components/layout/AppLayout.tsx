@@ -1,5 +1,5 @@
-import { Component, type ReactNode } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Component, type ReactNode, useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 
 class ErrorBoundary extends Component<
@@ -36,6 +36,15 @@ class ErrorBoundary extends Component<
 }
 
 export function AppLayout() {
+  const { pathname } = useLocation();
+
+  // Radix UI Dialog adds pointer-events:none to document.body when open.
+  // If a dialog unmounts without closing (navigation, logout), it stays stuck.
+  // Clean it up on every route change so pages are never left unclickable.
+  useEffect(() => {
+    document.body.style.removeProperty('pointer-events');
+  }, [pathname]);
+
   return (
     <div className="flex h-screen overflow-hidden bg-white">
       <Sidebar />

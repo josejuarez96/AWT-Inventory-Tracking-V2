@@ -208,6 +208,120 @@ async function main() {
         standardCost: 55.00,
         defaultVendorId: vendors[2].id,
       }
+    }),
+    // Decimal-allowed UOM items (for testing FT, LB, GAL, etc.)
+    prisma.item.upsert({
+      where: { itemCode: 'WR-14GA-BLK' },
+      update: { standardCost: 0.35, defaultVendorId: vendors[2].id },
+      create: {
+        itemCode: 'WR-14GA-BLK',
+        description: '14 Gauge Black Wire',
+        category: 'Electrical',
+        unitOfMeasure: 'FT',
+        minQuantity: 100,
+        maxQuantity: 500,
+        standardCost: 0.35,
+        defaultVendorId: vendors[2].id,
+      }
+    }),
+    prisma.item.upsert({
+      where: { itemCode: 'GR-WHITE-5G' },
+      update: { standardCost: 45.00, defaultVendorId: vendors[2].id },
+      create: {
+        itemCode: 'GR-WHITE-5G',
+        description: 'White Primer (5 Gallon)',
+        category: 'Paint',
+        unitOfMeasure: 'GAL',
+        minQuantity: 5,
+        maxQuantity: 20,
+        standardCost: 45.00,
+        defaultVendorId: vendors[2].id,
+      }
+    }),
+    prisma.item.upsert({
+      where: { itemCode: 'STL-PLATE-4X8' },
+      update: { standardCost: 3.25, defaultVendorId: vendors[2].id },
+      create: {
+        itemCode: 'STL-PLATE-4X8',
+        description: 'Steel Plate 4x8 Sheet',
+        category: 'Steel',
+        unitOfMeasure: 'SQ FT',
+        minQuantity: 50,
+        maxQuantity: 200,
+        standardCost: 3.25,
+        defaultVendorId: vendors[2].id,
+      }
+    }),
+    prisma.item.upsert({
+      where: { itemCode: 'WLD-WIRE-SPL' },
+      update: { standardCost: 2.50, defaultVendorId: vendors[2].id },
+      create: {
+        itemCode: 'WLD-WIRE-SPL',
+        description: 'Welding Wire Spool .035',
+        category: 'Welding',
+        unitOfMeasure: 'LB',
+        minQuantity: 10,
+        maxQuantity: 50,
+        standardCost: 2.50,
+        defaultVendorId: vendors[2].id,
+      }
+    }),
+    // Additional whole-unit UOM items (BUNDLE, ROLL, SET, PAIR)
+    prisma.item.upsert({
+      where: { itemCode: 'LUM-2X4-BDL' },
+      update: { standardCost: 35.00, defaultVendorId: vendors[2].id },
+      create: {
+        itemCode: 'LUM-2X4-BDL',
+        description: '2x4 Lumber Bundle',
+        category: 'Lumber',
+        unitOfMeasure: 'BUNDLE',
+        minQuantity: 2,
+        maxQuantity: 10,
+        standardCost: 35.00,
+        defaultVendorId: vendors[2].id,
+      }
+    }),
+    prisma.item.upsert({
+      where: { itemCode: 'TP-REFLEX-ROLL' },
+      update: { standardCost: 18.00, defaultVendorId: vendors[1].id },
+      create: {
+        itemCode: 'TP-REFLEX-ROLL',
+        description: 'Reflective Tape Roll',
+        category: 'Lights',
+        unitOfMeasure: 'ROLL',
+        minQuantity: 5,
+        maxQuantity: 20,
+        standardCost: 18.00,
+        defaultVendorId: vendors[1].id,
+      }
+    }),
+    prisma.item.upsert({
+      where: { itemCode: 'FN-PAIR-STD' },
+      update: { standardCost: 120.00, defaultVendorId: vendors[1].id },
+      create: {
+        itemCode: 'FN-PAIR-STD',
+        description: 'Standard Fender Pair',
+        category: 'Body',
+        unitOfMeasure: 'PAIR',
+        minQuantity: 2,
+        maxQuantity: 8,
+        standardCost: 120.00,
+        defaultVendorId: vendors[1].id,
+      }
+    }),
+    prisma.item.upsert({
+      where: { itemCode: 'HW-BOLT-SET' },
+      update: { standardCost: 25.00, defaultVendorId: vendors[2].id },
+      create: {
+        itemCode: 'HW-BOLT-SET',
+        description: 'U-Bolt Hardware Set',
+        category: 'Fasteners',
+        unitOfMeasure: 'SET',
+        minQuantity: 5,
+        maxQuantity: 20,
+        standardCost: 25.00,
+        defaultVendorId: vendors[2].id,
+      }
     })
   ]);
 
@@ -305,6 +419,104 @@ async function main() {
         transactionDate: new Date('2025-01-25'),
         notes: 'Damaged during installation',
         createdBy: standardUser.id
+      }
+    }),
+    // Opening balances for decimal-allowed UOM items
+    prisma.transaction.create({
+      data: {
+        transactionType: 'OPENING_BALANCE',
+        itemId: items[8].id,  // Wire (FT)
+        location: 'ADEL',
+        quantity: 250.5,
+        unitCost: 0.35,
+        transactionDate: new Date('2025-01-01'),
+        notes: 'Initial inventory count',
+        createdBy: adminUser.id
+      }
+    }),
+    prisma.transaction.create({
+      data: {
+        transactionType: 'OPENING_BALANCE',
+        itemId: items[9].id,  // Primer (GAL)
+        location: 'ADEL',
+        quantity: 12.5,
+        unitCost: 45.00,
+        transactionDate: new Date('2025-01-01'),
+        notes: 'Initial inventory count',
+        createdBy: adminUser.id
+      }
+    }),
+    prisma.transaction.create({
+      data: {
+        transactionType: 'OPENING_BALANCE',
+        itemId: items[10].id,  // Steel Plate (SQ FT)
+        location: 'ADEL',
+        quantity: 100.75,
+        unitCost: 3.25,
+        transactionDate: new Date('2025-01-01'),
+        notes: 'Initial inventory count',
+        createdBy: adminUser.id
+      }
+    }),
+    prisma.transaction.create({
+      data: {
+        transactionType: 'OPENING_BALANCE',
+        itemId: items[11].id,  // Welding Wire (LB)
+        location: 'ADEL',
+        quantity: 25.0,
+        unitCost: 2.50,
+        transactionDate: new Date('2025-01-01'),
+        notes: 'Initial inventory count',
+        createdBy: adminUser.id
+      }
+    }),
+    // Opening balances for new whole-unit UOM items
+    prisma.transaction.create({
+      data: {
+        transactionType: 'OPENING_BALANCE',
+        itemId: items[12].id,  // Lumber (BUNDLE)
+        location: 'ADEL',
+        quantity: 5,
+        unitCost: 35.00,
+        transactionDate: new Date('2025-01-01'),
+        notes: 'Initial inventory count',
+        createdBy: adminUser.id
+      }
+    }),
+    prisma.transaction.create({
+      data: {
+        transactionType: 'OPENING_BALANCE',
+        itemId: items[13].id,  // Reflective Tape (ROLL)
+        location: 'ADEL',
+        quantity: 10,
+        unitCost: 18.00,
+        transactionDate: new Date('2025-01-01'),
+        notes: 'Initial inventory count',
+        createdBy: adminUser.id
+      }
+    }),
+    prisma.transaction.create({
+      data: {
+        transactionType: 'OPENING_BALANCE',
+        itemId: items[14].id,  // Fender Pair (PAIR)
+        location: 'ADEL',
+        quantity: 4,
+        unitCost: 120.00,
+        transactionDate: new Date('2025-01-01'),
+        notes: 'Initial inventory count',
+        createdBy: adminUser.id
+      }
+    }),
+    prisma.transaction.create({
+      data: {
+        transactionType: 'OPENING_BALANCE',
+        itemId: items[15].id,  // U-Bolt Set (SET)
+        location: 'ADEL',
+        quantity: 10,
+        unitCost: 25.00,
+        transactionDate: new Date('2025-01-01'),
+        notes: 'Initial inventory count',
+        createdBy: adminUser.id
       }
     })
   ]);

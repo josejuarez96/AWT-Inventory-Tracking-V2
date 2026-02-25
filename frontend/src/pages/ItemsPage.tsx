@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/select';
 import { MoreHorizontal, Plus, Search, CheckCircle, X, Trash2 } from 'lucide-react';
 import { CATEGORIES } from '@/lib/categories';
+import { ALL_UOMS } from '@/lib/uom';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
 
@@ -291,12 +292,19 @@ export function ItemsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="unitOfMeasure">Unit of Measure</Label>
-                  <Input
-                    id="unitOfMeasure"
+                  <Select
                     value={form.unitOfMeasure}
-                    onChange={(e) => setForm((f) => ({ ...f, unitOfMeasure: e.target.value }))}
-                    placeholder="EA"
-                  />
+                    onValueChange={(v) => setForm((f) => ({ ...f, unitOfMeasure: v }))}
+                  >
+                    <SelectTrigger id="unitOfMeasure">
+                      <SelectValue placeholder="EA" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ALL_UOMS.map((uom) => (
+                        <SelectItem key={uom} value={uom}>{uom}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-2">

@@ -8,6 +8,7 @@ const prisma = require('../lib/prisma');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { LOCATIONS } = require('../lib/locations');
 const { getReservedQuantitiesMap, getReservedQty } = require('../lib/reservations');
+const { allowsDecimals } = require('../lib/uom');
 
 async function verifyAdminCredentials(authHeader) {
   try {
@@ -33,13 +34,6 @@ async function verifyAdminCredentials(authHeader) {
 // Adjustment threshold — requires admin approval if exceeded
 const ADJ_THRESHOLD_PCT = 0.10; // 10% of current stock
 const ADJ_THRESHOLD_VALUE = 500; // $500 value impact
-
-// Whole-unit UOM types — decimal quantities are invalid for these
-const WHOLE_UNIT_UOMS = ['EA', 'SET', 'PAIR'];
-
-function requiresWholeUnit(unitOfMeasure) {
-  return WHOLE_UNIT_UOMS.includes(unitOfMeasure?.toUpperCase());
-}
 
 /** Parse a YYYY-MM-DD string as local noon to avoid UTC timezone shift */
 function parseDateLocal(dateStr) {
@@ -270,7 +264,7 @@ router.post(
     // Block decimal quantities for whole-unit items (EA, SET, PAIR)
     for (const li of lineItems) {
       const liItem = itemMap.get(li.itemId);
-      if (liItem && requiresWholeUnit(liItem.unitOfMeasure) && !Number.isInteger(li.quantity)) {
+      if (liItem && !allowsDecimals(liItem.unitOfMeasure) && !Number.isInteger(li.quantity)) {
         return res.status(400).json({
           error: `${liItem.itemCode} is measured in ${liItem.unitOfMeasure} — quantity must be a whole number.`,
         });
@@ -388,7 +382,7 @@ router.post(
     }
 
     // Block decimal quantities for whole-unit items (EA, SET, PAIR)
-    if (requiresWholeUnit(item.unitOfMeasure) && !Number.isInteger(quantity)) {
+    if (!allowsDecimals(item.unitOfMeasure) && !Number.isInteger(quantity)) {
       return res.status(400).json({
         error: `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`,
       });
@@ -619,7 +613,7 @@ router.post(
     }
 
     // Block decimal quantities for whole-unit items (EA, SET, PAIR)
-    if (requiresWholeUnit(item.unitOfMeasure) && !Number.isInteger(quantity)) {
+    if (!allowsDecimals(item.unitOfMeasure) && !Number.isInteger(quantity)) {
       return res.status(400).json({
         error: `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`,
       });
@@ -760,7 +754,7 @@ router.post(
     }
 
     // Block decimal quantities for whole-unit items (EA, SET, PAIR)
-    if (requiresWholeUnit(item.unitOfMeasure) && !Number.isInteger(quantity)) {
+    if (!allowsDecimals(item.unitOfMeasure) && !Number.isInteger(quantity)) {
       return res.status(400).json({
         error: `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`,
       });

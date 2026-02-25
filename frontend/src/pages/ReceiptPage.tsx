@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '@/lib/api';
 import { LOCATIONS, type Location } from '@/lib/locations';
+import { allowsDecimals } from '@/lib/uom';
 import { formatCurrency, todayLocalStr, parseDate } from '@/lib/utils';
 import { useAuthContext } from '@/context/AuthContext';
 import { useFormDirty } from '@/context/FormDirtyContext';
@@ -196,7 +197,7 @@ export function ReceiptPage() {
     const itemId = watchedLines[index]?.itemId;
     if (!itemId) return false;
     const uom = itemMap.get(itemId)?.unitOfMeasure;
-    return uom === 'EA' || uom === 'SET' || uom === 'PAIR';
+    return !!uom && !allowsDecimals(uom);
   }
   const lineTotals = watchedLines.map((li) => {
     const qty = Number(li.quantity) || 0;

@@ -70,7 +70,7 @@ cd backend && npx prisma migrate dev && npm run prisma:seed
 
 - No negative stock (adjustments/transfers validate available quantity)
 - Future transaction dates blocked; receipts >31 days old blocked for non-admin
-- Decimal quantities blocked for EA (each) unit-of-measure items
+- Decimal quantities blocked for whole-unit UOMs (EA, BOX, BUNDLE, ROLL, PACK, BAG, SHEET, SPOOL, SET, PAIR); only FT, LB, GAL, KG, M, SQ FT allow decimals
 - Duplicate receipt detection: same vendor+date+item+qty within 24hrs shows warning
 - Cycle count variance >10% or >$500 requires admin credential approval
 - Locations are hardcoded: `['ADEL', 'CALHOUN']` in both `backend/src/lib/locations.js` and `frontend/src/lib/locations.ts`
@@ -94,7 +94,7 @@ Before marking any fix as done, classify it: **is this code unique to one page, 
 - Dependency upgrades (Zod, React, React Hook Form) — check every file that imports the changed package
 - API client changes (`lib/api.ts`) — affects every page that makes API calls
 - Auth/RBAC changes — check both middleware and every frontend route guard
-- Changes to shared constants (LOCATIONS, transaction types)
+- Changes to shared constants (LOCATIONS, UOM lists, transaction types)
 - Validation rules that exist on BOTH frontend and backend — update both or document why only one
 
 ### Propagation checklist
@@ -130,10 +130,14 @@ Frontend Zod schemas and backend express-validator chains implement the same rul
 **Pattern**: Two-column layout — item code in `font-mono font-semibold` on left, description in `text-gray-500` on right. Never concatenate `${itemCode} — ${description}` as a plain string.
 **Exception**: CycleCountDetailPage uses separate table columns (already correct).
 
-### EA/SET/PAIR whole-number validation (all transaction pages + backend)
-**Frontend pages**: ReceiptPage, AdjustmentPage, TransferPage, OpeningBalancePage, KittingPage
-**Backend routes**: `transactions.js` (receipts, adjustments, transfers, opening-balances), `production.js` (kit)
-**Pattern**: Check `item.unitOfMeasure` against `['EA','SET','PAIR']`. If match, quantity must be integer (`Number.isInteger()`). Use `step="any"` on HTML inputs to prevent browser silent rounding — rely on validation messages instead.
+### UOM decimal validation (all transaction pages + backend)
+**Shared constants**: `backend/src/lib/uom.js` and `frontend/src/lib/uom.ts` — single source of truth.
+**Decimal-allowed UOMs**: `['FT', 'LB', 'GAL', 'KG', 'M', 'SQ FT']` — these allow fractional quantities.
+**All other UOMs** (EA, BOX, BUNDLE, ROLL, PACK, BAG, SHEET, SPOOL, SET, PAIR) require whole numbers.
+**Logic**: Use `allowsDecimals(unitOfMeasure)` helper. If `!allowsDecimals(uom)`, quantity must be integer (`Number.isInteger()`). Use `step="any"` on HTML inputs to prevent browser silent rounding — rely on validation messages instead.
+**Frontend pages**: ReceiptPage, AdjustmentPage, TransferPage, OpeningBalancePage, KittingPage, BOMsPage
+**Backend routes**: `transactions.js` (receipts, adjustments, transfers, opening-balances), `production.js` (kit, production orders)
+**Items page UOM**: Dropdown (`<Select>`) using `ALL_UOMS` from `frontend/src/lib/uom.ts`. Not free-text.
 **Standardized error message**: `"${itemCode} is measured in ${uom} — quantity must be a whole number."`
 **Rule**: Validate on BOTH frontend (inline field error or `setSubmitError`) and backend (400 response).
 

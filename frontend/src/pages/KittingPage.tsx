@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api, ApiError } from '@/lib/api';
 import { LOCATIONS, type Location } from '@/lib/locations';
+import { allowsDecimals } from '@/lib/uom';
 import { formatCurrency } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useFormDirty } from '@/context/FormDirtyContext';
@@ -277,7 +278,7 @@ export function KittingPage() {
 
   const watchedFgId = watch('finishedGoodId');
   const fgItem = items.find((i) => String(i.id) === watchedFgId);
-  const fgIsWholeUnit = fgItem && ['EA', 'SET', 'PAIR'].includes(fgItem.unitOfMeasure.toUpperCase());
+  const fgIsWholeUnit = fgItem && !allowsDecimals(fgItem.unitOfMeasure);
 
   function onFormValid(values: KittingFormValues) {
     // Enforce whole numbers for EA finished goods
@@ -288,8 +289,8 @@ export function KittingPage() {
     // Enforce whole numbers for EA component items
     for (const comp of values.components) {
       const item = items.find((i) => i.id === parseInt(comp.itemId));
-      if (item && item.unitOfMeasure.toUpperCase() === 'EA' && !Number.isInteger(comp.quantityPer)) {
-        setSubmitError(`${item.itemCode} is measured in EA — Qty Per must be a whole number.`);
+      if (item && !allowsDecimals(item.unitOfMeasure) && !Number.isInteger(comp.quantityPer)) {
+        setSubmitError(`${item.itemCode} is measured in ${item.unitOfMeasure} — Qty Per must be a whole number.`);
         return;
       }
     }

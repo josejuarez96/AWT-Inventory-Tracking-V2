@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api, ApiError } from '@/lib/api';
 import { LOCATIONS, type Location } from '@/lib/locations';
+import { allowsDecimals } from '@/lib/uom';
 import { todayLocalStr } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useFormDirty } from '@/context/FormDirtyContext';
@@ -404,7 +405,7 @@ export function AdjustmentPage() {
               {...register('quantity', {
                 validate: (v) => {
                   const item = items.find((i) => String(i.id) === watch('itemId'));
-                  if (item && ['EA', 'SET', 'PAIR'].includes(item.unitOfMeasure.toUpperCase()) && v !== undefined && v % 1 !== 0) {
+                  if (item && !allowsDecimals(item.unitOfMeasure) && v !== undefined && v % 1 !== 0) {
                     return `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`;
                   }
                   return true;

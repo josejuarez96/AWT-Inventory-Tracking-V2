@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
+import { allowsDecimals } from '@/lib/uom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
@@ -227,8 +228,8 @@ export function BOMsPage() {
     // Enforce whole numbers for EA (each) items
     for (const line of payload.lines) {
       const item = items.find((i) => i.id === line.itemId);
-      if (item && item.unitOfMeasure.toUpperCase() === 'EA' && !Number.isInteger(line.quantityPer)) {
-        setFormError(`${item.itemCode} is measured in EA — Qty Per must be a whole number.`);
+      if (item && !allowsDecimals(item.unitOfMeasure) && !Number.isInteger(line.quantityPer)) {
+        setFormError(`${item.itemCode} is measured in ${item.unitOfMeasure} — Qty Per must be a whole number.`);
         setIsSaving(false);
         return;
       }

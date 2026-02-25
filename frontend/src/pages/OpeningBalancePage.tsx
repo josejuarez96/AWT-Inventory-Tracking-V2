@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api } from '@/lib/api';
 import { LOCATIONS, type Location } from '@/lib/locations';
+import { allowsDecimals } from '@/lib/uom';
 import { useFormDirty } from '@/context/FormDirtyContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Combobox } from '@/components/ui/combobox';
@@ -219,7 +220,7 @@ export function OpeningBalancePage() {
                 {(() => {
                   const watchedItemId = watch('itemId');
                   const selectedItem = items.find((i) => String(i.id) === watchedItemId);
-                  const isWholeUnit = selectedItem && ['EA', 'SET', 'PAIR'].includes(selectedItem.unitOfMeasure.toUpperCase());
+                  const isWholeUnit = selectedItem && !allowsDecimals(selectedItem.unitOfMeasure);
                   return (
                     <div className="space-y-1">
                       <Label htmlFor="quantity">Quantity <span className="text-red-500">*</span></Label>

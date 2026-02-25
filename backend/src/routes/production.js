@@ -6,11 +6,10 @@ const prisma = require('../lib/prisma');
 const { authenticate } = require('../middleware/auth');
 const { LOCATIONS } = require('../lib/locations');
 const { getReservedQuantitiesMap } = require('../lib/reservations');
+const { allowsDecimals } = require('../lib/uom');
 
 const router = express.Router();
 router.use(authenticate);
-
-const WHOLE_UNIT_UOMS = ['EA', 'SET', 'PAIR'];
 const PO_UNIT_THRESHOLD = 25; // Orders above this require admin auth
 
 async function verifyAdminCredentials(authHeader) {
@@ -65,7 +64,7 @@ router.post(
     }
 
     // Block decimal quantities for whole-unit finished goods (EA, SET, PAIR)
-    if (WHOLE_UNIT_UOMS.includes(finishedGood.unitOfMeasure?.toUpperCase()) && !Number.isInteger(qtyProduced)) {
+    if (!allowsDecimals(finishedGood.unitOfMeasure) && !Number.isInteger(qtyProduced)) {
       return res.status(400).json({
         error: `${finishedGood.itemCode} is measured in ${finishedGood.unitOfMeasure} — quantity produced must be a whole number.`,
       });
@@ -93,7 +92,7 @@ router.post(
     // Block decimal quantities for whole-unit component items
     for (const comp of components) {
       const compItem = componentItemMap.get(comp.itemId);
-      if (compItem && WHOLE_UNIT_UOMS.includes(compItem.unitOfMeasure?.toUpperCase()) && !Number.isInteger(parseFloat(comp.quantityPer))) {
+      if (compItem && !allowsDecimals(compItem.unitOfMeasure) && !Number.isInteger(parseFloat(comp.quantityPer))) {
         return res.status(400).json({
           error: `${compItem.itemCode} is measured in ${compItem.unitOfMeasure} — quantityPer must be a whole number.`,
         });
@@ -436,7 +435,7 @@ router.post(
     // Block decimal quantityPer for whole-unit component items
     for (const comp of components) {
       const compItem = componentItemMap.get(comp.itemId);
-      if (compItem && WHOLE_UNIT_UOMS.includes(compItem.unitOfMeasure?.toUpperCase()) && !Number.isInteger(parseFloat(comp.quantityPer))) {
+      if (compItem && !allowsDecimals(compItem.unitOfMeasure) && !Number.isInteger(parseFloat(comp.quantityPer))) {
         return res.status(400).json({
           error: `${compItem.itemCode} is measured in ${compItem.unitOfMeasure} — quantityPer must be a whole number.`,
         });

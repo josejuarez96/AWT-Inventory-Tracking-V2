@@ -42,7 +42,7 @@ app.use(cors({
   credentials: false,
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Login rate limiting — short window so it resets quickly between automated test runs

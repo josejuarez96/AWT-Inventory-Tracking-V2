@@ -545,7 +545,7 @@ router.post(
       });
     }
 
-    // Create all opening balance transactions atomically
+    // Create opening balance transactions in batches to stay within DB parameter limits
     const data = rows.map((row) => ({
       transactionType: 'OPENING_BALANCE',
       itemId: itemMap[row.item_code.trim()],
@@ -556,11 +556,19 @@ router.post(
       createdBy: req.user.id,
     }));
 
-    const result = await prisma.$transaction(
-      data.map((d) => prisma.transaction.create({ data: d }))
-    );
-
-    return res.status(201).json({ inserted: result.length });
+    try {
+      const BATCH_SIZE = 500;
+      let totalInserted = 0;
+      for (let i = 0; i < data.length; i += BATCH_SIZE) {
+        const batch = data.slice(i, i + BATCH_SIZE);
+        const result = await prisma.transaction.createMany({ data: batch });
+        totalInserted += result.count;
+      }
+      return res.status(201).json({ inserted: totalInserted });
+    } catch (err) {
+      console.error('Opening balance import failed:', err);
+      return res.status(500).json({ error: 'Database error during import. Please try again.' });
+    }
   }
 );
 

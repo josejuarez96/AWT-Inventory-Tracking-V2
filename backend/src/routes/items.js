@@ -218,8 +218,23 @@ router.post(
       notes: row.notes?.trim() || null,
     }));
 
-    const result = await prisma.item.createMany({ data, skipDuplicates: true });
-    return res.status(201).json({ inserted: result.count });
+    try {
+      // Batch in chunks of 500 to stay within DB parameter limits
+      const BATCH_SIZE = 500;
+      let totalInserted = 0;
+      for (let i = 0; i < data.length; i += BATCH_SIZE) {
+        const batch = data.slice(i, i + BATCH_SIZE);
+        const result = await prisma.item.createMany({ data: batch, skipDuplicates: true });
+        totalInserted += result.count;
+      }
+      return res.status(201).json({ inserted: totalInserted });
+    } catch (err) {
+      console.error('Item import failed:', err);
+      const message = err.code === 'P2002'
+        ? 'Some items have duplicate item codes that already exist.'
+        : 'Database error during import. Please try again.';
+      return res.status(500).json({ error: message });
+    }
   }
 );
 

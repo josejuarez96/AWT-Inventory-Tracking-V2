@@ -27,6 +27,10 @@
 | 008 | 2026-02-17 | Phase 3 | codebase | 10 | 7 | 3 | Phase 3 final: full API coverage with production/kitting | Final Phase 3 run; results in commit `7d9eed4` |
 | 009 | 2026-02-18 | Phase 4C-fixes | diff | 8 | 6 | 2 | Date validation (5 tests) + BOM read access (3 tests) | TC001: timezone bug (fixed). TC005: test script bug. Effective 7/8. |
 | 010 | 2026-02-18 | Hardening | diff | 6 | 6 | 0 | Scenario audit fixes: stock floor, deactivation guard, transfer atomicity, BOM status, reason cleanup | 100% pass |
+| 011 | 2026-03-02 | Code Protections | diff | 6 | 5 | 1 | Item/vendor code: check-code, next-code, case-insensitive create, vendor hard delete | TC005: test script bug (asserted 401 msg contains "unauthorized", backend returns "No token provided"). Effective 6/6. |
+| 012 | 2026-03-02 | UOM Validation | diff | 5 | — | — | UOM decimal restrictions: receipts, opening balances, adjustments, transfers, kitting | Retroactively archived — no report preserved |
+| 013 | 2026-03-02 | E2E Workflows | codebase | 24 | — | — | Full workflow E2E (12 tests) + edge cases (12 tests): admin setup through security | Retroactively archived — report preserved |
+| 014 | 2026-03-02 | Frontend UI | codebase | 14 | — | — | Frontend Playwright tests: stock position, transfers, adjustments, cycle counts, kitting | Retroactively archived — no report preserved |
 
 ---
 
@@ -56,6 +60,12 @@
 | BOM Read Access (standard user) | 2026-02-18 | 009 | Passing |
 | BOM Write (admin only) | 2026-02-18 | 009 | Passing |
 | Production/Kitting | 2026-02-17 | 008 | Passing |
+| Item Code Uniqueness Check (case-insensitive) | 2026-03-02 | 011 | Passing |
+| Item Code Case-Insensitive Create Protection | 2026-03-02 | 011 | Passing |
+| Vendor Next Code Suggestion | 2026-03-02 | 011 | Passing |
+| Vendor Code Uniqueness Check (case-insensitive) | 2026-03-02 | 011 | Passing |
+| Vendor Hard Delete (admin-only, ref checks) | 2026-03-02 | 011 | Passing |
+| Vendor Code Case-Insensitive Create Protection | 2026-03-02 | 011 | Passing |
 
 ---
 

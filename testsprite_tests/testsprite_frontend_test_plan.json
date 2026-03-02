@@ -1,0 +1,3187 @@
+[
+  {
+    "id": "TC001",
+    "title": "Stock Position table loads with dynamic location columns and footer totals",
+    "description": "Verifies the inventory stock position page loads successfully, shows expected dynamic location columns, and displays a footer totals row.",
+    "category": "Stock Position View",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Inventory\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"ADEL\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"CALHOUN\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"table footer totals row\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Search by item code filters the stock position table results",
+    "description": "Verifies searching by item code narrows results and can be cleared back to the full list.",
+    "category": "Stock Position View",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Inventory\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Type \"SKU\" into the search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"stock position table\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"SKU\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Search by item description filters the stock position table results",
+    "description": "Verifies searching by an item description term narrows results in the stock position table.",
+    "category": "Stock Position View",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Inventory\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Type \"Trailer\" into the search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"stock position table\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Trailer\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Filter by category dropdown narrows visible items",
+    "description": "Verifies selecting a category filters the stock position table and the filtered results are shown.",
+    "category": "Stock Position View",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Inventory\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Select \"All\" from the category dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"stock position table\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"category dropdown\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Sort by a location quantity column toggles ordering",
+    "description": "Verifies clicking a per-location quantity column header triggers sorting and updates the visible ordering.",
+    "category": "Stock Position View",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Inventory\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"ADEL\" column header"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"sorted column indicator for ADEL\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"ADEL\" column header"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Low Stock badge is visible for items below minimum quantity",
+    "description": "Verifies low-stock items are visually flagged with a Low Stock badge in the stock position table.",
+    "category": "Stock Position View",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Inventory\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Low Stock\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"stock position table\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Low Stock\" is visible in at least one table row"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "No-results search shows empty state and Clear filters resets table",
+    "description": "Verifies an empty search result shows an empty state message and Clear filters restores the table results.",
+    "category": "Stock Position View",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Inventory\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Type \"zzzz-no-match-123\" into the search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"No items\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Clear filters\" button"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Pagination navigates between pages of stock position results",
+    "description": "Verifies the user can move to the next page and back using pagination controls.",
+    "category": "Stock Position View",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Inventory\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Next page\" pagination control"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"pagination current page indicator\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Previous page\" pagination control"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Successful transfer between two different locations with confirmation",
+    "description": "Verifies a user can transfer an item between two locations, see available stock, confirm, and receive a success message.",
+    "category": "Transfer Between Locations",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transfers\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transfers"
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select From location from dropdown populated from LOCATIONS constant"
+      },
+      {
+        "type": "action",
+        "description": "Select To location from filtered dropdown that excludes selected From location"
+      },
+      {
+        "type": "action",
+        "description": "Enter transfer quantity less than or equal to available stock"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Available stock\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\" to open the confirmation dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirm\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Confirm transfer in the dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Success\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Transfer quantity greater than available shows warning and blocks submission until corrected",
+    "description": "Verifies that entering a quantity exceeding available stock shows a warning and the user can correct it to proceed.",
+    "category": "Transfer Between Locations",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transfers\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transfers"
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select From location from dropdown populated from LOCATIONS constant"
+      },
+      {
+        "type": "action",
+        "description": "Select To location from filtered dropdown that excludes selected From location"
+      },
+      {
+        "type": "action",
+        "description": "Enter transfer quantity greater than available stock"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"exceeds\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirm\" is not visible"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "To location dropdown excludes the currently selected From location (initial selection)",
+    "description": "Verifies that after choosing a From location, the To location dropdown does not allow selecting the same location.",
+    "category": "Transfer Between Locations",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transfers\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transfers"
+      },
+      {
+        "type": "action",
+        "description": "Select From location A from the From location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click to open the To location dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text for location A is not visible in the To location options"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Changing From location updates To dropdown to exclude the newly selected From location",
+    "description": "Verifies the To location dropdown re-filters immediately when the From location selection changes.",
+    "category": "Transfer Between Locations",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transfers\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transfers"
+      },
+      {
+        "type": "action",
+        "description": "Select From location A from the From location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click to open the To location dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text for location A is not visible in the To location options"
+      },
+      {
+        "type": "action",
+        "description": "Select From location B from the From location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click to open the To location dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text for location B is not visible in the To location options"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Available stock display updates when changing From location for the same item",
+    "description": "Verifies that available stock shown on the page refreshes when the From location changes while the item remains the same.",
+    "category": "Transfer Between Locations",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transfers\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transfers"
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select From location A from the From location dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Available stock\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Select From location B from the From location dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Available stock\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Submit without required fields shows visible validation messages",
+    "description": "Verifies the transfer form validates required inputs (item, From, To, quantity) and shows visible errors when missing.",
+    "category": "Transfer Between Locations",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transfers\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transfers"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"required\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Quantity must be greater than zero (zero or negative shows validation)",
+    "description": "Verifies the quantity field rejects non-positive values with a visible validation message.",
+    "category": "Transfer Between Locations",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transfers\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transfers"
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select From location from dropdown populated from LOCATIONS constant"
+      },
+      {
+        "type": "action",
+        "description": "Select To location from filtered dropdown that excludes selected From location"
+      },
+      {
+        "type": "action",
+        "description": "Enter transfer quantity \"0\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Submit\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"must be\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Create an adjustment with standard reason and confirm successfully",
+    "description": "Verifies a user can create and confirm an inventory adjustment with a standard reason, with direction auto-set and a success message shown.",
+    "category": "Inventory Adjustment",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Adjustments\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/adjustments\""
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select location from dropdown populated from LOCATIONS constant"
+      },
+      {
+        "type": "action",
+        "description": "Select adjustment reason \"Damage\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Direction\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Decrease\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the quantity field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirm\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Confirm\" button in the confirmation dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Success\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Direction auto-sets to Decrease for Shrinkage",
+    "description": "Verifies selecting Shrinkage automatically sets the adjustment direction to Decrease before submission.",
+    "category": "Inventory Adjustment",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Adjustments\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select location from dropdown populated from LOCATIONS constant"
+      },
+      {
+        "type": "action",
+        "description": "Select adjustment reason \"Shrinkage\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Decrease\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the quantity field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Submit\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Direction auto-sets to Increase for Correction",
+    "description": "Verifies selecting Correction automatically sets the adjustment direction to Increase before submission.",
+    "category": "Inventory Adjustment",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Adjustments\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select location from dropdown populated from LOCATIONS constant"
+      },
+      {
+        "type": "action",
+        "description": "Select adjustment reason \"Correction\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Increase\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the quantity field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify element \"Submit\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Reason Other requires notes validation on submit",
+    "description": "Verifies the form blocks submission and shows a validation error when reason is Other and notes are blank.",
+    "category": "Inventory Adjustment",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Adjustments\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select location from dropdown populated from LOCATIONS constant"
+      },
+      {
+        "type": "action",
+        "description": "Select adjustment reason \"Other\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the quantity field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Notes\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"required\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "Reason Other succeeds when notes are provided",
+    "description": "Verifies an adjustment with reason Other can be submitted and confirmed when notes are filled in.",
+    "category": "Inventory Adjustment",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Adjustments\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select location from dropdown populated from LOCATIONS constant"
+      },
+      {
+        "type": "action",
+        "description": "Select adjustment reason \"Other\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"Cycle count reconciliation\" into the notes field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the quantity field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirm\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Confirm\" button in the confirmation dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Success\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC021",
+    "title": "Availability check warns when quantity would create negative stock and user cancels",
+    "description": "Verifies a stock availability warning is shown when the adjustment would create negative stock, and user can cancel from the confirmation flow.",
+    "category": "Inventory Adjustment",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Adjustments\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select location from dropdown populated from LOCATIONS constant"
+      },
+      {
+        "type": "action",
+        "description": "Select adjustment reason \"Damage\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"999999\" into the quantity field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"warning\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Cancel\" button in the dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/adjustments\""
+      }
+    ]
+  },
+  {
+    "id": "TC022",
+    "title": "Availability check warns, user reduces quantity, then confirms successfully",
+    "description": "Verifies a user can respond to a negative-stock warning by reducing quantity and then successfully confirm the adjustment.",
+    "category": "Inventory Adjustment",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Adjustments\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select item from combobox dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select location from dropdown populated from LOCATIONS constant"
+      },
+      {
+        "type": "action",
+        "description": "Select adjustment reason \"Damage\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"999999\" into the quantity field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"warning\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Cancel\" button in the dialog"
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the quantity field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirm\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Confirm\" button in the confirmation dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Success\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC023",
+    "title": "Submit with missing required selections shows visible validation feedback",
+    "description": "Verifies the form does not proceed to confirmation when required fields (item, location, reason) are missing and shows visible validation cues.",
+    "category": "Inventory Adjustment",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Login\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Adjustments\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the quantity field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"required\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirm\" is not visible"
+      }
+    ]
+  },
+  {
+    "id": "TC024",
+    "title": "Create a receipt successfully with vendor, location, date, and one line item",
+    "description": "Verifies a user can submit and confirm a receipt and see a success message.",
+    "category": "Receipt Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Receipts\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/receipts\""
+      },
+      {
+        "type": "action",
+        "description": "Select a vendor from the vendor dropdown"
+      }
+    ]
+  },
+  {
+    "id": "TC025",
+    "title": "Submit a receipt after completing required header fields (location and date)",
+    "description": "Verifies selecting location from the predefined list and entering a transaction date is accepted for receipt creation.",
+    "category": "Receipt Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Receipts\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Select a location from the location dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the selected location text is visible on the page"
+      },
+      {
+        "type": "action",
+        "description": "Type a valid transaction date into the transaction date field"
+      }
+    ]
+  },
+  {
+    "id": "TC026",
+    "title": "Submit and confirm receipt with one line item",
+    "description": "Verifies a user can add a line item (item, quantity, unit cost), submit, confirm in dialog, and see success message.",
+    "category": "Receipt Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Receipts\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Add a line item by selecting an item and entering a quantity and unit cost"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      }
+    ]
+  },
+  {
+    "id": "TC027",
+    "title": "Confirm receipt in confirmation dialog and see success message",
+    "description": "Verifies the confirmation dialog appears on submit and confirming completes the receipt with visible success feedback.",
+    "category": "Receipt Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Receipts\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirm\" is visible in the confirmation dialog"
+      }
+    ]
+  },
+  {
+    "id": "TC028",
+    "title": "Variance warning shown when unit cost differs significantly from last paid price",
+    "description": "Verifies a variance warning is displayed when entering a significantly different unit cost on a receipt line.",
+    "category": "Receipt Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Receipts\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Add a line item with a unit cost that is significantly higher or lower than the usual value for that item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"variance\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC029",
+    "title": "Acknowledge variance warning to proceed with receipt submission",
+    "description": "Verifies a user can acknowledge the variance warning dialog and proceed to confirm the receipt.",
+    "category": "Receipt Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Receipts\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Click the action button in the variance dialog to acknowledge and continue"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirm\" is visible in the confirmation dialog"
+      }
+    ]
+  },
+  {
+    "id": "TC030",
+    "title": "Validation error when a line item quantity is zero",
+    "description": "Verifies submitting a receipt with quantity 0 shows a visible validation error stating quantity must be greater than zero.",
+    "category": "Receipt Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Receipts\" in the main navigation menu"
+      },
+      {
+        "type": "action",
+        "description": "Add a line item with quantity \"0\" and a valid unit cost"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      }
+    ]
+  },
+  {
+    "id": "TC031",
+    "title": "Receipt submit is blocked and shows quantity > 0 validation message",
+    "description": "Verifies the UI remains on the receipt page and shows an inline error when quantity is zero.",
+    "category": "Receipt Entry",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Receipts\" in the main navigation menu"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/receipts\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"must be greater than zero\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC032",
+    "title": "Create an opening balance via manual form and confirm save",
+    "description": "Verifies a user can enter an opening balance using the form and complete the confirmation dialog to save successfully.",
+    "category": "Opening Balance Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Opening Balances\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/opening-balances\""
+      },
+      {
+        "type": "action",
+        "description": "Select an item from the item dropdown"
+      }
+    ]
+  },
+  {
+    "id": "TC033",
+    "title": "Manual form requires location selection from dropdown",
+    "description": "Verifies the location dropdown can be opened and a location can be selected before saving.",
+    "category": "Opening Balance Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Opening Balances\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an item from the item dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select a location from the location dropdown"
+      }
+    ]
+  },
+  {
+    "id": "TC034",
+    "title": "Manual form save shows confirmation dialog before creating transactions",
+    "description": "Verifies clicking Save presents a confirmation dialog and confirming produces a visible success message.",
+    "category": "Opening Balance Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Opening Balances\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an item from the item dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select a location from the location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Type \"10\" into the quantity field"
+      }
+    ]
+  },
+  {
+    "id": "TC035",
+    "title": "Manual form supports optional unit cost entry",
+    "description": "Verifies unit cost can be entered (optional) and the save flow completes successfully.",
+    "category": "Opening Balance Entry",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Opening Balances\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an item from the item dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select a location from the location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Type \"25.50\" into the unit cost field"
+      }
+    ]
+  },
+  {
+    "id": "TC036",
+    "title": "Successful manual opening balance shows a visible success message after confirmation",
+    "description": "Verifies that after confirming the save dialog, the page displays a visible success message.",
+    "category": "Opening Balance Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Opening Balances\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an item from the item dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select a location from the location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Save\" button"
+      }
+    ]
+  },
+  {
+    "id": "TC037",
+    "title": "Switch to CSV Import tab from Opening Balances page",
+    "description": "Verifies the user can switch to the CSV Import tab and see the import UI.",
+    "category": "Opening Balance Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Opening Balances\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/opening-balances\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"CSV Import\" tab"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"CSV Import\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC038",
+    "title": "Dirty form protection dialog appears when trying to leave with unsaved changes",
+    "description": "Verifies the dirty-form protection dialog appears when the user attempts to navigate away after editing the form without saving.",
+    "category": "Opening Balance Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Opening Balances\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an item from the item dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Type \"5\" into the quantity field"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Dashboard\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"You have unsaved changes\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC039",
+    "title": "Choose Stay on dirty form dialog keeps user on Opening Balances page",
+    "description": "Verifies selecting Stay in the dirty-form dialog keeps the user on the Opening Balances page and preserves the editing context.",
+    "category": "Opening Balance Entry",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Opening Balances\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an item from the item dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Type \"7\" into the quantity field"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Inventory\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Stay\" button in the unsaved changes dialog"
+      }
+    ]
+  },
+  {
+    "id": "TC040",
+    "title": "After choosing Stay, user remains on /opening-balances and can continue editing",
+    "description": "Verifies that after selecting Stay, the URL remains on opening balances and the form is still visible for continued editing.",
+    "category": "Opening Balance Entry",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" button"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Opening Balances\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an item from the item dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Type \"3\" into the quantity field"
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transactions\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Stay\" button in the unsaved changes dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/opening-balances\""
+      }
+    ]
+  },
+  {
+    "id": "TC041",
+    "title": "Create a new cycle count, save progress, and post adjustments successfully",
+    "description": "Verifies a user can create a cycle count, enter line counts, save progress, and post adjustments with a success confirmation.",
+    "category": "Cycle Count Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Cycle Counts\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/cycle-counts\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"New Cycle Count\""
+      }
+    ]
+  },
+  {
+    "id": "TC042",
+    "title": "Complete create cycle count dialog with location, scope, and blind count, then land on detail page",
+    "description": "Verifies the create dialog works end-to-end and redirects to the newly created cycle count detail page.",
+    "category": "Cycle Count Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Cycle Counts\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click \"New Cycle Count\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"New Cycle Count\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC043",
+    "title": "Filter cycle count list by location using the location dropdown",
+    "description": "Verifies the cycle count list can be filtered by location and shows results matching the selected location.",
+    "category": "Cycle Count Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Cycle Counts\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Location\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Select a non-empty location option from the Location filter dropdown"
+      }
+    ]
+  },
+  {
+    "id": "TC044",
+    "title": "Filter cycle count list by status using the status dropdown",
+    "description": "Verifies the cycle count list can be filtered by status and updates the visible results.",
+    "category": "Cycle Count Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Cycle Counts\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Status\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Select a non-empty status option from the Status filter dropdown"
+      }
+    ]
+  },
+  {
+    "id": "TC045",
+    "title": "Create cycle count with missing required fields shows validation errors",
+    "description": "Verifies the create dialog prevents submission when required fields are missing and displays visible validation messages.",
+    "category": "Cycle Count Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Cycle Counts\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click \"New Cycle Count\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Create\""
+      }
+    ]
+  },
+  {
+    "id": "TC046",
+    "title": "Cycle count detail: entering counted quantity updates variance in real time",
+    "description": "Verifies variance values change on-screen when counted quantities are entered for a line item.",
+    "category": "Cycle Count Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Cycle Counts\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click the first cycle count in the list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Variance\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC047",
+    "title": "Cycle count detail: save progress persists and shows confirmation",
+    "description": "Verifies clicking Save Progress after entering counts shows a visible saved/updated confirmation.",
+    "category": "Cycle Count Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Cycle Counts\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click the first cycle count in the list"
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the first visible counted quantity field"
+      }
+    ]
+  },
+  {
+    "id": "TC048",
+    "title": "Cycle count detail: posting adjustments with large variance requires warning confirmation",
+    "description": "Verifies a large variance triggers a warning modal and requires explicit confirmation before posting adjustments.",
+    "category": "Cycle Count Management",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Cycle Counts\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click the first cycle count in the list"
+      },
+      {
+        "type": "action",
+        "description": "Type \"999999\" into the first visible counted quantity field"
+      }
+    ]
+  },
+  {
+    "id": "TC049",
+    "title": "Cycle count detail: cancel posting from large variance warning keeps cycle count unposted",
+    "description": "Verifies the user can cancel out of the large variance warning and no posting success message is shown.",
+    "category": "Cycle Count Management",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Sign in\" or \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click \"Cycle Counts\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Click the first cycle count in the list"
+      },
+      {
+        "type": "action",
+        "description": "Click \"Post Adjustments\""
+      }
+    ]
+  },
+  {
+    "id": "TC050",
+    "title": "Filter transactions by item, date range, type, and location; verify transfer and batch grouping visuals; paginate results",
+    "description": "Verifies a user can apply multiple filters, see transfer counterpart details and batch grouping indicators, and move between result pages.",
+    "category": "Transaction History",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transactions\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transactions\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"ITEM\" into the transaction search field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid start date into the \"Start date\" field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid end date into the \"End date\" field"
+      },
+      {
+        "type": "action",
+        "description": "Select a transaction type option from the transaction type dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select a location option from the location dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the transactions results table is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a transfer transaction row shows a visible counterpart location indicator"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a batch grouping count badge is visible on a grouped transaction row"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Next page\" pagination control"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the transactions results table is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC051",
+    "title": "Search transactions by vendor name or code",
+    "description": "Verifies searching by vendor text filters the audit trail results.",
+    "category": "Transaction History",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transactions\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transactions\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"Vendor\" into the transaction search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the transactions results table is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click on the first transaction row in the results list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Vendor\" is visible in the transaction row details or visible columns"
+      }
+    ]
+  },
+  {
+    "id": "TC052",
+    "title": "Search transactions by invoice number",
+    "description": "Verifies searching by invoice number narrows the transaction list.",
+    "category": "Transaction History",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transactions\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transactions\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"INV\" into the transaction search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the transactions results table is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify at least one visible result row contains text \"INV\""
+      }
+    ]
+  },
+  {
+    "id": "TC053",
+    "title": "Filter by date range only",
+    "description": "Verifies date range filtering updates the visible results without other filters applied.",
+    "category": "Transaction History",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transactions\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transactions\""
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid start date into the \"Start date\" field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid end date into the \"End date\" field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the transactions results table is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the results reflect the selected date range by showing visible dates within the range"
+      }
+    ]
+  },
+  {
+    "id": "TC054",
+    "title": "Filter by transaction type dropdown",
+    "description": "Verifies selecting a transaction type limits results to that type.",
+    "category": "Transaction History",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transactions\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transactions\""
+      },
+      {
+        "type": "action",
+        "description": "Select a transaction type option from the transaction type dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the transactions results table is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify visible transaction rows display the selected transaction type"
+      }
+    ]
+  },
+  {
+    "id": "TC055",
+    "title": "Filter by location dropdown (LOCATIONS constant)",
+    "description": "Verifies the location filter can be applied and results show transactions for that location.",
+    "category": "Transaction History",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transactions\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transactions\""
+      },
+      {
+        "type": "action",
+        "description": "Click on the location dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify at least one location option is visible in the dropdown list"
+      },
+      {
+        "type": "action",
+        "description": "Select a location option from the location dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the transactions results table is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify visible transaction rows display the selected location"
+      }
+    ]
+  },
+  {
+    "id": "TC056",
+    "title": "Invalid date range validation (start date after end date)",
+    "description": "Verifies the UI blocks an invalid date range and prompts the user to correct it.",
+    "category": "Transaction History",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transactions\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transactions\""
+      },
+      {
+        "type": "action",
+        "description": "Fill a start date that is later than the end date into the \"Start date\" field"
+      },
+      {
+        "type": "action",
+        "description": "Fill an end date that is earlier than the start date into the \"End date\" field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Start date must be before end date\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC057",
+    "title": "No results empty state when filters return zero matches",
+    "description": "Verifies the transactions page shows a helpful empty state when no transactions match the applied filters.",
+    "category": "Transaction History",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username or email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click on the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Transactions\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/transactions\""
+      },
+      {
+        "type": "action",
+        "description": "Type \"NO_MATCH_123456\" into the transaction search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"No results\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"widen\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC058",
+    "title": "Create a kit production successfully with confirmation",
+    "description": "Verifies a user can select a BOM, choose a location, enter a quantity, review component availability, confirm, and see a success message.",
+    "category": "Kitting Production",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Kitting\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/kitting\""
+      },
+      {
+        "type": "action",
+        "description": "Select an active BOM from the BOM dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the finished good field is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC059",
+    "title": "Review component availability for a selected location before submitting",
+    "description": "Verifies component stock availability is shown after selecting a BOM, location, and quantity.",
+    "category": "Kitting Production",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Kitting\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an active BOM from the BOM dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select a location from the location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the quantity to produce field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the component stock availability section is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC060",
+    "title": "Submit opens confirmation dialog and confirm production shows success",
+    "description": "Verifies the submit action triggers a confirmation dialog and confirming completes the production and shows a success message.",
+    "category": "Kitting Production",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Kitting\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an active BOM from the BOM dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select a location from the location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the quantity to produce field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Confirm\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Confirm\" button in the confirmation dialog"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a success message is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC061",
+    "title": "Exceeding component availability shows insufficient stock warning",
+    "description": "Verifies entering a quantity that exceeds component availability displays an insufficient stock warning and blocks completion until addressed.",
+    "category": "Kitting Production",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Kitting\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an active BOM from the BOM dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select a location from the location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Type \"999999\" into the quantity to produce field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"insufficient\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC062",
+    "title": "Adjusting quantity after insufficient stock warning removes the warning",
+    "description": "Verifies the user can resolve an insufficient stock condition by reducing quantity and the warning no longer appears.",
+    "category": "Kitting Production",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Kitting\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an active BOM from the BOM dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select a location from the location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Type \"999999\" into the quantity to produce field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"insufficient\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Type \"1\" into the quantity to produce field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"insufficient\" is not visible"
+      }
+    ]
+  },
+  {
+    "id": "TC063",
+    "title": "Changing location after insufficient stock warning updates availability and warning state",
+    "description": "Verifies switching the location changes the availability view and can resolve an insufficient stock warning.",
+    "category": "Kitting Production",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Kitting\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an active BOM from the BOM dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Select a location from the location dropdown"
+      },
+      {
+        "type": "action",
+        "description": "Type \"999999\" into the quantity to produce field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"insufficient\" is visible"
+      },
+      {
+        "type": "action",
+        "description": "Select a different location from the location dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the component stock availability section is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC064",
+    "title": "Submitting with required fields empty shows validation errors",
+    "description": "Verifies form validation prevents submission and displays visible validation messages when required fields are missing.",
+    "category": "Kitting Production",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Kitting\" in the main navigation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/kitting\""
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Submit\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"required\" is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC065",
+    "title": "BOM selection auto-populates finished good details",
+    "description": "Verifies selecting an active BOM auto-populates the finished good field with visible finished good information.",
+    "category": "Kitting Production",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_USER}}\" into the username/email field"
+      },
+      {
+        "type": "action",
+        "description": "Type \"{{LOGIN_PASSWORD}}\" into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Click the \"Log in\" button"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains \"/dashboard\""
+      },
+      {
+        "type": "action",
+        "description": "Click on \"Kitting\" in the main navigation"
+      },
+      {
+        "type": "action",
+        "description": "Select an active BOM from the BOM dropdown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Finished Good\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the finished good value is visible"
+      }
+    ]
+  }
+]

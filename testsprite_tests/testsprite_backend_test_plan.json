@@ -1,32 +1,32 @@
 [
   {
     "id": "TC001",
-    "title": "negative adjustment blocked when it would make stock go below zero",
-    "description": "Login as admin (username=jose, password=Password1). GET /api/items to find an active item (use the first one). GET /api/transactions/stock-position to find its current stock at ADEL. Then POST /api/transactions/adjustments with that itemId, location='ADEL', quantity=-(currentStock + 100) (a number that exceeds available stock), reason='Damage', notes='test negative floor'. Expect 400 response with error containing 'negative stock'. Then POST a valid small negative adjustment (quantity=-1) with the same item — expect 201 success."
+    "title": "item code uniqueness check",
+    "description": "Verify that the GET /api/items/check-code endpoint correctly normalizes the input code to uppercase and returns whether the item code exists along with the item id. Test with existing and non-existing codes, and verify error response when code query parameter is missing."
   },
   {
     "id": "TC002",
-    "title": "Cycle Count reason rejected on manual adjustments",
-    "description": "Login as admin (username=jose, password=Password1). GET /api/items to find an active item. POST /api/transactions/adjustments with that itemId, location='ADEL', quantity=-1, reason='Cycle Count', notes='test'. Expect 400 response with validation error indicating 'Cycle Count' is not a valid reason. Valid reasons are: Damage, Shrinkage, Correction, Other."
+    "title": "vendor next code suggestion",
+    "description": "Verify that the GET /api/vendors/next-code endpoint returns the next sequential vendor code based on the given prefix. Test with prefixes that have existing numeric suffixes and prefixes with no existing codes. Verify error response when prefix query parameter is missing."
   },
   {
     "id": "TC003",
-    "title": "deactivating item with positive stock is blocked",
-    "description": "Login as admin (username=jose, password=Password1). GET /api/items to find an active item. GET /api/transactions/stock-position to confirm it has stock > 0 at some location. Then PATCH /api/items/:id/status with body {isActive: false}. Expect 400 response with error containing 'Cannot deactivate item with' and 'units on hand'."
+    "title": "vendor code uniqueness check",
+    "description": "Verify that the GET /api/vendors/check-code endpoint correctly normalizes the input code to uppercase and returns whether the vendor code exists along with the vendor id. Test with existing and non-existing codes, and verify error response when code query parameter is missing."
   },
   {
     "id": "TC004",
-    "title": "deactivating item with zero stock succeeds",
-    "description": "Login as admin (username=jose, password=Password1). POST /api/items to create a new test item with body {itemCode:'TEST-DEACT-001', description:'Test Deactivation Item', category:'Test', unitOfMeasure:'EA'}. This item has zero stock (no transactions). Then PATCH /api/items/:id/status with body {isActive: false}. Expect 200 success. Then PATCH again with {isActive: true} to reactivate, expect 200."
+    "title": "vendor hard delete with admin protection",
+    "description": "Verify that the DELETE /api/vendors/{id} endpoint allows deletion only if the vendor has no references and the user has admin privileges. Test successful deletion, deletion blocked due to references, deletion of non-existing vendor, and deletion attempt by non-admin user."
   },
   {
     "id": "TC005",
-    "title": "transfer uses serializable transaction to prevent race condition",
-    "description": "Login as admin (username=jose, password=Password1). GET /api/items to find an active item. GET /api/transactions/stock-position to find its stock at ADEL. POST /api/transactions/transfers with that itemId, fromLocation='ADEL', toLocation='CALHOUN', quantity=(currentStock + 100) — exceeding available. Expect 400 with error containing 'Insufficient stock'. Then POST a valid transfer with quantity=1 — expect 201 success with outbound and inbound transactions."
+    "title": "item code case insensitive create protection",
+    "description": "Verify that the POST /api/items endpoint normalizes itemCode to uppercase and enforces case-insensitive uniqueness. Test successful creation with new code, conflict response when creating with duplicate code in different case, and unauthorized access without authentication."
   },
   {
     "id": "TC006",
-    "title": "kitting with retired BOM is rejected",
-    "description": "Login as admin (username=jose, password=Password1). GET /api/boms to find an active BOM. Note its id and components. PATCH /api/boms/:id/status with body {status:'RETIRED'} to retire it. Then POST /api/production/kit with that bomId, the correct finishedGoodId (GET /api/boms/:id to find it), location='ADEL', quantityProduced=1, and the correct components array. Expect 400 with error containing 'RETIRED' and 'Only ACTIVE BOMs'. Finally, PATCH /api/boms/:id/status with {status:'ACTIVE'} to restore it."
+    "title": "vendor code case insensitive create protection",
+    "description": "Verify that the POST /api/vendors endpoint normalizes vendorCode to uppercase and enforces case-insensitive uniqueness. Test successful creation with new code, conflict response when creating with duplicate code in different case, and unauthorized access without authentication."
   }
 ]

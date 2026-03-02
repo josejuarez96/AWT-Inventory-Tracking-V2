@@ -34,8 +34,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, Plus, Search, CheckCircle, X } from 'lucide-react';
+import { MoreHorizontal, Pencil, Plus, Search, CheckCircle, X } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { AdminAuthDialog } from '@/components/AdminAuthDialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 type Vendor = {
   id: number;
@@ -95,6 +97,13 @@ export function VendorsPage() {
   const [toggleError, setToggleError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [codeUnlocked, setCodeUnlocked] = useState(false);
+  const [codeAuthOpen, setCodeAuthOpen] = useState(false);
+  const [codeAuthError, setCodeAuthError] = useState<string | null>(null);
+  const [codeAuthSubmitting, setCodeAuthSubmitting] = useState(false);
+  const [codeUniqueError, setCodeUniqueError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<{ id: number; vendorCode: string } | null>(null);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     if (successMessage) {
@@ -117,15 +126,26 @@ export function VendorsPage() {
     void fetchVendors();
   }, []);
 
-  function openCreate() {
+  async function openCreate() {
     setEditingId(null);
     setForm(EMPTY_FORM);
     setFormError('');
+    setCodeUnlocked(false);
+    setCodeUniqueError('');
     setDialogOpen(true);
+
+    try {
+      const data = await api.get<{ nextCode: string }>('/api/vendors/next-code?prefix=V-');
+      setForm((f) => ({ ...f, vendorCode: data.nextCode }));
+    } catch {
+      // Leave blank if endpoint fails; user can type manually
+    }
   }
 
   function openEdit(vendor: Vendor) {
     setEditingId(vendor.id);
+    setCodeUnlocked(false);
+    setCodeUniqueError('');
     setForm({
       vendorCode: vendor.vendorCode,
       vendorName: vendor.vendorName,
@@ -139,9 +159,57 @@ export function VendorsPage() {
     setDialogOpen(true);
   }
 
+  async function handleCodeAuthAuthorize(credentials: { username: string; password: string }) {
+    setCodeAuthSubmitting(true);
+    setCodeAuthError(null);
+    try {
+      await api.post('/api/auth/login', credentials);
+      setCodeUnlocked(true);
+      setCodeAuthOpen(false);
+    } catch (err) {
+      setCodeAuthError(err instanceof ApiError ? err.message : 'Authorization failed');
+    } finally {
+      setCodeAuthSubmitting(false);
+    }
+  }
+
+  async function checkCodeUniqueness(code: string) {
+    if (!code.trim()) {
+      setCodeUniqueError('');
+      return;
+    }
+    try {
+      const data = await api.get<{ exists: boolean; id: number | null }>(
+        `/api/vendors/check-code?code=${encodeURIComponent(code.trim())}`
+      );
+      if (data.exists && data.id !== editingId) {
+        setCodeUniqueError(`Vendor code "${code.trim()}" already exists.`);
+      } else {
+        setCodeUniqueError('');
+      }
+    } catch {
+      setCodeUniqueError('');
+    }
+  }
+
+  async function handleDelete(id: number, vendorCode: string) {
+    setDeleteError('');
+    try {
+      await api.delete(`/api/vendors/${id}`);
+      setSuccessMessage(`Vendor "${vendorCode}" permanently deleted.`);
+      void fetchVendors();
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : 'Failed to delete vendor');
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError('');
+    if (codeUniqueError) {
+      setFormError('Please resolve the vendor code conflict before saving.');
+      return;
+    }
     setIsSaving(true);
 
     // Validate phone if provided
@@ -227,13 +295,39 @@ export function VendorsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="vendorCode">Vendor Code <span className="text-red-500">*</span></Label>
-                  <Input
-                    id="vendorCode"
-                    value={form.vendorCode}
-                    onChange={(e) => setForm((f) => ({ ...f, vendorCode: e.target.value }))}
-                    maxLength={50}
-                    required
-                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="vendorCode"
+                      value={form.vendorCode}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, vendorCode: e.target.value.toUpperCase() }));
+                        setCodeUniqueError('');
+                      }}
+                      onBlur={() => checkCodeUniqueness(form.vendorCode)}
+                      maxLength={50}
+                      required
+                      disabled={!!editingId && !codeUnlocked}
+                      className={editingId && !codeUnlocked ? 'bg-gray-100' : ''}
+                    />
+                    {editingId && !codeUnlocked && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9 shrink-0"
+                        title="Unlock vendor code (requires admin)"
+                        onClick={() => {
+                          setCodeAuthError(null);
+                          setCodeAuthOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {codeUniqueError && (
+                    <p className="text-xs text-red-600">{codeUniqueError}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="paymentTerms">Payment Terms</Label>
@@ -355,6 +449,15 @@ export function VendorsPage() {
         </Alert>
       )}
 
+      {deleteError && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex items-center justify-between">
+            {deleteError}
+            <Button variant="ghost" size="sm" onClick={() => setDeleteError('')}>Dismiss</Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading vendors...</p>
       ) : filtered.length === 0 ? (
@@ -409,6 +512,12 @@ export function VendorsPage() {
                           >
                             {v.isActive !== false ? 'Deactivate' : 'Activate'}
                           </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-red-600 focus:text-red-600"
+                            onClick={() => setConfirmDelete({ id: v.id, vendorCode: v.vendorCode })}
+                          >
+                            Delete
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -426,6 +535,31 @@ export function VendorsPage() {
           {search && ` matching "${search}"`}
         </p>
       )}
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onOpenChange={(open) => { if (!open) setConfirmDelete(null); }}
+        title="Permanently Delete Vendor?"
+        description={`This will permanently remove "${confirmDelete?.vendorCode}" from the system. This cannot be undone. Vendors referenced by items or transactions cannot be deleted.`}
+        confirmLabel="Delete Permanently"
+        confirmVariant="destructive"
+        onConfirm={() => {
+          if (confirmDelete) {
+            void handleDelete(confirmDelete.id, confirmDelete.vendorCode);
+            setConfirmDelete(null);
+          }
+        }}
+      />
+
+      <AdminAuthDialog
+        open={codeAuthOpen}
+        onOpenChange={setCodeAuthOpen}
+        title="Admin Authorization Required"
+        description="Changing a vendor code can affect references across items and transactions. Enter admin credentials to unlock."
+        onAuthorize={handleCodeAuthAuthorize}
+        isSubmitting={codeAuthSubmitting}
+        error={codeAuthError}
+      />
     </div>
   );
 }

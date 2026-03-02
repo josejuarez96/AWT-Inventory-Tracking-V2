@@ -123,6 +123,48 @@ router.post(
   }
 );
 
+// GET /api/vendors/next-code — suggest next vendor code based on prefix
+router.get('/next-code', async (req, res) => {
+  const prefix = (req.query.prefix || '').toString().toUpperCase().trim();
+  if (!prefix) {
+    return res.status(400).json({ error: 'prefix query parameter is required' });
+  }
+
+  const vendors = await prisma.vendor.findMany({
+    where: { vendorCode: { startsWith: prefix } },
+    select: { vendorCode: true },
+    orderBy: { vendorCode: 'desc' },
+  });
+
+  let maxNum = 0;
+  const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)$`);
+  for (const vendor of vendors) {
+    const match = vendor.vendorCode.match(pattern);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  }
+
+  const nextNum = String(maxNum + 1).padStart(3, '0');
+  return res.json({ nextCode: `${prefix}${nextNum}` });
+});
+
+// GET /api/vendors/check-code — check if vendor code already exists (case-insensitive)
+router.get('/check-code', async (req, res) => {
+  const code = (req.query.code || '').toString().trim().toUpperCase();
+  if (!code) {
+    return res.status(400).json({ error: 'code query parameter is required' });
+  }
+
+  const existing = await prisma.vendor.findFirst({
+    where: { vendorCode: { equals: code, mode: 'insensitive' } },
+    select: { id: true },
+  });
+
+  return res.json({ exists: !!existing, id: existing?.id ?? null });
+});
+
 // ---------------------------------------------------------------------------
 // GET /api/vendors/:id — single vendor detail
 // ---------------------------------------------------------------------------
@@ -165,9 +207,10 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { vendorCode, vendorName, contactPerson, phone, email, paymentTerms, notes } = req.body;
+    const { vendorName, contactPerson, phone, email, paymentTerms, notes } = req.body;
+    const vendorCode = req.body.vendorCode.toUpperCase();
 
-    const existing = await prisma.vendor.findUnique({ where: { vendorCode } });
+    const existing = await prisma.vendor.findFirst({ where: { vendorCode: { equals: vendorCode, mode: 'insensitive' } } });
     if (existing) {
       return res.status(409).json({ error: `Vendor code "${vendorCode}" already exists` });
     }
@@ -216,10 +259,11 @@ router.put(
       return res.status(404).json({ error: 'Vendor not found' });
     }
 
-    const { vendorCode, vendorName, contactPerson, phone, email, paymentTerms, notes } = req.body;
+    const { vendorName, contactPerson, phone, email, paymentTerms, notes } = req.body;
+    const vendorCode = req.body.vendorCode ? req.body.vendorCode.toUpperCase() : undefined;
 
     if (vendorCode && vendorCode !== existing.vendorCode) {
-      const conflict = await prisma.vendor.findUnique({ where: { vendorCode } });
+      const conflict = await prisma.vendor.findFirst({ where: { vendorCode: { equals: vendorCode, mode: 'insensitive' }, id: { not: id } } });
       if (conflict) {
         return res.status(409).json({ error: `Vendor code "${vendorCode}" already exists` });
       }
@@ -268,6 +312,56 @@ router.patch(
     });
 
     return res.json({ vendor: updated });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// DELETE /api/vendors/:id — hard delete vendor with no references (admin only)
+// ---------------------------------------------------------------------------
+router.delete(
+  '/:id',
+  requireAdmin,
+  [param('id').isInt({ gt: 0 }).withMessage('id must be a positive integer')],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const id = parseInt(req.params.id);
+    const vendor = await prisma.vendor.findUnique({ where: { id } });
+    if (!vendor) {
+      return res.status(404).json({ error: 'Vendor not found' });
+    }
+
+    // Check for transaction references
+    const txCount = await prisma.transaction.count({ where: { vendorId: id } });
+    if (txCount > 0) {
+      return res.status(400).json({
+        error: `Cannot delete "${vendor.vendorCode}" — it is referenced in ${txCount} transaction(s). Deactivate it instead.`,
+      });
+    }
+
+    // Check for items where this vendor is the default
+    const defaultItemCount = await prisma.item.count({ where: { defaultVendorId: id } });
+    if (defaultItemCount > 0) {
+      return res.status(400).json({
+        error: `Cannot delete "${vendor.vendorCode}" — it is the default vendor for ${defaultItemCount} item(s). Remove those references first.`,
+      });
+    }
+
+    // Check for additional vendor references
+    const itemVendorCount = await prisma.itemVendor.count({ where: { vendorId: id } });
+    if (itemVendorCount > 0) {
+      return res.status(400).json({
+        error: `Cannot delete "${vendor.vendorCode}" — it is an additional vendor for ${itemVendorCount} item(s). Remove those references first.`,
+      });
+    }
+
+    // Safe to delete
+    await prisma.vendor.delete({ where: { id } });
+
+    return res.json({ message: `Vendor "${vendor.vendorCode}" permanently deleted.` });
   }
 );
 

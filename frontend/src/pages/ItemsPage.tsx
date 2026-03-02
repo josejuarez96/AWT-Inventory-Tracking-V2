@@ -36,7 +36,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Plus, Search, CheckCircle, X, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Pencil, Plus, Search, CheckCircle, X, Trash2 } from 'lucide-react';
+import { AdminAuthDialog } from '@/components/AdminAuthDialog';
 import { CATEGORIES } from '@/lib/categories';
 import { ALL_UOMS } from '@/lib/uom';
 
@@ -120,6 +121,11 @@ export function ItemsPage() {
   const [detailItem, setDetailItem] = useState<Item | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [codeUnlocked, setCodeUnlocked] = useState(false);
+  const [codeAuthOpen, setCodeAuthOpen] = useState(false);
+  const [codeAuthError, setCodeAuthError] = useState<string | null>(null);
+  const [codeAuthSubmitting, setCodeAuthSubmitting] = useState(false);
+  const [codeUniqueError, setCodeUniqueError] = useState('');
 
   useEffect(() => {
     if (successMessage) {
@@ -143,16 +149,27 @@ export function ItemsPage() {
     api.get<{ vendors: Vendor[] }>('/api/vendors').then((d) => setVendors(d.vendors)).catch(() => {});
   }, []);
 
-  function openCreate() {
+  async function openCreate() {
     setEditingId(null);
     setForm(EMPTY_FORM);
     setFormError('');
+    setCodeUnlocked(false);
+    setCodeUniqueError('');
     setDialogOpen(true);
+
+    try {
+      const data = await api.get<{ nextCode: string }>('/api/items/next-code?prefix=AWT-');
+      setForm((f) => ({ ...f, itemCode: data.nextCode }));
+    } catch {
+      // Leave blank if endpoint fails; user can type manually
+    }
   }
 
   async function openEdit(item: Item) {
     setEditingId(item.id);
     setFormError('');
+    setCodeUnlocked(false);
+    setCodeUniqueError('');
     // Fetch full item detail to get additional vendors
     let additionalVendorIds: string[] = [];
     try {
@@ -191,9 +208,46 @@ export function ItemsPage() {
     }
   }
 
+  async function handleCodeAuthAuthorize(credentials: { username: string; password: string }) {
+    setCodeAuthSubmitting(true);
+    setCodeAuthError(null);
+    try {
+      await api.post('/api/auth/login', credentials);
+      setCodeUnlocked(true);
+      setCodeAuthOpen(false);
+    } catch (err) {
+      setCodeAuthError(err instanceof ApiError ? err.message : 'Authorization failed');
+    } finally {
+      setCodeAuthSubmitting(false);
+    }
+  }
+
+  async function checkCodeUniqueness(code: string) {
+    if (!code.trim()) {
+      setCodeUniqueError('');
+      return;
+    }
+    try {
+      const data = await api.get<{ exists: boolean; id: number | null }>(
+        `/api/items/check-code?code=${encodeURIComponent(code.trim())}`
+      );
+      if (data.exists && data.id !== editingId) {
+        setCodeUniqueError(`Item code "${code.trim()}" already exists.`);
+      } else {
+        setCodeUniqueError('');
+      }
+    } catch {
+      setCodeUniqueError('');
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError('');
+    if (codeUniqueError) {
+      setFormError('Please resolve the item code conflict before saving.');
+      return;
+    }
     setIsSaving(true);
 
     const payload = {
@@ -282,13 +336,39 @@ export function ItemsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="itemCode">Item Code <span className="text-red-500">*</span></Label>
-                  <Input
-                    id="itemCode"
-                    value={form.itemCode}
-                    onChange={(e) => setForm((f) => ({ ...f, itemCode: e.target.value }))}
-                    maxLength={50}
-                    required
-                  />
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="itemCode"
+                      value={form.itemCode}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, itemCode: e.target.value.toUpperCase() }));
+                        setCodeUniqueError('');
+                      }}
+                      onBlur={() => checkCodeUniqueness(form.itemCode)}
+                      maxLength={50}
+                      required
+                      disabled={!!editingId && !codeUnlocked}
+                      className={editingId && !codeUnlocked ? 'bg-gray-100' : ''}
+                    />
+                    {editingId && !codeUnlocked && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-9 w-9 shrink-0"
+                        title="Unlock item code (requires admin)"
+                        onClick={() => {
+                          setCodeAuthError(null);
+                          setCodeAuthOpen(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {codeUniqueError && (
+                    <p className="text-xs text-red-600">{codeUniqueError}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="unitOfMeasure">Unit of Measure</Label>
@@ -801,6 +881,16 @@ export function ItemsPage() {
             setConfirmDelete(null);
           }
         }}
+      />
+
+      <AdminAuthDialog
+        open={codeAuthOpen}
+        onOpenChange={setCodeAuthOpen}
+        title="Admin Authorization Required"
+        description="Changing an item code can affect transaction history references. Enter admin credentials to unlock."
+        onAuthorize={handleCodeAuthAuthorize}
+        isSubmitting={codeAuthSubmitting}
+        error={codeAuthError}
       />
     </div>
   );

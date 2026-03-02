@@ -81,6 +81,21 @@ router.get('/next-code', async (req, res) => {
   return res.json({ nextCode: `${prefix}${nextNum}` });
 });
 
+// GET /api/items/check-code — check if item code already exists (case-insensitive)
+router.get('/check-code', async (req, res) => {
+  const code = (req.query.code || '').toString().trim().toUpperCase();
+  if (!code) {
+    return res.status(400).json({ error: 'code query parameter is required' });
+  }
+
+  const existing = await prisma.item.findFirst({
+    where: { itemCode: { equals: code, mode: 'insensitive' } },
+    select: { id: true },
+  });
+
+  return res.json({ exists: !!existing, id: existing?.id ?? null });
+});
+
 // GET /api/items/categories — distinct categories for active items
 router.get('/categories', async (_req, res) => {
   const rows = await prisma.item.findMany({
@@ -292,10 +307,11 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { itemCode, description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId } = req.body;
+    const { description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId } = req.body;
+    const itemCode = req.body.itemCode.toUpperCase();
 
-    // Check unique itemCode
-    const existing = await prisma.item.findUnique({ where: { itemCode } });
+    // Check unique itemCode (case-insensitive)
+    const existing = await prisma.item.findFirst({ where: { itemCode: { equals: itemCode, mode: 'insensitive' } } });
     if (existing) {
       return res.status(409).json({ error: `Item code "${itemCode}" already exists` });
     }
@@ -372,11 +388,12 @@ router.put(
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    const { itemCode, description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId } = req.body;
+    const { description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId } = req.body;
+    const itemCode = req.body.itemCode ? req.body.itemCode.toUpperCase() : undefined;
 
-    // If itemCode is changing, check uniqueness
+    // If itemCode is changing, check uniqueness (case-insensitive)
     if (itemCode && itemCode !== existing.itemCode) {
-      const conflict = await prisma.item.findUnique({ where: { itemCode } });
+      const conflict = await prisma.item.findFirst({ where: { itemCode: { equals: itemCode, mode: 'insensitive' }, id: { not: id } } });
       if (conflict) {
         return res.status(409).json({ error: `Item code "${itemCode}" already exists` });
       }

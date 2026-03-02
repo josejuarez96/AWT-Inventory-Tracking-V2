@@ -49,7 +49,7 @@ router.post(
   '/',
   [
     body('location').isIn(LOCATIONS).withMessage('location must be ADEL or CALHOUN'),
-    body('itemSelection').isIn(['all', 'category', 'manual']).withMessage('itemSelection must be all, category, or manual'),
+    body('itemSelection').isIn(['allItems', 'all', 'category', 'manual']).withMessage('itemSelection must be allItems, all, category, or manual'),
     body('category').optional().trim(),
     body('itemIds').optional().isArray(),
     body('assignedTo').optional().isInt({ gt: 0 }),
@@ -77,6 +77,12 @@ router.post(
         return res.status(400).json({ error: 'itemIds is required when itemSelection is "manual"' });
       }
       itemWhere.id = { in: itemIds };
+    }
+
+    // For "allItems" — every active item regardless of activity
+    if (itemSelection === 'allItems') {
+      // No additional filter needed — itemWhere already selects all active items
+      // (category filter is only added for 'category' selection)
     }
 
     // For "all" — items with any activity at this location

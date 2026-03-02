@@ -100,7 +100,7 @@ export function CycleCountsPage() {
   // Create dialog state
   const [createOpen, setCreateOpen] = useState(false);
   const [createLocation, setCreateLocation] = useState<string>(LOCATIONS[0]);
-  const [itemSelection, setItemSelection] = useState<string>('all');
+  const [itemSelection, setItemSelection] = useState<string>('allItems');
   const [category, setCategory] = useState('');
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [blindCount, setBlindCount] = useState(false);
@@ -494,7 +494,8 @@ export function CycleCountsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All items with activity at location</SelectItem>
+                  <SelectItem value="allItems">All items at location</SelectItem>
+                  <SelectItem value="all">Items with activity at location</SelectItem>
                   <SelectItem value="category">By category</SelectItem>
                   <SelectItem value="manual">Manual selection</SelectItem>
                 </SelectContent>

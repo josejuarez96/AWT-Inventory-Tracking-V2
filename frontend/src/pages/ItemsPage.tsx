@@ -274,7 +274,7 @@ export function ItemsPage() {
               </Button>
             </DialogTrigger>
           )}
-          <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
+          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Item' : 'Create New Item'}</DialogTitle>
             </DialogHeader>

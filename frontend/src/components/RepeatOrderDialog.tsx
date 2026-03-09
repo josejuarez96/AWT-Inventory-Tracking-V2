@@ -76,7 +76,7 @@ export function RepeatOrderDialog({ open, onClose, onSelect }: Props) {
   const [isLoadingConfig, setIsLoadingConfig] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Live typeahead: auto-search as user types (debounced)
   useEffect(() => {

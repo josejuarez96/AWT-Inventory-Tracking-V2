@@ -414,7 +414,7 @@ export function ReceiptPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">#</TableHead>
-                  <TableHead className="w-32">Part #</TableHead>
+                  <TableHead className="w-48">Part #</TableHead>
                   <TableHead className="w-auto">Description</TableHead>
                   <TableHead className="w-20">Qty</TableHead>
                   <TableHead className="w-32">Unit Cost ($)</TableHead>

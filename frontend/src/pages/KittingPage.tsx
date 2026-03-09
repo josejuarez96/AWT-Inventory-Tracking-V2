@@ -785,7 +785,7 @@ export function KittingPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10">#</TableHead>
-                      <TableHead className="w-36">Part #</TableHead>
+                      <TableHead className="w-48">Part #</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead className="w-24">Qty/Unit</TableHead>
                       <TableHead className="w-24 text-right">Required</TableHead>

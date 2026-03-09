@@ -589,7 +589,7 @@ export function CreateProductionOrderPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-36">Part #</TableHead>
+                    <TableHead className="w-48">Part #</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Qty / Unit</TableHead>
                     <TableHead>Total Needed</TableHead>

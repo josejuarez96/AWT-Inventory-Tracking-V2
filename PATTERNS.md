@@ -54,3 +54,23 @@ Frontend Zod schemas and backend express-validator chains implement the same rul
 
 ## Zod .refine() error display
 **Rule**: Whenever a Zod schema uses `.refine()` with a `path` targeting a specific field, the JSX MUST include `{errors.fieldName && <p className="text-xs text-red-600">{errors.fieldName.message}</p>}` for that field. Otherwise validation silently blocks submission with no visible feedback to the user.
+
+## BOM resolution rounding policy
+**File**: `backend/src/lib/resolveBom.js` — `round4()`
+**Rule**: All `effectiveQty` values are rounded to 4 decimal places (`Decimal(10,4)`) at resolution time via `Math.round(value * 10000) / 10000`. This same precision is used for stock checks and transaction posting. No further rounding occurs downstream.
+**Formula**: `effectiveQty = quantityPer * (1 + scrapPercent / 100)`, rounded to 4 decimals.
+**Where used**: `resolveBom.js` (resolution), `production.js` (kit posting — re-resolves inside transaction).
+
+## allowDecimalQty bypass (cut materials)
+**Item field**: `allowDecimalQty` (boolean) on `Item` model — allows fractional quantities even for whole-unit UOMs (e.g., EA items that represent cut bar stock).
+**Validation logic**: `if (!allowsDecimals(uom) && !item.allowDecimalQty && !Number.isInteger(qty))` — the `allowDecimalQty` flag bypasses the UOM integer check.
+**Backend locations** (11): `options.js` (add/edit option lines), `boms.js` (BOM line validation), `production.js` (kit components, deviations, finished good), `transactions.js` (receipts, adjustments, transfers, opening balances, cycle count entry).
+**Frontend**: ItemsPage (checkbox to toggle), KittingPage/CreateProductionOrderPage (no client-side integer check for `allowDecimalQty` items).
+**Companion field**: `stockLength` (Decimal, nullable) — standard bar/roll length in the item's UOM. Only valid when `allowDecimalQty = true`. Backend enforces this cross-validation in `items.js` POST/PUT.
+
+## Option sidebar patterns (kitting pages)
+**Component**: `frontend/src/components/OptionSelectorSidebar.tsx` — reusable across KittingPage and CreateProductionOrderPage.
+**Selection types**: PICK_ONE uses radio buttons with "None (use base)" for optional groups. PICK_MANY uses checkboxes with qty spinner for `allowQuantity` packages.
+**Defaults**: Only PICK_ONE groups support `isDefault`. PICK_MANY groups do not auto-select defaults. Backend blocks `isDefault: true` on PICK_MANY packages.
+**Resolution flow**: Selection changes trigger debounced (300ms) `POST /api/boms/:bomId/resolve` call. Response populates the resolved component table with `source` column (SourceBadge component).
+**Cut material display**: Uses `formatCutDescription()`, `formatConsumption()`, `formatEffectiveQtyTooltip()` from `frontend/src/lib/cutDisplay.ts` in the resolved component table.

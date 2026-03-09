@@ -43,10 +43,26 @@ router.post(
     body('location').isIn(LOCATIONS).withMessage('location must be ADEL or CALHOUN'),
     body('quantityProduced').isFloat({ gt: 0 }).withMessage('quantityProduced must be > 0'),
     body('bomId').optional({ nullable: true }).isInt({ gt: 0 }),
-    body('components').isArray({ min: 1 }).withMessage('At least one component is required'),
-    body('components.*.itemId').isInt({ gt: 0 }).withMessage('Each component needs a valid itemId'),
-    body('components.*.quantityPer').isFloat({ gt: 0 }).withMessage('quantityPer must be > 0'),
+    // components required only when no selections (legacy path)
+    body('components').if(body('selections').not().exists()).isArray({ min: 1 }).withMessage('At least one component is required'),
+    body('components.*.itemId').optional().isInt({ gt: 0 }).withMessage('Each component needs a valid itemId'),
+    body('components.*.quantityPer').optional().isFloat({ gt: 0 }).withMessage('quantityPer must be > 0'),
     body('notes').optional({ nullable: true }).trim(),
+    // Resolution path fields
+    body('selections').optional().isArray(),
+    body('selections.*.packageId').optional().custom((val) => {
+      if (val === null) return true;
+      if (Number.isInteger(val) && val > 0) return true;
+      throw new Error('packageId must be a positive integer or null');
+    }),
+    body('selections.*.groupId').optional().isInt({ gt: 0 }),
+    body('selections.*.quantity').optional().isInt({ gt: 0 }),
+    body('vinReference').optional({ nullable: true }).trim().isLength({ max: 500 }),
+    // Deviations: additional items added/changed at kit time
+    body('deviations').optional().isArray(),
+    body('deviations.*.itemId').isInt({ gt: 0 }).withMessage('Each deviation needs a valid itemId'),
+    body('deviations.*.quantityPer').isFloat({ gt: 0 }).withMessage('Deviation quantityPer must be > 0'),
+    body('deviations.*.notes').optional({ nullable: true }).trim(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -54,8 +70,9 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { finishedGoodId, location, quantityProduced, bomId, components, notes } = req.body;
+    const { finishedGoodId, location, quantityProduced, bomId, components, notes, selections, vinReference, deviations } = req.body;
     const qtyProduced = parseFloat(quantityProduced);
+    const hasSelections = Array.isArray(selections) && selections.length > 0;
 
     // Validate finished good
     const finishedGood = await prisma.item.findUnique({ where: { id: finishedGoodId } });
@@ -64,103 +81,314 @@ router.post(
     }
 
     // Block decimal quantities for whole-unit finished goods (EA, SET, PAIR)
-    if (!allowsDecimals(finishedGood.unitOfMeasure) && !Number.isInteger(qtyProduced)) {
+    if (!allowsDecimals(finishedGood.unitOfMeasure) && !finishedGood.allowDecimalQty && !Number.isInteger(qtyProduced)) {
       return res.status(400).json({
         error: `${finishedGood.itemCode} is measured in ${finishedGood.unitOfMeasure} — quantity produced must be a whole number.`,
       });
     }
 
-    // Validate no self-referencing
-    const componentIds = components.map((c) => c.itemId);
-    if (componentIds.includes(finishedGoodId)) {
-      return res.status(400).json({ error: 'Finished good cannot be its own component' });
-    }
-
-    // Validate all component items exist and are active
-    const componentItems = await prisma.item.findMany({
-      where: { id: { in: componentIds }, isActive: true },
-      select: { id: true, itemCode: true, standardCost: true, unitOfMeasure: true },
-    });
-    const componentItemMap = new Map(componentItems.map((i) => [i.id, i]));
-
-    for (const comp of components) {
-      if (!componentItemMap.has(comp.itemId)) {
-        return res.status(400).json({ error: `Component item ${comp.itemId} not found or inactive` });
-      }
-    }
-
-    // Block decimal quantities for whole-unit component items
-    for (const comp of components) {
-      const compItem = componentItemMap.get(comp.itemId);
-      if (compItem && !allowsDecimals(compItem.unitOfMeasure) && !Number.isInteger(parseFloat(comp.quantityPer))) {
-        return res.status(400).json({
-          error: `${compItem.itemCode} is measured in ${compItem.unitOfMeasure} — quantityPer must be a whole number.`,
-        });
-      }
-    }
-
-    // Validate BOM and enforce component integrity if provided
+    // ── Resolution path vs Legacy path ──────────────────────────────────
     let hasDeviations = false;
     let deviationNotes = null;
+    let previewResolved = null; // resolution preview (for staleness check)
+    let configSnapshot = null;
+    let configKey = null;
+    let requiredPerComponent;
+    let componentIds;
+    let componentItemMap;
+    let avgCostMap = {};
+    let totalCost = 0;
 
-    if (bomId) {
-      const bom = await prisma.bom.findUnique({
-        where: { id: bomId },
-        include: { lines: { include: { item: { select: { itemCode: true } } } } },
-      });
-      if (!bom) {
-        return res.status(400).json({ error: 'BOM not found' });
-      }
+    if (hasSelections && bomId) {
+      // ── RESOLUTION PATH: backend owns the component list ────────────
+      const { resolveBom } = require('../lib/resolveBom');
+      const { generateConfigKey } = require('../lib/configKey');
+
+      // Verify BOM is ACTIVE
+      const bom = await prisma.bom.findUnique({ where: { id: bomId } });
+      if (!bom) return res.status(400).json({ error: 'BOM not found' });
       if (bom.status !== 'ACTIVE') {
         return res.status(400).json({ error: `BOM ${bom.bomCode} is ${bom.status}. Only ACTIVE BOMs can be used for kitting.` });
       }
 
-      // Validate all BOM components are present with correct quantities
-      const bomComponentMap = new Map(bom.lines.map((l) => [l.itemId, Number(l.quantityPer)]));
+      // Preview resolve (outside transaction) for early validation
+      const preview = await resolveBom(bomId, selections);
+      if (preview.errors.length > 0) {
+        return res.status(400).json({ error: 'Resolution failed', details: preview.errors });
+      }
+      if (preview.resolved.length === 0) {
+        return res.status(400).json({ error: 'Resolution produced zero components' });
+      }
+      previewResolved = preview;
 
-      const missing = [];
-      const modified = [];
-      for (const [itemId, expectedQty] of bomComponentMap) {
-        const submitted = components.find((c) => c.itemId === itemId);
-        if (!submitted) {
-          const bomLine = bom.lines.find((l) => l.itemId === itemId);
-          missing.push({ itemId, itemCode: bomLine?.item?.itemCode ?? `ID ${itemId}`, expected: expectedQty });
-        } else if (Math.abs(parseFloat(submitted.quantityPer) - expectedQty) > 0.0001) {
-          const bomLine = bom.lines.find((l) => l.itemId === itemId);
-          modified.push({ itemId, itemCode: bomLine?.item?.itemCode ?? `ID ${itemId}`, expected: expectedQty, submitted: parseFloat(submitted.quantityPer) });
+      // Validate no self-referencing
+      const resolvedItemIds = preview.resolved.map(r => r.itemId);
+      if (resolvedItemIds.includes(finishedGoodId)) {
+        return res.status(400).json({ error: 'Finished good cannot be its own component' });
+      }
+
+      // Build component data from resolved output
+      componentIds = resolvedItemIds;
+      const resolvedItems = await prisma.item.findMany({
+        where: { id: { in: componentIds }, isActive: true },
+        select: { id: true, itemCode: true, standardCost: true, unitOfMeasure: true, allowDecimalQty: true },
+      });
+      componentItemMap = new Map(resolvedItems.map(i => [i.id, i]));
+
+      for (const r of preview.resolved) {
+        if (!componentItemMap.has(r.itemId)) {
+          return res.status(400).json({ error: `Resolved component ${r.itemCode} (ID ${r.itemId}) not found or inactive` });
         }
       }
 
-      if (missing.length > 0 || modified.length > 0) {
-        return res.status(400).json({
-          error: 'Cannot remove or modify BOM components. Extra components are allowed.',
-          missing,
-          modified,
+      // Use effectiveQty (includes scrap) for consumption
+      requiredPerComponent = preview.resolved.map(r => ({
+        itemId: r.itemId,
+        quantityPer: r.effectiveQty,
+        requiredQty: r.effectiveQty * qtyProduced,
+      }));
+
+      // Pre-build cost map from resolution output (already has unitCost)
+      for (const r of preview.resolved) {
+        avgCostMap[r.itemId] = r.unitCost;
+      }
+
+      // Calculate total cost from resolution
+      for (const comp of requiredPerComponent) {
+        const uc = avgCostMap[comp.itemId] ?? 0;
+        totalCost += comp.requiredQty * uc;
+      }
+      totalCost = Math.round(totalCost * 100) / 100;
+
+      // ── Detect quantity deviations: compare submitted components vs resolved ──
+      const quantityDeviations = [];
+      if (Array.isArray(components) && components.length > 0) {
+        const resolvedByItemId = new Map(preview.resolved.map(r => [r.itemId, r]));
+
+        for (const comp of components) {
+          const resolved = resolvedByItemId.get(comp.itemId);
+          const submittedQty = parseFloat(comp.quantityPer);
+          if (resolved) {
+            // Compare submitted qty against resolved effectiveQty
+            if (Math.abs(submittedQty - resolved.effectiveQty) > 0.0001) {
+              quantityDeviations.push({
+                itemId: comp.itemId,
+                itemCode: resolved.itemCode,
+                resolvedQty: resolved.effectiveQty,
+                submittedQty,
+                notes: comp.notes || null,
+              });
+            }
+          }
+          // Extra items (not in resolved) will be caught by the deviations array below
+        }
+
+        if (quantityDeviations.length > 0) {
+          hasDeviations = true;
+          const qtyDevDescriptions = quantityDeviations.map(d =>
+            `${d.itemCode} (resolved: ${d.resolvedQty}, submitted: ${d.submittedQty})`
+          );
+          deviationNotes = `Quantity deviations: ${qtyDevDescriptions.join(', ')}`;
+        }
+      }
+
+      // ── Process deviations (extra items added at kit time) ────────────
+      const processedDeviations = [];
+      const hasDeviationsArr = Array.isArray(deviations) && deviations.length > 0;
+      if (hasDeviationsArr) {
+        const devItemIds = deviations.map(d => d.itemId);
+        const devItems = await prisma.item.findMany({
+          where: { id: { in: devItemIds }, isActive: true },
+          select: { id: true, itemCode: true, description: true, standardCost: true, unitOfMeasure: true, allowDecimalQty: true },
         });
+        const devItemMap = new Map(devItems.map(i => [i.id, i]));
+
+        for (const dev of deviations) {
+          const devItem = devItemMap.get(dev.itemId);
+          if (!devItem) {
+            return res.status(400).json({ error: `Deviation item ${dev.itemId} not found or inactive` });
+          }
+          if (dev.itemId === finishedGoodId) {
+            return res.status(400).json({ error: 'Finished good cannot be a deviation item' });
+          }
+          const devQty = parseFloat(dev.quantityPer);
+          if (!devQty || devQty <= 0) {
+            return res.status(400).json({ error: `Deviation quantityPer for ${devItem.itemCode} must be > 0` });
+          }
+          // Block decimal quantities for whole-unit items
+          if (!allowsDecimals(devItem.unitOfMeasure) && !devItem.allowDecimalQty && !Number.isInteger(devQty)) {
+            return res.status(400).json({
+              error: `${devItem.itemCode} is measured in ${devItem.unitOfMeasure} — deviation quantityPer must be a whole number.`,
+            });
+          }
+
+          const devUnitCost = devItem.standardCost ? Number(devItem.standardCost) : 0;
+          processedDeviations.push({
+            itemId: dev.itemId,
+            itemCode: devItem.itemCode,
+            quantityPer: devQty,
+            notes: dev.notes || null,
+          });
+
+          // Add deviation to consumption list
+          componentIds.push(dev.itemId);
+          componentItemMap.set(dev.itemId, devItem);
+          avgCostMap[dev.itemId] = devUnitCost;
+          requiredPerComponent.push({
+            itemId: dev.itemId,
+            quantityPer: devQty,
+            requiredQty: devQty * qtyProduced,
+          });
+          totalCost += devQty * qtyProduced * devUnitCost;
+        }
+        totalCost = Math.round(totalCost * 100) / 100;
+        hasDeviations = true;
+        const extraItemNotes = processedDeviations.map(d => `${d.itemCode} (qty: ${d.quantityPer}${d.notes ? ', ' + d.notes : ''})`).join('; ');
+        deviationNotes = deviationNotes
+          ? `${deviationNotes}; Extra items: ${extraItemNotes}`
+          : `Extra items: ${extraItemNotes}`;
       }
 
-      // Check for extra (non-BOM) components
-      const extraComponents = components.filter((c) => !bomComponentMap.has(c.itemId));
-      if (extraComponents.length > 0) {
-        hasDeviations = true;
-        // Build notes with item codes
-        const extraDescriptions = [];
-        for (const ec of extraComponents) {
-          const item = componentItemMap.get(ec.itemId);
-          extraDescriptions.push(`${item?.itemCode ?? `ID ${ec.itemId}`} (qty: ${ec.quantityPer})`);
-        }
-        deviationNotes = `Extra components added: ${extraDescriptions.join(', ')}`;
+      // Generate config key and snapshot (will be finalized inside transaction)
+      // Deviations are excluded from config key by design
+      configKey = generateConfigKey(bom.bomCode, preview.selections);
+      configSnapshot = {
+        bomId: bom.id,
+        bomCode: bom.bomCode,
+        selections: preview.selections,
+        deviations: processedDeviations,
+        quantityDeviations: quantityDeviations.length > 0 ? quantityDeviations : undefined,
+        componentSnapshot: preview.resolved.map(r => ({
+          itemId: r.itemId,
+          itemCode: r.itemCode,
+          quantityPer: r.quantityPer,
+          scrapPercent: r.scrapPercent,
+          cutDetails: r.cutDetails,
+          effectiveQty: r.effectiveQty,
+          unitCost: r.unitCost,
+          source: r.source,
+        })),
+      };
+
+    } else {
+      // ── LEGACY PATH: frontend sends components[], validated against BOM ──
+
+      if (!components || !Array.isArray(components) || components.length === 0) {
+        return res.status(400).json({ error: 'At least one component is required' });
       }
+
+      // Validate no self-referencing
+      componentIds = components.map((c) => c.itemId);
+      if (componentIds.includes(finishedGoodId)) {
+        return res.status(400).json({ error: 'Finished good cannot be its own component' });
+      }
+
+      // Validate all component items exist and are active
+      const componentItems = await prisma.item.findMany({
+        where: { id: { in: componentIds }, isActive: true },
+        select: { id: true, itemCode: true, standardCost: true, unitOfMeasure: true, allowDecimalQty: true },
+      });
+      componentItemMap = new Map(componentItems.map((i) => [i.id, i]));
+
+      for (const comp of components) {
+        if (!componentItemMap.has(comp.itemId)) {
+          return res.status(400).json({ error: `Component item ${comp.itemId} not found or inactive` });
+        }
+      }
+
+      // Block decimal quantities for whole-unit component items
+      for (const comp of components) {
+        const compItem = componentItemMap.get(comp.itemId);
+        if (compItem && !allowsDecimals(compItem.unitOfMeasure) && !compItem.allowDecimalQty && !Number.isInteger(parseFloat(comp.quantityPer))) {
+          return res.status(400).json({
+            error: `${compItem.itemCode} is measured in ${compItem.unitOfMeasure} — quantityPer must be a whole number.`,
+          });
+        }
+      }
+
+      // Validate BOM and enforce component integrity if provided
+      if (bomId) {
+        const bom = await prisma.bom.findUnique({
+          where: { id: bomId },
+          include: { lines: { include: { item: { select: { itemCode: true } } } } },
+        });
+        if (!bom) {
+          return res.status(400).json({ error: 'BOM not found' });
+        }
+        if (bom.status !== 'ACTIVE') {
+          return res.status(400).json({ error: `BOM ${bom.bomCode} is ${bom.status}. Only ACTIVE BOMs can be used for kitting.` });
+        }
+
+        const bomComponentMap = new Map(bom.lines.map((l) => [l.itemId, Number(l.quantityPer)]));
+
+        const missing = [];
+        const modified = [];
+        for (const [itemId, expectedQty] of bomComponentMap) {
+          const submitted = components.find((c) => c.itemId === itemId);
+          if (!submitted) {
+            const bomLine = bom.lines.find((l) => l.itemId === itemId);
+            missing.push({ itemId, itemCode: bomLine?.item?.itemCode ?? `ID ${itemId}`, expected: expectedQty });
+          } else if (Math.abs(parseFloat(submitted.quantityPer) - expectedQty) > 0.0001) {
+            const bomLine = bom.lines.find((l) => l.itemId === itemId);
+            modified.push({ itemId, itemCode: bomLine?.item?.itemCode ?? `ID ${itemId}`, expected: expectedQty, submitted: parseFloat(submitted.quantityPer) });
+          }
+        }
+
+        if (missing.length > 0 || modified.length > 0) {
+          return res.status(400).json({
+            error: 'Cannot remove or modify BOM components. Extra components are allowed.',
+            missing,
+            modified,
+          });
+        }
+
+        const extraComponents = components.filter((c) => !bomComponentMap.has(c.itemId));
+        if (extraComponents.length > 0) {
+          hasDeviations = true;
+          const extraDescriptions = [];
+          for (const ec of extraComponents) {
+            const item = componentItemMap.get(ec.itemId);
+            extraDescriptions.push(`${item?.itemCode ?? `ID ${ec.itemId}`} (qty: ${ec.quantityPer})`);
+          }
+          deviationNotes = `Extra components added: ${extraDescriptions.join(', ')}`;
+        }
+      }
+
+      // Calculate required quantities
+      requiredPerComponent = components.map((c) => ({
+        itemId: c.itemId,
+        quantityPer: parseFloat(c.quantityPer),
+        requiredQty: parseFloat(c.quantityPer) * qtyProduced,
+      }));
+
+      // Get weighted average cost per component for cost rollup
+      const costRows = await prisma.$queryRaw`
+        SELECT "item_id" AS "itemId",
+               SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS "avgCost"
+        FROM transactions
+        WHERE transaction_type IN ('RECEIPT', 'OPENING_BALANCE', 'PRODUCTION')
+          AND unit_cost IS NOT NULL
+          AND quantity > 0
+          AND "item_id" = ANY(${componentIds}::int[])
+        GROUP BY "item_id"
+      `;
+      for (const row of costRows) {
+        avgCostMap[row.itemId] = Number(row.avgCost ?? 0);
+      }
+
+      // Calculate total cost with standardCost fallback
+      for (const comp of requiredPerComponent) {
+        let unitCost = avgCostMap[comp.itemId] ?? null;
+        if (unitCost === null) {
+          const item = componentItemMap.get(comp.itemId);
+          unitCost = item?.standardCost ? Number(item.standardCost) : 0;
+        }
+        totalCost += comp.requiredQty * unitCost;
+      }
+      totalCost = Math.round(totalCost * 100) / 100;
     }
 
-    // Calculate required quantities
-    const requiredPerComponent = components.map((c) => ({
-      itemId: c.itemId,
-      quantityPer: parseFloat(c.quantityPer),
-      requiredQty: parseFloat(c.quantityPer) * qtyProduced,
-    }));
-
-    // Check stock availability at the location (on hand minus reserved)
+    // ── Stock availability check (both paths) ────────────────────────
     const stockGrouped = await prisma.transaction.groupBy({
       by: ['itemId'],
       where: {
@@ -198,33 +426,6 @@ router.post(
       });
     }
 
-    // Get weighted average cost per component for cost rollup
-    const costRows = await prisma.$queryRaw`
-      SELECT "item_id" AS "itemId",
-             SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS "avgCost"
-      FROM transactions
-      WHERE transaction_type IN ('RECEIPT', 'OPENING_BALANCE', 'PRODUCTION')
-        AND unit_cost IS NOT NULL
-        AND quantity > 0
-        AND "item_id" = ANY(${componentIds}::int[])
-      GROUP BY "item_id"
-    `;
-    const avgCostMap = {};
-    for (const row of costRows) {
-      avgCostMap[row.itemId] = Number(row.avgCost ?? 0);
-    }
-
-    // Calculate total cost with standardCost fallback
-    let totalCost = 0;
-    for (const comp of requiredPerComponent) {
-      let unitCost = avgCostMap[comp.itemId] ?? null;
-      if (unitCost === null) {
-        const item = componentItemMap.get(comp.itemId);
-        unitCost = item?.standardCost ? Number(item.standardCost) : 0;
-      }
-      totalCost += comp.requiredQty * unitCost;
-    }
-    totalCost = Math.round(totalCost * 100) / 100;
     const unitCostPerFinishedGood = Math.round((totalCost / qtyProduced) * 100) / 100;
 
     // Non-admin users require admin authorization to execute kitting
@@ -256,6 +457,73 @@ router.post(
     // Create everything atomically
     const kitBatchId = crypto.randomUUID();
     const result = await prisma.$transaction(async (tx) => {
+      // Re-resolve inside transaction for atomicity (resolution path only)
+      let finalRequiredPerComponent = requiredPerComponent;
+      let finalAvgCostMap = avgCostMap;
+      let finalTotalCost = totalCost;
+      let finalConfigSnapshot = configSnapshot;
+
+      if (previewResolved) {
+        const { resolveBom } = require('../lib/resolveBom');
+        const txResult = await resolveBom(bomId, selections, tx);
+        if (txResult.errors.length > 0) {
+          throw new Error(`Resolution failed: ${txResult.errors.join(', ')}`);
+        }
+
+        // Staleness check: compare re-resolved against preview
+        const previewItems = previewResolved.resolved
+          .map(r => `${r.itemId}:${r.effectiveQty}`)
+          .sort()
+          .join(',');
+        const txItems = txResult.resolved
+          .map(r => `${r.itemId}:${r.effectiveQty}`)
+          .sort()
+          .join(',');
+        if (previewItems !== txItems) {
+          throw new Error('BOM or options were modified after preview. Please refresh and try again.');
+        }
+
+        // Use the transaction-resolved data for final consumption
+        finalRequiredPerComponent = txResult.resolved.map(r => ({
+          itemId: r.itemId,
+          quantityPer: r.effectiveQty,
+          requiredQty: r.effectiveQty * qtyProduced,
+        }));
+        finalAvgCostMap = {};
+        finalTotalCost = 0;
+        for (const r of txResult.resolved) {
+          finalAvgCostMap[r.itemId] = r.unitCost;
+          finalTotalCost += r.effectiveQty * qtyProduced * r.unitCost;
+        }
+        finalTotalCost = Math.round(finalTotalCost * 100) / 100;
+
+        // Add deviation costs back to finalTotalCost
+        if (Array.isArray(deviations) && deviations.length > 0) {
+          for (const dev of deviations) {
+            const devUc = finalAvgCostMap[dev.itemId] ?? (componentItemMap.get(dev.itemId)?.standardCost ? Number(componentItemMap.get(dev.itemId).standardCost) : 0);
+            finalTotalCost += parseFloat(dev.quantityPer) * qtyProduced * devUc;
+          }
+          finalTotalCost = Math.round(finalTotalCost * 100) / 100;
+        }
+
+        // Update snapshot with transaction-resolved data
+        finalConfigSnapshot = {
+          ...configSnapshot,
+          componentSnapshot: txResult.resolved.map(r => ({
+            itemId: r.itemId,
+            itemCode: r.itemCode,
+            quantityPer: r.quantityPer,
+            scrapPercent: r.scrapPercent,
+            cutDetails: r.cutDetails,
+            effectiveQty: r.effectiveQty,
+            unitCost: r.unitCost,
+            source: r.source,
+          })),
+        };
+      }
+
+      const finalUnitCostPerFG = Math.round((finalTotalCost / qtyProduced) * 100) / 100;
+
       // 1. Create ProductionOrder with temp orderNumber
       const order = await tx.productionOrder.create({
         data: {
@@ -264,9 +532,12 @@ router.post(
           finishedGoodId,
           location,
           quantityProduced: qtyProduced,
-          totalCost,
+          totalCost: finalTotalCost,
           hasDeviations,
           deviationNotes,
+          vinReference: vinReference || null,
+          configurationSnapshot: finalConfigSnapshot,
+          configurationKey: configKey,
           notes: notes || null,
           createdBy: req.user.id,
         },
@@ -279,8 +550,8 @@ router.post(
       });
 
       // 3. Create CONSUMPTION transactions (one per component)
-      for (const comp of requiredPerComponent) {
-        let compUnitCost = avgCostMap[comp.itemId] ?? null;
+      for (const comp of finalRequiredPerComponent) {
+        let compUnitCost = finalAvgCostMap[comp.itemId] ?? null;
         if (compUnitCost === null) {
           const item = componentItemMap.get(comp.itemId);
           compUnitCost = item?.standardCost ? Number(item.standardCost) : null;
@@ -302,6 +573,33 @@ router.post(
         });
       }
 
+      // 3b. Create CONSUMPTION transactions for deviations
+      if (Array.isArray(deviations) && deviations.length > 0) {
+        for (const dev of deviations) {
+          const devQty = parseFloat(dev.quantityPer) * qtyProduced;
+          const devItem = componentItemMap.get(dev.itemId);
+          let devUnitCost = finalAvgCostMap[dev.itemId] ?? null;
+          if (devUnitCost === null) {
+            devUnitCost = devItem?.standardCost ? Number(devItem.standardCost) : null;
+          }
+
+          await tx.transaction.create({
+            data: {
+              transactionType: 'CONSUMPTION',
+              itemId: dev.itemId,
+              location,
+              quantity: -devQty,
+              unitCost: devUnitCost !== null ? Math.round(devUnitCost * 100) / 100 : null,
+              transactionDate: new Date(),
+              notes: `[Kit ${updatedOrder.orderNumber}] Deviation: ${dev.notes || 'extra component'}`,
+              createdBy: req.user.id,
+              productionOrderId: order.id,
+              batchId: kitBatchId,
+            },
+          });
+        }
+      }
+
       // 4. Create PRODUCTION transaction for finished good
       await tx.transaction.create({
         data: {
@@ -309,7 +607,7 @@ router.post(
           itemId: finishedGoodId,
           location,
           quantity: qtyProduced,
-          unitCost: unitCostPerFinishedGood,
+          unitCost: finalUnitCostPerFG,
           transactionDate: new Date(),
           notes: `[Kit ${updatedOrder.orderNumber}] Produced`,
           createdBy: req.user.id,
@@ -393,10 +691,20 @@ router.post(
     body('location').isIn(LOCATIONS).withMessage('location must be ADEL or CALHOUN'),
     body('totalQuantity').isInt({ gt: 0 }).withMessage('totalQuantity must be a positive integer'),
     body('bomId').optional({ nullable: true }).isInt({ gt: 0 }),
-    body('components').isArray({ min: 1 }).withMessage('At least one component is required'),
-    body('components.*.itemId').isInt({ gt: 0 }).withMessage('Each component needs a valid itemId'),
-    body('components.*.quantityPer').isFloat({ gt: 0 }).withMessage('quantityPer must be > 0'),
+    body('components').if(body('selections').not().exists()).isArray({ min: 1 }).withMessage('At least one component is required'),
+    body('components.*.itemId').optional().isInt({ gt: 0 }).withMessage('Each component needs a valid itemId'),
+    body('components.*.quantityPer').optional().isFloat({ gt: 0 }).withMessage('quantityPer must be > 0'),
     body('notes').optional({ nullable: true }).trim(),
+    // Resolution path fields
+    body('selections').optional().isArray(),
+    body('selections.*.packageId').optional().custom((val) => {
+      if (val === null) return true;
+      if (Number.isInteger(val) && val > 0) return true;
+      throw new Error('packageId must be a positive integer or null');
+    }),
+    body('selections.*.groupId').optional().isInt({ gt: 0 }),
+    body('selections.*.quantity').optional().isInt({ gt: 0 }),
+    body('vinReference').optional({ nullable: true }).trim().isLength({ max: 500 }),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -404,8 +712,9 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { finishedGoodId, location, totalQuantity, bomId, components, notes } = req.body;
+    const { finishedGoodId, location, totalQuantity, bomId, components, notes, selections, vinReference } = req.body;
     const qty = parseInt(totalQuantity);
+    const hasSelections = Array.isArray(selections) && selections.length > 0;
 
     // Validate finished good
     const finishedGood = await prisma.item.findUnique({ where: { id: finishedGoodId } });
@@ -413,75 +722,145 @@ router.post(
       return res.status(400).json({ error: 'Finished good item not found or inactive' });
     }
 
-    // Validate no self-referencing
-    const componentIds = components.map((c) => c.itemId);
-    if (componentIds.includes(finishedGoodId)) {
-      return res.status(400).json({ error: 'Finished good cannot be its own component' });
-    }
-
-    // Validate all component items exist and are active
-    const componentItems = await prisma.item.findMany({
-      where: { id: { in: componentIds }, isActive: true },
-      select: { id: true, itemCode: true, description: true, unitOfMeasure: true },
-    });
-    const componentItemMap = new Map(componentItems.map((i) => [i.id, i]));
-
-    for (const comp of components) {
-      if (!componentItemMap.has(comp.itemId)) {
-        return res.status(400).json({ error: `Component item ${comp.itemId} not found or inactive` });
-      }
-    }
-
-    // Block decimal quantityPer for whole-unit component items
-    for (const comp of components) {
-      const compItem = componentItemMap.get(comp.itemId);
-      if (compItem && !allowsDecimals(compItem.unitOfMeasure) && !Number.isInteger(parseFloat(comp.quantityPer))) {
-        return res.status(400).json({
-          error: `${compItem.itemCode} is measured in ${compItem.unitOfMeasure} — quantityPer must be a whole number.`,
-        });
-      }
-    }
-
-    // Validate BOM integrity if provided
+    // ── Resolution path vs Legacy path ──────────────────────────────────
     let hasDeviations = false;
     let deviationNotes = null;
+    let configSnapshot = null;
+    let configKey = null;
+    let componentSnapshot;
+    let componentIds;
 
-    if (bomId) {
-      const bom = await prisma.bom.findUnique({
-        where: { id: bomId },
-        include: { lines: { include: { item: { select: { itemCode: true } } } } },
-      });
+    if (hasSelections && bomId) {
+      // ── RESOLUTION PATH: backend resolves, freezes snapshot ──────────
+      const { resolveBom } = require('../lib/resolveBom');
+      const { generateConfigKey } = require('../lib/configKey');
+
+      const bom = await prisma.bom.findUnique({ where: { id: bomId } });
       if (!bom) return res.status(400).json({ error: 'BOM not found' });
       if (bom.status !== 'ACTIVE') {
         return res.status(400).json({ error: `BOM ${bom.bomCode} is ${bom.status}. Only ACTIVE BOMs can be used.` });
       }
 
-      const bomComponentMap = new Map(bom.lines.map((l) => [l.itemId, Number(l.quantityPer)]));
-      const missing = [];
-      const modified = [];
-      for (const [itemId, expectedQty] of bomComponentMap) {
-        const submitted = components.find((c) => c.itemId === itemId);
-        if (!submitted) {
-          const bomLine = bom.lines.find((l) => l.itemId === itemId);
-          missing.push({ itemId, itemCode: bomLine?.item?.itemCode ?? `ID ${itemId}`, expected: expectedQty });
-        } else if (Math.abs(parseFloat(submitted.quantityPer) - expectedQty) > 0.0001) {
-          const bomLine = bom.lines.find((l) => l.itemId === itemId);
-          modified.push({ itemId, itemCode: bomLine?.item?.itemCode ?? `ID ${itemId}`, expected: expectedQty, submitted: parseFloat(submitted.quantityPer) });
-        }
+      const resolved = await resolveBom(bomId, selections);
+      if (resolved.errors.length > 0) {
+        return res.status(400).json({ error: 'Resolution failed', details: resolved.errors });
       }
-      if (missing.length > 0 || modified.length > 0) {
-        return res.status(400).json({ error: 'Cannot remove or modify BOM components.', missing, modified });
+      if (resolved.resolved.length === 0) {
+        return res.status(400).json({ error: 'Resolution produced zero components' });
       }
 
-      const extraComponents = components.filter((c) => !bomComponentMap.has(c.itemId));
-      if (extraComponents.length > 0) {
-        hasDeviations = true;
-        const extraDescriptions = extraComponents.map((ec) => {
-          const item = componentItemMap.get(ec.itemId);
-          return `${item?.itemCode ?? `ID ${ec.itemId}`} (qty: ${ec.quantityPer})`;
-        });
-        deviationNotes = `Extra components added: ${extraDescriptions.join(', ')}`;
+      // Validate no self-referencing
+      componentIds = resolved.resolved.map(r => r.itemId);
+      if (componentIds.includes(finishedGoodId)) {
+        return res.status(400).json({ error: 'Finished good cannot be its own component' });
       }
+
+      // Build frozen snapshot from resolved data
+      componentSnapshot = resolved.resolved.map(r => ({
+        itemId: r.itemId,
+        itemCode: r.itemCode,
+        description: r.description,
+        quantityPer: r.quantityPer,
+        scrapPercent: r.scrapPercent,
+        cutDetails: r.cutDetails,
+        effectiveQty: r.effectiveQty,
+        unitCost: r.unitCost,
+        source: r.source,
+      }));
+
+      configKey = generateConfigKey(bom.bomCode, resolved.selections);
+      configSnapshot = {
+        bomId: bom.id,
+        bomCode: bom.bomCode,
+        selections: resolved.selections,
+        deviations: [],
+        componentSnapshot,
+      };
+
+    } else {
+      // ── LEGACY PATH: frontend sends components[] ────────────────────
+
+      if (!components || !Array.isArray(components) || components.length === 0) {
+        return res.status(400).json({ error: 'At least one component is required' });
+      }
+
+      componentIds = components.map((c) => c.itemId);
+      if (componentIds.includes(finishedGoodId)) {
+        return res.status(400).json({ error: 'Finished good cannot be its own component' });
+      }
+
+      // Validate all component items exist and are active
+      const componentItems = await prisma.item.findMany({
+        where: { id: { in: componentIds }, isActive: true },
+        select: { id: true, itemCode: true, description: true, unitOfMeasure: true, allowDecimalQty: true },
+      });
+      const componentItemMap = new Map(componentItems.map((i) => [i.id, i]));
+
+      for (const comp of components) {
+        if (!componentItemMap.has(comp.itemId)) {
+          return res.status(400).json({ error: `Component item ${comp.itemId} not found or inactive` });
+        }
+      }
+
+      // Block decimal quantityPer for whole-unit component items
+      for (const comp of components) {
+        const compItem = componentItemMap.get(comp.itemId);
+        if (compItem && !allowsDecimals(compItem.unitOfMeasure) && !compItem.allowDecimalQty && !Number.isInteger(parseFloat(comp.quantityPer))) {
+          return res.status(400).json({
+            error: `${compItem.itemCode} is measured in ${compItem.unitOfMeasure} — quantityPer must be a whole number.`,
+          });
+        }
+      }
+
+      // Validate BOM integrity if provided
+      if (bomId) {
+        const bom = await prisma.bom.findUnique({
+          where: { id: bomId },
+          include: { lines: { include: { item: { select: { itemCode: true } } } } },
+        });
+        if (!bom) return res.status(400).json({ error: 'BOM not found' });
+        if (bom.status !== 'ACTIVE') {
+          return res.status(400).json({ error: `BOM ${bom.bomCode} is ${bom.status}. Only ACTIVE BOMs can be used.` });
+        }
+
+        const bomComponentMap = new Map(bom.lines.map((l) => [l.itemId, Number(l.quantityPer)]));
+        const missing = [];
+        const modified = [];
+        for (const [itemId, expectedQty] of bomComponentMap) {
+          const submitted = components.find((c) => c.itemId === itemId);
+          if (!submitted) {
+            const bomLine = bom.lines.find((l) => l.itemId === itemId);
+            missing.push({ itemId, itemCode: bomLine?.item?.itemCode ?? `ID ${itemId}`, expected: expectedQty });
+          } else if (Math.abs(parseFloat(submitted.quantityPer) - expectedQty) > 0.0001) {
+            const bomLine = bom.lines.find((l) => l.itemId === itemId);
+            modified.push({ itemId, itemCode: bomLine?.item?.itemCode ?? `ID ${itemId}`, expected: expectedQty, submitted: parseFloat(submitted.quantityPer) });
+          }
+        }
+        if (missing.length > 0 || modified.length > 0) {
+          return res.status(400).json({ error: 'Cannot remove or modify BOM components.', missing, modified });
+        }
+
+        const extraComponents = components.filter((c) => !bomComponentMap.has(c.itemId));
+        if (extraComponents.length > 0) {
+          hasDeviations = true;
+          const extraDescriptions = extraComponents.map((ec) => {
+            const item = componentItemMap.get(ec.itemId);
+            return `${item?.itemCode ?? `ID ${ec.itemId}`} (qty: ${ec.quantityPer})`;
+          });
+          deviationNotes = `Extra components added: ${extraDescriptions.join(', ')}`;
+        }
+      }
+
+      // Build legacy component snapshot
+      componentSnapshot = components.map((c) => {
+        const item = componentItemMap.get(c.itemId);
+        return {
+          itemId: c.itemId,
+          itemCode: item?.itemCode ?? `ID:${c.itemId}`,
+          description: item?.description ?? '',
+          quantityPer: parseFloat(c.quantityPer),
+        };
+      });
     }
 
     // Admin auth required for large orders
@@ -512,34 +891,22 @@ router.post(
     const reservedMap = await getReservedQuantitiesMap();
 
     const warnings = [];
-    for (const comp of components) {
-      const qtyPer = parseFloat(comp.quantityPer);
+    for (const comp of componentSnapshot) {
+      const qtyPer = comp.effectiveQty ?? comp.quantityPer;
       const totalNeeded = qtyPer * qty;
       const onHand = stockMap[comp.itemId] ?? 0;
       const reserved = reservedMap.get(`${comp.itemId}_${location}`) || 0;
       const available = onHand - reserved;
       if (available < totalNeeded) {
-        const item = componentItemMap.get(comp.itemId);
         warnings.push({
           itemId: comp.itemId,
-          itemCode: item?.itemCode ?? `ID:${comp.itemId}`,
+          itemCode: comp.itemCode,
           required: totalNeeded,
           available,
           short: totalNeeded - available,
         });
       }
     }
-
-    // Build component snapshot (frozen at creation time)
-    const componentSnapshot = components.map((c) => {
-      const item = componentItemMap.get(c.itemId);
-      return {
-        itemId: c.itemId,
-        itemCode: item?.itemCode ?? `ID:${c.itemId}`,
-        description: item?.description ?? '',
-        quantityPer: parseFloat(c.quantityPer),
-      };
-    });
 
     // Create order + lines atomically
     const result = await prisma.$transaction(async (tx) => {
@@ -557,6 +924,9 @@ router.post(
           hasDeviations,
           deviationNotes,
           notes: notes || null,
+          vinReference: vinReference?.trim() || null,
+          configurationSnapshot: configSnapshot,
+          configurationKey: configKey,
           createdBy: req.user.id,
         },
       });
@@ -616,6 +986,8 @@ router.get(
     query('location').optional().isIn(LOCATIONS),
     query('from').optional().isISO8601(),
     query('to').optional().isISO8601(),
+    query('search').optional().trim(),
+    query('vin').optional().trim(),
     query('page').optional().isInt({ gt: 0 }),
     query('limit').optional().isInt({ gt: 0, max: 200 }),
   ],
@@ -623,7 +995,7 @@ router.get(
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    const { status, location, from, to } = req.query;
+    const { status, location, from, to, search, vin } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
 
@@ -637,6 +1009,21 @@ router.get(
         const toDate = new Date(to);
         toDate.setDate(toDate.getDate() + 1);
         where.createdAt.lte = toDate;
+      }
+    }
+    if (vin) {
+      where.vinReference = { contains: vin, mode: 'insensitive' };
+    }
+    if (search) {
+      where.OR = [
+        { vinReference: { contains: search, mode: 'insensitive' } },
+        { finishedGood: { itemCode: { contains: search, mode: 'insensitive' } } },
+        { finishedGood: { description: { contains: search, mode: 'insensitive' } } },
+      ];
+      // Also try matching by order ID if search is numeric
+      const searchNum = /^\d+$/.test(search) ? parseInt(search) : NaN;
+      if (!isNaN(searchNum)) {
+        where.OR.push({ id: searchNum });
       }
     }
 
@@ -676,6 +1063,116 @@ router.get(
       page,
       limit,
       totalPages: Math.ceil(total / limit),
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// GET /api/production/configurations — List unique configuration keys with usage counts
+// ---------------------------------------------------------------------------
+router.get(
+  '/configurations',
+  [
+    query('bomCode').optional().trim(),
+    query('finishedGoodId').optional().isInt({ gt: 0 }),
+    query('page').optional().isInt({ gt: 0 }),
+    query('limit').optional().isInt({ gt: 0, max: 200 }),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+
+    const where = {
+      configurationKey: { not: null },
+    };
+    if (req.query.finishedGoodId) where.finishedGoodId = parseInt(req.query.finishedGoodId);
+
+    // Group by configurationKey to get unique configs with counts
+    const groupResult = await prisma.productionOrder.groupBy({
+      by: ['configurationKey', 'finishedGoodId'],
+      where,
+      _count: { id: true },
+      _max: { createdAt: true },
+      orderBy: { _max: { createdAt: 'desc' } },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    // Get total unique configs
+    const totalResult = await prisma.productionOrder.groupBy({
+      by: ['configurationKey'],
+      where,
+    });
+    const total = totalResult.length;
+
+    // Enrich with finished good info and a sample snapshot
+    const configs = await Promise.all(
+      groupResult.map(async (g) => {
+        const sample = await prisma.productionOrder.findFirst({
+          where: { configurationKey: g.configurationKey, finishedGoodId: g.finishedGoodId },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            configurationSnapshot: true,
+            finishedGood: { select: { id: true, itemCode: true, description: true } },
+            bom: { select: { id: true, bomCode: true, name: true } },
+          },
+        });
+        return {
+          configurationKey: g.configurationKey,
+          finishedGoodId: g.finishedGoodId,
+          usageCount: g._count.id,
+          lastUsed: g._max.createdAt,
+          finishedGood: sample?.finishedGood || null,
+          bom: sample?.bom || null,
+          configurationSnapshot: sample?.configurationSnapshot || null,
+        };
+      })
+    );
+
+    return res.json({
+      configurations: configs,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// GET /api/production/orders/:id/configuration — Return configuration snapshot for an order
+// ---------------------------------------------------------------------------
+router.get(
+  '/orders/:id/configuration',
+  async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid ID' });
+
+    const order = await prisma.productionOrder.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        configurationKey: true,
+        configurationSnapshot: true,
+        vinReference: true,
+        finishedGood: { select: { id: true, itemCode: true, description: true } },
+        bom: { select: { id: true, bomCode: true, name: true } },
+      },
+    });
+
+    if (!order) return res.status(404).json({ error: 'Production order not found' });
+
+    return res.json({
+      orderId: order.id,
+      configurationKey: order.configurationKey,
+      configurationSnapshot: order.configurationSnapshot,
+      vinReference: order.vinReference,
+      finishedGood: order.finishedGood,
+      bom: order.bom,
     });
   }
 );

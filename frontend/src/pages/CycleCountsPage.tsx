@@ -464,13 +464,13 @@ export function CycleCountsPage() {
 
       {/* --- Create Dialog --- */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>New Cycle Count</DialogTitle>
             <DialogDescription>Create a new physical inventory count.</DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto flex-1 pr-1">
             {/* Location */}
             <div className="space-y-1">
               <Label>Location <span className="text-red-500">*</span></Label>
@@ -523,17 +523,17 @@ export function CycleCountsPage() {
             {itemSelection === 'manual' && (
               <div className="space-y-1">
                 <Label>Select Items <span className="text-red-500">*</span></Label>
-                <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-1">
+                <div className="max-h-48 overflow-y-auto overflow-x-hidden border rounded-md p-2 space-y-1">
                   {items.map((item) => (
-                    <label key={item.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded">
+                    <label key={item.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 px-1 py-0.5 rounded min-w-0">
                       <input
                         type="checkbox"
                         checked={selectedItemIds.includes(item.id)}
                         onChange={() => toggleItemSelection(item.id)}
-                        className="rounded"
+                        className="rounded shrink-0"
                       />
-                      <span className="font-mono text-xs">{item.itemCode}</span>
-                      <span className="text-gray-600 truncate">{item.description}</span>
+                      <span className="font-mono text-xs shrink-0">{item.itemCode}</span>
+                      <span className="text-gray-600 truncate min-w-0">{item.description}</span>
                     </label>
                   ))}
                 </div>

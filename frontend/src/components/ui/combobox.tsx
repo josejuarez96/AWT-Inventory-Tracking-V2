@@ -47,8 +47,33 @@ export function Combobox({
   disabled,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
+  const listRef = React.useRef<HTMLDivElement>(null);
 
   const selected = options.find((opt) => opt.value === value);
+
+  // Scroll the list to the top whenever the popover opens
+  React.useEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => {
+        listRef.current?.scrollTo({ top: 0 });
+      });
+    }
+  }, [open]);
+
+  // Select the currently highlighted item on Tab key
+  const handleKeyDown = React.useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Tab' && open) {
+        // Find the currently highlighted [data-selected="true"] item
+        const highlighted = listRef.current?.querySelector('[data-selected="true"]');
+        if (highlighted) {
+          e.preventDefault();
+          (highlighted as HTMLElement).click();
+        }
+      }
+    },
+    [open],
+  );
 
   return (
     <Popover open={disabled ? false : open} onOpenChange={disabled ? undefined : setOpen}>
@@ -65,16 +90,16 @@ export function Combobox({
             triggerClassName,
           )}
         >
-          <span className="truncate">
+          <span className="truncate min-w-0">
             {selected ? (selected.renderLabel ?? selected.label) : placeholder}
           </span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className={cn('p-0', className)} align="start">
-        <Command>
+        <Command onKeyDown={handleKeyDown}>
           <CommandInput placeholder={searchPlaceholder} />
-          <CommandList>
+          <CommandList ref={listRef}>
             <CommandEmpty>{emptyText}</CommandEmpty>
             <CommandGroup>
               {options.map((option) => (

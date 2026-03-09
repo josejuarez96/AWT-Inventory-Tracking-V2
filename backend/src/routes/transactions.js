@@ -127,6 +127,13 @@ router.post(
       return res.status(404).json({ error: 'Item not found' });
     }
 
+    // UOM integer validation (allowDecimalQty bypasses for cut materials)
+    if (!allowsDecimals(item.unitOfMeasure) && !item.allowDecimalQty && !Number.isInteger(quantity)) {
+      return res.status(400).json({
+        error: `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`,
+      });
+    }
+
     const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
     if (!vendor || !vendor.isActive) {
       return res.status(404).json({ error: 'Vendor not found' });
@@ -252,7 +259,7 @@ router.post(
     const itemIds = [...new Set(lineItems.map((li) => li.itemId))];
     const items = await prisma.item.findMany({
       where: { id: { in: itemIds }, isActive: true },
-      select: { id: true, itemCode: true, description: true, unitOfMeasure: true },
+      select: { id: true, itemCode: true, description: true, unitOfMeasure: true, allowDecimalQty: true },
     });
     const itemMap = new Map(items.map((i) => [i.id, i]));
 
@@ -264,7 +271,7 @@ router.post(
     // Block decimal quantities for whole-unit items (EA, SET, PAIR)
     for (const li of lineItems) {
       const liItem = itemMap.get(li.itemId);
-      if (liItem && !allowsDecimals(liItem.unitOfMeasure) && !Number.isInteger(li.quantity)) {
+      if (liItem && !allowsDecimals(liItem.unitOfMeasure) && !liItem.allowDecimalQty && !Number.isInteger(li.quantity)) {
         return res.status(400).json({
           error: `${liItem.itemCode} is measured in ${liItem.unitOfMeasure} — quantity must be a whole number.`,
         });
@@ -382,7 +389,7 @@ router.post(
     }
 
     // Block decimal quantities for whole-unit items (EA, SET, PAIR)
-    if (!allowsDecimals(item.unitOfMeasure) && !Number.isInteger(quantity)) {
+    if (!allowsDecimals(item.unitOfMeasure) && !item.allowDecimalQty && !Number.isInteger(quantity)) {
       return res.status(400).json({
         error: `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`,
       });
@@ -505,11 +512,11 @@ router.post(
     const codes = [...new Set(rows.map((r) => r.item_code.trim()))];
     const items = await prisma.item.findMany({
       where: { itemCode: { in: codes }, isActive: true },
-      select: { id: true, itemCode: true },
+      select: { id: true, itemCode: true, unitOfMeasure: true, allowDecimalQty: true },
     });
     const itemMap = {};
     for (const item of items) {
-      itemMap[item.itemCode] = item.id;
+      itemMap[item.itemCode] = item;
     }
 
     // Check for unknown codes
@@ -525,9 +532,24 @@ router.post(
       return res.status(400).json({ error: 'Some items not found', details: unknownErrors });
     }
 
+    // UOM integer validation
+    const uomErrors = [];
+    rows.forEach((row, index) => {
+      const code = row.item_code.trim();
+      const item = itemMap[code];
+      const qty = Number(row.quantity);
+      if (item && !allowsDecimals(item.unitOfMeasure) && !item.allowDecimalQty && !Number.isInteger(qty)) {
+        uomErrors.push({ rowNumber: index + 2, field: 'quantity', message: `${code} is measured in ${item.unitOfMeasure} — quantity must be a whole number.` });
+      }
+    });
+
+    if (uomErrors.length > 0) {
+      return res.status(400).json({ error: 'Integer quantity violations', details: uomErrors });
+    }
+
     // Check for existing opening balances (duplicate import protection)
     const importPairs = rows.map((row) => ({
-      itemId: itemMap[row.item_code.trim()],
+      itemId: itemMap[row.item_code.trim()].id,
       location: row.location.trim().toUpperCase(),
     }));
     const existingOBs = await prisma.transaction.findMany({
@@ -548,7 +570,7 @@ router.post(
     // Create opening balance transactions in batches to stay within DB parameter limits
     const data = rows.map((row) => ({
       transactionType: 'OPENING_BALANCE',
-      itemId: itemMap[row.item_code.trim()],
+      itemId: itemMap[row.item_code.trim()].id,
       location: row.location.trim().toUpperCase(),
       quantity: Number(row.quantity),
       unitCost: row.unit_cost && row.unit_cost !== '' ? Number(row.unit_cost) : null,
@@ -621,7 +643,7 @@ router.post(
     }
 
     // Block decimal quantities for whole-unit items (EA, SET, PAIR)
-    if (!allowsDecimals(item.unitOfMeasure) && !Number.isInteger(quantity)) {
+    if (!allowsDecimals(item.unitOfMeasure) && !item.allowDecimalQty && !Number.isInteger(quantity)) {
       return res.status(400).json({
         error: `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`,
       });
@@ -762,7 +784,7 @@ router.post(
     }
 
     // Block decimal quantities for whole-unit items (EA, SET, PAIR)
-    if (!allowsDecimals(item.unitOfMeasure) && !Number.isInteger(quantity)) {
+    if (!allowsDecimals(item.unitOfMeasure) && !item.allowDecimalQty && !Number.isInteger(quantity)) {
       return res.status(400).json({
         error: `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`,
       });

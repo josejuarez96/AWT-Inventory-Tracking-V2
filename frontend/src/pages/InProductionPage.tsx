@@ -26,6 +26,8 @@ type ProductionOrder = {
   quantityProduced: number;
   totalCost: number;
   notes: string | null;
+  vinReference: string | null;
+  configurationKey: string | null;
   finishedGood: { id: number; itemCode: string; description: string };
   bom: { id: number; bomCode: string; name: string } | null;
   creator: { fullName: string };
@@ -57,6 +59,13 @@ export function InProductionPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const limit = 20;
 
@@ -68,6 +77,7 @@ export function InProductionPage() {
       params.set('limit', String(limit));
       if (statusFilter) params.set('status', statusFilter);
       if (locationFilter) params.set('location', locationFilter);
+      if (debouncedSearch) params.set('search', debouncedSearch);
 
       const res = await api.get<{
         orders: ProductionOrder[];
@@ -83,7 +93,7 @@ export function InProductionPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, locationFilter]);
+  }, [page, statusFilter, locationFilter, debouncedSearch]);
 
   useEffect(() => {
     fetchOrders();
@@ -92,7 +102,7 @@ export function InProductionPage() {
   // Reset to page 1 when filters change
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, locationFilter]);
+  }, [statusFilter, locationFilter, debouncedSearch]);
 
   function clearFilters() {
     setStatusFilter('');
@@ -102,16 +112,6 @@ export function InProductionPage() {
   }
 
   const hasFilters = statusFilter || locationFilter || search;
-
-  // Client-side search filter (order number + finished good)
-  const filteredOrders = search
-    ? orders.filter(
-        (o) =>
-          o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
-          o.finishedGood.itemCode.toLowerCase().includes(search.toLowerCase()) ||
-          o.finishedGood.description.toLowerCase().includes(search.toLowerCase())
-      )
-    : orders;
 
   return (
     <div className="space-y-6 p-6">
@@ -175,6 +175,7 @@ export function InProductionPage() {
             <TableRow>
               <TableHead>Order #</TableHead>
               <TableHead>Finished Good</TableHead>
+              <TableHead>VIN</TableHead>
               <TableHead>Location</TableHead>
               <TableHead className="text-center">Total</TableHead>
               <TableHead className="text-center">Staged</TableHead>
@@ -187,18 +188,18 @@ export function InProductionPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-gray-400">
+                <TableCell colSpan={10} className="text-center py-8 text-gray-400">
                   Loading...
                 </TableCell>
               </TableRow>
-            ) : filteredOrders.length === 0 ? (
+            ) : orders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-8 text-gray-400">
+                <TableCell colSpan={10} className="text-center py-8 text-gray-400">
                   No production orders found
                 </TableCell>
               </TableRow>
             ) : (
-              filteredOrders.map((order) => (
+              orders.map((order) => (
                 <TableRow
                   key={order.id}
                   className="cursor-pointer hover:bg-gray-50"
@@ -208,6 +209,9 @@ export function InProductionPage() {
                   <TableCell>
                     <div className="text-sm">{order.finishedGood.itemCode}</div>
                     <div className="text-xs text-gray-500">{order.finishedGood.description}</div>
+                  </TableCell>
+                  <TableCell className="text-sm text-gray-500">
+                    {order.vinReference || '—'}
                   </TableCell>
                   <TableCell>{order.location}</TableCell>
                   <TableCell className="text-center">{order.totalQuantity}</TableCell>

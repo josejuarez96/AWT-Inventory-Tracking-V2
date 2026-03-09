@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const prisma = require('../lib/prisma');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { LOCATIONS } = require('../lib/locations');
+const { allowsDecimals } = require('../lib/uom');
 
 const router = express.Router();
 router.use(authenticate);
@@ -523,7 +524,7 @@ router.put(
 
     const cycleCount = await prisma.cycleCount.findUnique({
       where: { id },
-      include: { lines: true },
+      include: { lines: { include: { item: { select: { itemCode: true, unitOfMeasure: true, allowDecimalQty: true } } } } },
     });
 
     if (!cycleCount) {
@@ -551,6 +552,17 @@ router.put(
       }
       if (update.countedQty !== undefined && update.countedQty !== null && isNaN(Number(update.countedQty))) {
         return res.status(400).json({ error: `Invalid countedQty for line ${update.lineId}` });
+      }
+      // UOM integer validation — whole-unit UOMs cannot have decimal counted quantities
+      if (update.countedQty !== undefined && update.countedQty !== null) {
+        const qty = Number(update.countedQty);
+        const line = lineMap.get(update.lineId);
+        const uom = line.item.unitOfMeasure;
+        if (!allowsDecimals(uom) && !line.item.allowDecimalQty && !Number.isInteger(qty)) {
+          return res.status(400).json({
+            error: `${line.item.itemCode} is measured in ${uom} — quantity must be a whole number.`,
+          });
+        }
       }
     }
 

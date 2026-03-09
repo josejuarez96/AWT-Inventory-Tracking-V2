@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
 import { useFormDirty } from '@/context/FormDirtyContext';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
+import { allowsDecimals } from '@/lib/uom';
 import { AdminAuthDialog } from '@/components/AdminAuthDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -45,6 +46,7 @@ type CycleCountLine = {
     description: string;
     category: string | null;
     unitOfMeasure: string;
+    allowDecimalQty?: boolean;
   };
 };
 
@@ -237,6 +239,17 @@ export function CycleCountDetailPage() {
         setActionError('No counts entered');
         setSaving(false);
         return;
+      }
+
+      // UOM integer validation — whole-unit UOMs cannot have decimal counted quantities
+      const lineMap = new Map(cycleCount.lines.map((l) => [l.id, l]));
+      for (const line of lines) {
+        const detail = lineMap.get(line.lineId);
+        if (detail && !allowsDecimals(detail.item.unitOfMeasure) && !detail.item.allowDecimalQty && !Number.isInteger(line.countedQty)) {
+          setActionError(`${detail.item.itemCode} is measured in ${detail.item.unitOfMeasure} — quantity must be a whole number.`);
+          setSaving(false);
+          return;
+        }
       }
 
       const data = await api.put<{

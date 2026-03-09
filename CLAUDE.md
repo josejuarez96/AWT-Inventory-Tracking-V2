@@ -77,7 +77,7 @@ cd backend && npx prisma migrate dev && npm run prisma:seed
 
 ## Testing
 
-Backend API tests are in `testsprite_tests/` (Python). The backend must be running on localhost:3000 to execute them. No automated frontend tests. Manual API test script at `test-comprehensive.js` (run with `node test-comprehensive.js` while backend is running).
+Backend API tests are in `testsprite_tests/` (Python). The backend must be running on localhost:3000 to execute them. No automated frontend tests.
 
 **TestSprite archival**: After every TestSprite test run, execute `cd testsprite_tests && ./archive-run.sh "short-description"` to move generated TC*.py files into `runs/` and update `TEST_REGISTRY.md`. Never leave TC*.py files in the `testsprite_tests/` root.
 

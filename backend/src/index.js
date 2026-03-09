@@ -28,6 +28,7 @@ const dashboardRoutes = require('./routes/dashboard');
 const cycleCountsRoutes = require('./routes/cycleCounts');
 const bomsRoutes = require('./routes/boms');
 const productionRoutes = require('./routes/production');
+const optionsRoutes = require('./routes/options');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -92,6 +93,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/cycle-counts', cycleCountsRoutes);
 app.use('/api/boms', bomsRoutes);
 app.use('/api/production', productionRoutes);
+app.use('/api/boms', optionsRoutes);
 
 // --- Serve frontend static files (built React SPA) ---
 const frontendPath = path.join(__dirname, '../../frontend/dist');

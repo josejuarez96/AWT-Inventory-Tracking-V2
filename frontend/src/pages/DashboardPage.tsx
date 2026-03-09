@@ -1,19 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PackageOpen, ArrowLeftRight, Truck, Users, AlertTriangle, TrendingDown, DollarSign, Activity, PackageX } from 'lucide-react';
-
-type DashboardStats = {
-  totalItems: number;
-  transactionsMTD: number;
-  activeVendors: number;
-  teamMembers: number;
-  overstockCount: number;
-};
+import { AlertTriangle, TrendingDown, DollarSign } from 'lucide-react';
 
 type LowStockItem = {
   id: number;
@@ -38,47 +29,26 @@ type Valuation = {
   total: number;
 };
 
-type ActivityItem = {
-  id: number;
-  description: string;
-  transactionDate: string;
-  createdAt: string;
-  transactionType: string;
-  location: string;
-};
-
-
-function formatActivityDate(dateStr: string) {
-  return formatDate(dateStr);
-}
-
 export function DashboardPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
 
-  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
   const [deadStock, setDeadStock] = useState<DeadStockItem[]>([]);
   const [valuation, setValuation] = useState<Valuation | null>(null);
-  const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadDashboard() {
       try {
-        const [statsData, lowData, deadData, valData, actData] = await Promise.all([
-          api.get<DashboardStats>('/api/dashboard/stats'),
+        const [lowData, deadData, valData] = await Promise.all([
           api.get<{ items: LowStockItem[] }>('/api/dashboard/low-stock'),
           api.get<{ items: DeadStockItem[] }>('/api/dashboard/dead-stock'),
           api.get<Valuation>('/api/dashboard/valuation'),
-          api.get<{ activity: ActivityItem[] }>('/api/dashboard/activity'),
         ]);
-        setStats(statsData);
         setLowStock(lowData.items);
         setDeadStock(deadData.items);
         setValuation(valData);
-        setActivity(actData.activity);
       } catch {
         setError('Failed to load dashboard data.');
       } finally {
@@ -114,14 +84,6 @@ export function DashboardPage() {
     );
   }
 
-  const STAT_CARDS = [
-    { title: 'Total Items', icon: PackageOpen, value: stats?.totalItems ?? 0, sub: 'Active catalog items', link: '/items' },
-    { title: 'Transactions (MTD)', icon: ArrowLeftRight, value: stats?.transactionsMTD ?? 0, sub: 'This month', link: '/transactions' },
-    { title: 'Active Vendors', icon: Truck, value: stats?.activeVendors ?? 0, sub: 'Suppliers on file', link: '/vendors' },
-    { title: 'Team Members', icon: Users, value: stats?.teamMembers ?? 0, sub: 'Active users', link: user?.role === 'admin' ? '/users' : undefined },
-    ...(stats?.overstockCount ? [{ title: 'Overstock', icon: PackageX, value: stats.overstockCount, sub: 'Items above max quantity', link: '/inventory' }] : []),
-  ];
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -134,31 +96,8 @@ export function DashboardPage() {
         </p>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {STAT_CARDS.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <Card
-              key={stat.title}
-              className={`shadow-sm ${stat.link ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
-              onClick={stat.link ? () => navigate(stat.link!) : undefined}
-            >
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">{stat.title}</CardTitle>
-                <Icon className="h-4 w-4 text-gray-400" />
-              </CardHeader>
-              <CardContent>
-                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                <p className="mt-1 text-xs text-gray-400">{stat.sub}</p>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
       {/* Widgets grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl">
         {/* Running Low Alerts */}
         <Card className="shadow-sm">
           <CardHeader className="pb-3">
@@ -253,32 +192,6 @@ export function DashboardPage() {
                     <Badge variant="secondary" className="shrink-0">
                       {item.currentStock} on hand
                     </Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent Activity Feed */}
-        <Card className="shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="h-4 w-4 text-blue-500" />
-              Recent Activity
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {activity.length === 0 ? (
-              <p className="text-sm text-gray-400">No recent activity.</p>
-            ) : (
-              <ul className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                {activity.map((item) => (
-                  <li key={item.id} className="flex items-start justify-between gap-2">
-                    <p className="text-sm text-gray-700 leading-snug">{item.description}</p>
-                    <span className="text-xs text-gray-400 shrink-0">
-                      {formatActivityDate(item.transactionDate)}
-                    </span>
                   </li>
                 ))}
               </ul>

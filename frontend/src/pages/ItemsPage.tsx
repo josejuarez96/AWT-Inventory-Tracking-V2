@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { useAuthContext } from '@/context/AuthContext';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -6,8 +6,6 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -21,7 +19,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   DropdownMenu,
@@ -29,17 +26,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { MoreHorizontal, Pencil, Plus, Search, CheckCircle, X, Trash2 } from 'lucide-react';
-import { AdminAuthDialog } from '@/components/AdminAuthDialog';
-import { CATEGORIES } from '@/lib/categories';
-import { ALL_UOMS } from '@/lib/uom';
+import { MoreHorizontal, Plus, Search, CheckCircle, X } from 'lucide-react';
+import { ItemFormDialog } from '@/components/ItemFormDialog';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
 
@@ -59,37 +47,11 @@ type Item = {
   defaultVendor: Vendor | null;
   additionalVendors?: ItemVendorEntry[];
   itemType?: string;
+  allowDecimalQty?: boolean;
+  stockLength?: number | null;
   isActive?: boolean;
   notes?: string | null;
   createdAt?: string;
-};
-
-type ItemForm = {
-  itemCode: string;
-  description: string;
-  category: string;
-  unitOfMeasure: string;
-  minQuantity: string;
-  maxQuantity: string;
-  standardCost: string;
-  defaultVendorId: string;
-  additionalVendorIds: string[];
-  notes: string;
-  itemType: string;
-};
-
-const EMPTY_FORM: ItemForm = {
-  itemCode: '',
-  description: '',
-  category: '',
-  unitOfMeasure: 'EA',
-  minQuantity: '',
-  maxQuantity: '',
-  standardCost: '',
-  defaultVendorId: '',
-  additionalVendorIds: [],
-  notes: '',
-  itemType: 'RAW',
 };
 
 const ITEM_TYPE_BADGE: Record<string, { label: string; className: string }> = {
@@ -109,11 +71,8 @@ export function ItemsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState<ItemForm>(EMPTY_FORM);
-  const [formError, setFormError] = useState('');
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [toggleError, setToggleError] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState<{ id: number; currentStatus: boolean; itemCode: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ id: number; itemCode: string } | null>(null);
   const [deleteError, setDeleteError] = useState('');
@@ -121,11 +80,6 @@ export function ItemsPage() {
   const [detailItem, setDetailItem] = useState<Item | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [codeUnlocked, setCodeUnlocked] = useState(false);
-  const [codeAuthOpen, setCodeAuthOpen] = useState(false);
-  const [codeAuthError, setCodeAuthError] = useState<string | null>(null);
-  const [codeAuthSubmitting, setCodeAuthSubmitting] = useState(false);
-  const [codeUniqueError, setCodeUniqueError] = useState('');
 
   useEffect(() => {
     if (successMessage) {
@@ -134,7 +88,7 @@ export function ItemsPage() {
     }
   }, [successMessage]);
 
-  async function fetchItems() {
+  const fetchItems = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await api.get<{ items: Item[] }>('/api/items?all=true');
@@ -142,55 +96,20 @@ export function ItemsPage() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void fetchItems();
     api.get<{ vendors: Vendor[] }>('/api/vendors').then((d) => setVendors(d.vendors)).catch(() => {});
-  }, []);
+  }, [fetchItems]);
 
-  async function openCreate() {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-    setFormError('');
-    setCodeUnlocked(false);
-    setCodeUniqueError('');
+  function openCreate() {
+    setEditingItem(null);
     setDialogOpen(true);
-
-    try {
-      const data = await api.get<{ nextCode: string }>('/api/items/next-code?prefix=AWT-');
-      setForm((f) => ({ ...f, itemCode: data.nextCode }));
-    } catch {
-      // Leave blank if endpoint fails; user can type manually
-    }
   }
 
-  async function openEdit(item: Item) {
-    setEditingId(item.id);
-    setFormError('');
-    setCodeUnlocked(false);
-    setCodeUniqueError('');
-    // Fetch full item detail to get additional vendors
-    let additionalVendorIds: string[] = [];
-    try {
-      const detail = await api.get<{ item: Item }>(`/api/items/${item.id}`);
-      additionalVendorIds = (detail.item.additionalVendors ?? []).map((av) => String(av.vendor.id));
-    } catch {
-      // Fall back to no additional vendors
-    }
-    setForm({
-      itemCode: item.itemCode,
-      description: item.description,
-      category: item.category ?? '',
-      unitOfMeasure: item.unitOfMeasure,
-      minQuantity: item.minQuantity != null ? String(item.minQuantity) : '',
-      maxQuantity: item.maxQuantity != null ? String(item.maxQuantity) : '',
-      standardCost: item.standardCost != null ? String(item.standardCost) : '',
-      defaultVendorId: item.defaultVendorId != null ? String(item.defaultVendorId) : '',
-      additionalVendorIds,
-      notes: item.notes ?? '',
-      itemType: item.itemType ?? 'RAW',
-    });
+  function openEdit(item: Item) {
+    setEditingItem(item);
     setDialogOpen(true);
   }
 
@@ -208,77 +127,10 @@ export function ItemsPage() {
     }
   }
 
-  async function handleCodeAuthAuthorize(credentials: { username: string; password: string }) {
-    setCodeAuthSubmitting(true);
-    setCodeAuthError(null);
-    try {
-      await api.post('/api/auth/login', credentials);
-      setCodeUnlocked(true);
-      setCodeAuthOpen(false);
-    } catch (err) {
-      setCodeAuthError(err instanceof ApiError ? err.message : 'Authorization failed');
-    } finally {
-      setCodeAuthSubmitting(false);
-    }
-  }
-
-  async function checkCodeUniqueness(code: string) {
-    if (!code.trim()) {
-      setCodeUniqueError('');
-      return;
-    }
-    try {
-      const data = await api.get<{ exists: boolean; id: number | null }>(
-        `/api/items/check-code?code=${encodeURIComponent(code.trim())}`
-      );
-      if (data.exists && data.id !== editingId) {
-        setCodeUniqueError(`Item code "${code.trim()}" already exists.`);
-      } else {
-        setCodeUniqueError('');
-      }
-    } catch {
-      setCodeUniqueError('');
-    }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setFormError('');
-    if (codeUniqueError) {
-      setFormError('Please resolve the item code conflict before saving.');
-      return;
-    }
-    setIsSaving(true);
-
-    const payload = {
-      itemCode: form.itemCode.trim(),
-      description: form.description.trim(),
-      category: form.category.trim() || null,
-      unitOfMeasure: form.unitOfMeasure.trim() || 'EA',
-      minQuantity: form.minQuantity ? parseFloat(form.minQuantity) : null,
-      maxQuantity: form.maxQuantity ? parseFloat(form.maxQuantity) : null,
-      standardCost: form.standardCost ? parseFloat(form.standardCost) : null,
-      defaultVendorId: form.defaultVendorId ? parseInt(form.defaultVendorId) : null,
-      additionalVendorIds: form.additionalVendorIds.filter((id) => id).map((id) => parseInt(id)),
-      notes: form.notes.trim() || null,
-      itemType: form.itemType,
-    };
-
-    try {
-      if (editingId) {
-        await api.put(`/api/items/${editingId}`, payload);
-        setSuccessMessage(`Item "${payload.itemCode}" updated successfully.`);
-      } else {
-        await api.post('/api/items', payload);
-        setSuccessMessage(`Item "${payload.itemCode}" created successfully.`);
-      }
-      setDialogOpen(false);
-      void fetchItems();
-    } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Failed to save item');
-    } finally {
-      setIsSaving(false);
-    }
+  function handleSaved(message: string) {
+    setSuccessMessage(message);
+    setDialogOpen(false);
+    void fetchItems();
   }
 
   async function handleToggleStatus(id: number, currentStatus: boolean, itemCode: string) {
@@ -319,278 +171,12 @@ export function ItemsPage() {
           <h1 className="text-2xl font-semibold text-gray-900">Items</h1>
           <p className="mt-1 text-sm text-gray-500">Manage inventory item master data</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          {isAdmin && (
-            <DialogTrigger asChild>
-              <Button size="sm" onClick={openCreate}>
-                <Plus className="mr-2 h-4 w-4" />
-                New Item
-              </Button>
-            </DialogTrigger>
-          )}
-          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
-            <DialogHeader>
-              <DialogTitle>{editingId ? 'Edit Item' : 'Create New Item'}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="itemCode">Item Code <span className="text-red-500">*</span></Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="itemCode"
-                      value={form.itemCode}
-                      onChange={(e) => {
-                        setForm((f) => ({ ...f, itemCode: e.target.value.toUpperCase() }));
-                        setCodeUniqueError('');
-                      }}
-                      onBlur={() => checkCodeUniqueness(form.itemCode)}
-                      maxLength={50}
-                      required
-                      disabled={!!editingId && !codeUnlocked}
-                      className={editingId && !codeUnlocked ? 'bg-gray-100' : ''}
-                    />
-                    {editingId && !codeUnlocked && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="h-9 w-9 shrink-0"
-                        title="Unlock item code (requires admin)"
-                        onClick={() => {
-                          setCodeAuthError(null);
-                          setCodeAuthOpen(true);
-                        }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                  {codeUniqueError && (
-                    <p className="text-xs text-red-600">{codeUniqueError}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="unitOfMeasure">Unit of Measure</Label>
-                  <Select
-                    value={form.unitOfMeasure}
-                    onValueChange={(v) => setForm((f) => ({ ...f, unitOfMeasure: v }))}
-                  >
-                    <SelectTrigger id="unitOfMeasure">
-                      <SelectValue placeholder="EA" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ALL_UOMS.map((uom) => (
-                        <SelectItem key={uom} value={uom}>{uom}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description <span className="text-red-500">*</span></Label>
-                <Input
-                  id="description"
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="category">Category</Label>
-                  <Select
-                    value={form.category || ''}
-                    onValueChange={(val) => setForm((f) => ({ ...f, category: val === '__none__' ? '' : val }))}
-                  >
-                    <SelectTrigger id="category">
-                      <SelectValue placeholder="Select category..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">— None —</SelectItem>
-                      {CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="itemType">Item Type</Label>
-                  <Select
-                    value={form.itemType}
-                    onValueChange={(val) => setForm((f) => ({ ...f, itemType: val }))}
-                  >
-                    <SelectTrigger id="itemType">
-                      <SelectValue placeholder="Select type..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="RAW">RAW</SelectItem>
-                      <SelectItem value="FINISHED">FINISHED</SelectItem>
-                      <SelectItem value="OTHER">OTHER</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="minQuantity">Min Quantity</Label>
-                  <Input
-                    id="minQuantity"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={form.minQuantity}
-                    onChange={(e) => setForm((f) => ({ ...f, minQuantity: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="maxQuantity">Max Quantity</Label>
-                  <Input
-                    id="maxQuantity"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={form.maxQuantity}
-                    onChange={(e) => setForm((f) => ({ ...f, maxQuantity: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="standardCost">Standard Cost ($)</Label>
-                  <Input
-                    id="standardCost"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.standardCost}
-                    onChange={(e) => setForm((f) => ({ ...f, standardCost: e.target.value }))}
-                    onBlur={(e) => {
-                      const val = parseFloat(e.target.value);
-                      if (!isNaN(val)) {
-                        setForm((f) => ({ ...f, standardCost: val.toFixed(2) }));
-                      }
-                    }}
-                    placeholder="0.00"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="defaultVendorId">Default Vendor</Label>
-                  <Select
-                    value={form.defaultVendorId}
-                    onValueChange={(val) => setForm((f) => ({ ...f, defaultVendorId: val === '__none__' ? '' : val }))}
-                  >
-                    <SelectTrigger id="defaultVendorId">
-                      <SelectValue placeholder="Select vendor..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">None</SelectItem>
-                      {vendors.map((v) => (
-                        <SelectItem key={v.id} value={String(v.id)}>
-                          {v.vendorCode} — {v.vendorName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              {/* Additional Vendors */}
-              <div className="space-y-2">
-                <Label className="block">Additional Vendors</Label>
-                {form.additionalVendorIds.map((vid, idx) => {
-                  // Filter out default vendor and already-selected vendors (except this slot)
-                  const usedIds = new Set([
-                    form.defaultVendorId,
-                    ...form.additionalVendorIds.filter((_, i) => i !== idx),
-                  ]);
-                  const available = vendors.filter((v) => !usedIds.has(String(v.id)));
-                  return (
-                    <div key={idx} className="flex items-center gap-2">
-                      <Select
-                        value={vid}
-                        onValueChange={(val) => {
-                          setForm((f) => {
-                            const updated = [...f.additionalVendorIds];
-                            updated[idx] = val;
-                            return { ...f, additionalVendorIds: updated };
-                          });
-                        }}
-                      >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Select vendor..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {/* Keep the currently selected vendor visible even if it would be filtered */}
-                          {vid && !available.find((v) => String(v.id) === vid) && (() => {
-                            const current = vendors.find((v) => String(v.id) === vid);
-                            return current ? (
-                              <SelectItem key={current.id} value={String(current.id)}>
-                                {current.vendorCode} — {current.vendorName}
-                              </SelectItem>
-                            ) : null;
-                          })()}
-                          {available.map((v) => (
-                            <SelectItem key={v.id} value={String(v.id)}>
-                              {v.vendorCode} — {v.vendorName}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 text-gray-400 hover:text-red-600"
-                        onClick={() => {
-                          setForm((f) => ({
-                            ...f,
-                            additionalVendorIds: f.additionalVendorIds.filter((_, i) => i !== idx),
-                          }));
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  );
-                })}
-                {/* Only show Add button if there are vendors available to add */}
-                {(() => {
-                  const usedIds = new Set([form.defaultVendorId, ...form.additionalVendorIds]);
-                  const availableCount = vendors.filter((v) => !usedIds.has(String(v.id))).length;
-                  return availableCount > 0 ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setForm((f) => ({ ...f, additionalVendorIds: [...f.additionalVendorIds, ''] }))}
-                    >
-                      <Plus className="mr-1 h-3 w-3" />
-                      Add Vendor
-                    </Button>
-                  ) : null;
-                })()}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes</Label>
-                <Textarea
-                  id="notes"
-                  value={form.notes}
-                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-                  rows={2}
-                />
-              </div>
-              {formError && <p className="text-sm text-red-500">{formError}</p>}
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving ? 'Saving...' : editingId ? 'Update Item' : 'Create Item'}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+        {isAdmin && (
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Item
+          </Button>
+        )}
       </div>
 
       {/* Search */}
@@ -849,6 +435,14 @@ export function ItemsPage() {
         </DialogContent>
       </Dialog>
 
+      <ItemFormDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onSaved={handleSaved}
+        editingItem={editingItem}
+        vendors={vendors}
+      />
+
       <ConfirmDialog
         open={confirmToggle !== null}
         onOpenChange={(open) => { if (!open) setConfirmToggle(null); }}
@@ -881,16 +475,6 @@ export function ItemsPage() {
             setConfirmDelete(null);
           }
         }}
-      />
-
-      <AdminAuthDialog
-        open={codeAuthOpen}
-        onOpenChange={setCodeAuthOpen}
-        title="Admin Authorization Required"
-        description="Changing an item code can affect transaction history references. Enter admin credentials to unlock."
-        onAuthorize={handleCodeAuthAuthorize}
-        isSubmitting={codeAuthSubmitting}
-        error={codeAuthError}
       />
     </div>
   );

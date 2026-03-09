@@ -19,6 +19,7 @@ function serializeItem(item) {
     safetyStock: item.safetyStock?.toNumber?.() ?? item.safetyStock ?? null,
     standardCost: item.standardCost?.toNumber?.() ?? item.standardCost ?? null,
     lastPurchaseCost: item.lastPurchaseCost?.toNumber?.() ?? item.lastPurchaseCost ?? null,
+    stockLength: item.stockLength?.toNumber?.() ?? item.stockLength ?? null,
     defaultVendorId: item.defaultVendorId ?? null,
     defaultVendor: item.defaultVendor ?? null,
   };
@@ -46,6 +47,8 @@ router.get('/', async (req, res) => {
       defaultVendorId: true,
       defaultVendor: { select: VENDOR_SELECT },
       itemType: true,
+      allowDecimalQty: true,
+      stockLength: true,
       ...(showAll && { isActive: true, notes: true, createdAt: true }),
     },
   });
@@ -300,6 +303,8 @@ router.post(
     body('defaultVendorId').optional({ nullable: true }).isInt({ gt: 0 }).withMessage('defaultVendorId must be a positive integer'),
     body('notes').optional({ nullable: true }).trim(),
     body('itemType').optional().isIn(['RAW', 'FINISHED', 'OTHER']).withMessage('itemType must be RAW, FINISHED, or OTHER'),
+    body('allowDecimalQty').optional().isBoolean().withMessage('allowDecimalQty must be a boolean'),
+    body('stockLength').optional({ nullable: true }).isFloat({ gt: 0 }).withMessage('stockLength must be > 0'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -307,13 +312,18 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId } = req.body;
+    const { description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId, allowDecimalQty, stockLength } = req.body;
     const itemCode = req.body.itemCode.toUpperCase();
 
     // Check unique itemCode (case-insensitive)
     const existing = await prisma.item.findFirst({ where: { itemCode: { equals: itemCode, mode: 'insensitive' } } });
     if (existing) {
       return res.status(409).json({ error: `Item code "${itemCode}" already exists` });
+    }
+
+    // stockLength requires allowDecimalQty
+    if (stockLength != null && !allowDecimalQty) {
+      return res.status(400).json({ error: 'stockLength can only be set on items with allowDecimalQty enabled' });
     }
 
     // Validate defaultVendorId if provided
@@ -338,6 +348,8 @@ router.post(
         defaultVendorId: defaultVendorId ?? null,
         notes: notes || null,
         itemType: req.body.itemType || 'RAW',
+        allowDecimalQty: allowDecimalQty === true,
+        stockLength: stockLength != null ? parseFloat(stockLength) : null,
         ...(additionalVendorIds.length > 0 && {
           additionalVendors: {
             create: additionalVendorIds.map((vid) => ({ vendorId: vid })),
@@ -375,6 +387,8 @@ router.put(
     body('defaultVendorId').optional({ nullable: true }).isInt({ gt: 0 }).withMessage('defaultVendorId must be a positive integer'),
     body('notes').optional({ nullable: true }).trim(),
     body('itemType').optional().isIn(['RAW', 'FINISHED', 'OTHER']).withMessage('itemType must be RAW, FINISHED, or OTHER'),
+    body('allowDecimalQty').optional().isBoolean().withMessage('allowDecimalQty must be a boolean'),
+    body('stockLength').optional({ nullable: true }).isFloat({ gt: 0 }).withMessage('stockLength must be > 0'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -388,7 +402,7 @@ router.put(
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    const { description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId } = req.body;
+    const { description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId, allowDecimalQty, stockLength } = req.body;
     const itemCode = req.body.itemCode ? req.body.itemCode.toUpperCase() : undefined;
 
     // If itemCode is changing, check uniqueness (case-insensitive)
@@ -397,6 +411,13 @@ router.put(
       if (conflict) {
         return res.status(409).json({ error: `Item code "${itemCode}" already exists` });
       }
+    }
+
+    // stockLength requires allowDecimalQty
+    const effectiveAllowDecimal = allowDecimalQty !== undefined ? allowDecimalQty === true : existing.allowDecimalQty;
+    const effectiveStockLength = stockLength !== undefined ? stockLength : existing.stockLength;
+    if (effectiveStockLength != null && !effectiveAllowDecimal) {
+      return res.status(400).json({ error: 'stockLength can only be set on items with allowDecimalQty enabled' });
     }
 
     // Validate defaultVendorId if provided
@@ -418,6 +439,10 @@ router.put(
     if (defaultVendorId !== undefined) data.defaultVendorId = defaultVendorId;
     if (notes !== undefined) data.notes = notes || null;
     if (req.body.itemType !== undefined) data.itemType = req.body.itemType;
+    if (allowDecimalQty !== undefined) data.allowDecimalQty = allowDecimalQty === true;
+    // Nullify stockLength if allowDecimalQty is being disabled
+    if (allowDecimalQty === false && existing.stockLength != null) data.stockLength = null;
+    else if (stockLength !== undefined) data.stockLength = stockLength != null ? parseFloat(stockLength) : null;
 
     // Sync additional vendors if provided
     const additionalVendorIds = req.body.additionalVendorIds;
@@ -484,7 +509,25 @@ router.patch(
         });
       }
 
-      // 2. Check if item is a finished good in any ACTIVE BOM
+      // 2. Check if item is used in any ACTIVE option package
+      const activeOptionRefs = await prisma.optionLine.findMany({
+        where: {
+          itemId: id,
+          optionPackage: {
+            status: 'ACTIVE',
+            optionGroup: { bom: { status: 'ACTIVE' } },
+          },
+        },
+        include: { optionPackage: { select: { name: true, optionGroup: { select: { bom: { select: { bomCode: true } } } } } } },
+      });
+      if (activeOptionRefs.length > 0) {
+        const pkgList = [...new Set(activeOptionRefs.map((r) => `${r.optionPackage.optionGroup.bom.bomCode}/${r.optionPackage.name}`))].join(', ');
+        return res.status(400).json({
+          error: `Cannot deactivate item — it is used in ${activeOptionRefs.length} active option package(s): ${pkgList}.`,
+        });
+      }
+
+      // 3. Check if item is a finished good in any ACTIVE BOM
       const activeFgBoms = await prisma.bom.findMany({
         where: {
           finishedGoodId: id,

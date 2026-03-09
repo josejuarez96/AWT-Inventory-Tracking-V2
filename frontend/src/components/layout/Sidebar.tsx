@@ -74,7 +74,7 @@ const PRODUCTION_GROUP: NavGroup = {
 };
 
 const ADMIN_ITEMS: NavItem[] = [
-  { icon: Layers, label: 'BOMs', path: '/boms', adminOnly: true, enabled: true },
+  { icon: Layers, label: 'BOMs', path: '/boms', adminOnly: false, enabled: true },
   { icon: Truck, label: 'Vendors', path: '/vendors', adminOnly: false, enabled: true },
   { icon: Upload, label: 'Import', path: '/import', adminOnly: true, enabled: true },
   { icon: Users, label: 'Users', path: '/users', adminOnly: true, enabled: true },

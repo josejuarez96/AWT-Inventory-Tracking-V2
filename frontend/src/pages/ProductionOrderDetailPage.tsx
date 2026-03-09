@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Check, X as XIcon, RotateCcw, Loader2 } from 'lucide-react';
+import { ArrowLeft, Check, X as XIcon, RotateCcw, Loader2, Copy } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,27 @@ type ComponentSnapshot = {
   itemCode: string;
   description: string;
   quantityPer: number;
+  scrapPercent?: number | null;
+  cutDetails?: unknown;
+  effectiveQty?: number;
+  unitCost?: number;
+  source?: string;
+};
+
+type ConfigurationSnapshot = {
+  bomId: number;
+  bomCode: string;
+  selections: {
+    groupId: number;
+    groupName: string;
+    selectionType: string;
+    packageId: number | null;
+    packageName: string;
+    quantity: number;
+    allowQuantity: boolean;
+  }[];
+  deviations: unknown[];
+  componentSnapshot: ComponentSnapshot[];
 };
 
 type ProductionOrderLine = {
@@ -53,6 +74,9 @@ type ProductionOrder = {
   quantityProduced: number;
   totalCost: number;
   notes: string | null;
+  vinReference: string | null;
+  configurationSnapshot: ConfigurationSnapshot | null;
+  configurationKey: string | null;
   finishedGood: { id: number; itemCode: string; description: string; unitOfMeasure: string };
   bom: { id: number; bomCode: string; name: string } | null;
   creator: { fullName: string };
@@ -202,6 +226,7 @@ export function ProductionOrderDetailPage() {
 
   // Get component list from first line's snapshot (all lines share the same)
   const components = order.lines[0]?.componentSnapshot ?? [];
+  const hasConfigSnapshot = !!order.configurationSnapshot;
 
   // Build confirm dialog content
   let confirmTitle = '';
@@ -311,6 +336,12 @@ export function ProductionOrderDetailPage() {
             ${order.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
           </p>
         </div>
+        {order.vinReference && (
+          <div>
+            <p className="text-xs text-gray-500">VIN Reference</p>
+            <p className="text-sm font-medium">{order.vinReference}</p>
+          </div>
+        )}
         {order.notes && (
           <div>
             <p className="text-xs text-gray-500">Notes</p>
@@ -318,6 +349,44 @@ export function ProductionOrderDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Configuration Section (if options were selected) */}
+      {order.configurationSnapshot && (
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">Configuration</h2>
+          <div className="rounded-lg border p-4 bg-gray-50/50 space-y-2">
+            {order.configurationKey && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Config Key:</span>
+                <code className="text-xs font-mono bg-gray-100 px-1.5 py-0.5 rounded">{order.configurationKey}</code>
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-foreground"
+                  title="Copy to clipboard"
+                  onClick={() => navigator.clipboard.writeText(order.configurationKey!)}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {order.configurationSnapshot.selections
+                .filter(s => s.packageId !== null)
+                .map((s, idx) => (
+                  <div key={idx} className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">{s.groupName}:</span>
+                    <span className="font-medium">{s.packageName}</span>
+                    {s.allowQuantity && s.quantity > 1 && (
+                      <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">
+                        x{s.quantity}
+                      </Badge>
+                    )}
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Component Template */}
       <div>
@@ -329,14 +398,40 @@ export function ProductionOrderDetailPage() {
                 <TableHead>Item Code</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="text-right">Qty / Unit</TableHead>
+                {hasConfigSnapshot && <TableHead>Source</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {components.map((comp, idx) => (
                 <TableRow key={idx}>
                   <TableCell className="font-medium">{comp.itemCode}</TableCell>
-                  <TableCell className="text-sm text-gray-500">{comp.description}</TableCell>
-                  <TableCell className="text-right">{comp.quantityPer}</TableCell>
+                  <TableCell className="text-sm text-gray-500">
+                    {comp.description}
+                    {comp.scrapPercent != null && comp.scrapPercent > 0 && (
+                      <span className="text-xs text-muted-foreground ml-1">(+{comp.scrapPercent}% scrap)</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {comp.effectiveQty ?? comp.quantityPer}
+                  </TableCell>
+                  {hasConfigSnapshot && (
+                    <TableCell>
+                      {comp.source && (
+                        <Badge
+                          variant={comp.source === 'BASE' ? 'secondary' : 'outline'}
+                          className={`text-[10px] px-1.5 py-0 h-5 ${
+                            comp.source === 'BASE'
+                              ? ''
+                              : comp.source.startsWith('BASE +')
+                              ? 'text-purple-700 border-purple-300'
+                              : 'text-blue-700 border-blue-300'
+                          }`}
+                        >
+                          {comp.source}
+                        </Badge>
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

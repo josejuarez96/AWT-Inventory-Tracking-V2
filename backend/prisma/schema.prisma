@@ -32,6 +32,10 @@ model User {
   productionLinesPosted   ProductionOrderLine[] @relation("linePostUser")
   productionLinesVoided   ProductionOrderLine[] @relation("lineVoidUser")
   productionLinesReversed ProductionOrderLine[] @relation("lineReverseUser")
+  optionGroupsCreated     OptionGroup[]         @relation("optionGroupCreator")
+  optionGroupsUpdated     OptionGroup[]         @relation("optionGroupUpdater")
+  optionPackagesCreated   OptionPackage[]       @relation("optionPackageCreator")
+  optionPackagesUpdated   OptionPackage[]       @relation("optionPackageUpdater")
 
   @@map("users")
 }
@@ -72,6 +76,9 @@ model Item {
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")
 
+  allowDecimalQty Boolean   @default(false) @map("allow_decimal_qty")
+  stockLength     Decimal?  @map("stock_length") @db.Decimal(10, 4)
+
   defaultVendor   Vendor?   @relation("defaultVendorItems", fields: [defaultVendorId], references: [id])
   additionalVendors ItemVendor[]
   transactions    Transaction[]
@@ -79,6 +86,7 @@ model Item {
   bomsAsFinishedGood             Bom[]             @relation("bomFinishedGood")
   bomLinesAsComponent            BomLine[]         @relation("bomLineItem")
   productionOrdersAsFinishedGood ProductionOrder[] @relation("productionFinishedGood")
+  optionLines                    OptionLine[]
 
   @@map("items")
 }
@@ -175,6 +183,7 @@ model Bom {
   finishedGood     Item              @relation("bomFinishedGood", fields: [finishedGoodId], references: [id])
   creator          User              @relation("bomCreator", fields: [createdBy], references: [id])
   lines            BomLine[]
+  optionGroups     OptionGroup[]
   productionOrders ProductionOrder[]
 
   @@index([status])
@@ -183,12 +192,14 @@ model Bom {
 }
 
 model BomLine {
-  id          Int     @id @default(autoincrement())
-  bomId       Int     @map("bom_id")
-  itemId      Int     @map("item_id")
-  quantityPer Decimal @map("quantity_per") @db.Decimal(10, 4)
+  id          Int      @id @default(autoincrement())
+  bomId       Int      @map("bom_id")
+  itemId      Int      @map("item_id")
+  quantityPer Decimal  @map("quantity_per") @db.Decimal(10, 4)
+  scrapPercent Decimal? @map("scrap_percent") @db.Decimal(5, 2)
+  cutDetails  Json?    @map("cut_details")
   notes       String?
-  sortOrder   Int     @default(0) @map("sort_order")
+  sortOrder   Int      @default(0) @map("sort_order")
 
   bom         Bom     @relation(fields: [bomId], references: [id], onDelete: Cascade)
   item        Item    @relation("bomLineItem", fields: [itemId], references: [id])
@@ -212,6 +223,15 @@ model ProductionOrder {
   notes            String?
   hasDeviations    Boolean   @default(false) @map("has_deviations")
   deviationNotes   String?   @map("deviation_notes")
+  vinReference     String?   @map("vin_reference") @db.VarChar(500)
+  /// JSON structure: {
+  ///   bomId, bomCode,
+  ///   selections: [{ groupId, groupName, selectionType, packageId, packageName, quantity }],
+  ///   deviations: [{ itemId, itemCode, quantityPer, notes }],
+  ///   componentSnapshot: [{ itemId, itemCode, quantityPer, scrapPercent, cutDetails, effectiveQty, unitCost, source }]
+  /// }
+  configurationSnapshot Json? @map("configuration_snapshot")
+  configurationKey      String? @map("configuration_key") @db.Text
   createdBy        Int       @map("created_by")
   createdAt        DateTime  @default(now()) @map("created_at")
 
@@ -225,6 +245,7 @@ model ProductionOrder {
   @@index([location])
   @@index([status])
   @@index([orderType])
+  @@index([configurationKey])
   @@map("production_orders")
 }
 
@@ -268,4 +289,74 @@ model ItemVendor {
   @@unique([itemId, vendorId])
   @@index([itemId])
   @@map("item_vendors")
+}
+
+model OptionGroup {
+  id            Int       @id @default(autoincrement())
+  bomId         Int       @map("bom_id")
+  name          String    @db.VarChar(100)
+  category      String?   @db.VarChar(50)
+  selectionType String    @map("selection_type") @db.VarChar(20) // 'PICK_ONE' or 'PICK_MANY'
+  required      Boolean   @default(false)
+  sortOrder     Int       @default(0) @map("sort_order")
+  createdBy     Int       @map("created_by")
+  updatedBy     Int?      @map("updated_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  bom           Bom       @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  creator       User      @relation("optionGroupCreator", fields: [createdBy], references: [id])
+  updater       User?     @relation("optionGroupUpdater", fields: [updatedBy], references: [id])
+  packages      OptionPackage[]
+
+  @@unique([bomId, name])
+  @@index([bomId])
+  @@map("option_groups")
+}
+
+model OptionPackage {
+  id             Int       @id @default(autoincrement())
+  optionGroupId  Int       @map("option_group_id")
+  name           String    @db.VarChar(100)
+  isDefault      Boolean   @default(false) @map("is_default")
+  status         String    @default("DRAFT") @db.VarChar(20) // 'DRAFT', 'ACTIVE', 'RETIRED'
+  allowQuantity  Boolean   @default(false) @map("allow_quantity")
+  minQuantity    Int       @default(1) @map("min_quantity")
+  maxQuantity    Int?      @map("max_quantity")
+  sortOrder      Int       @default(0) @map("sort_order")
+  notes          String?
+  createdBy      Int       @map("created_by")
+  updatedBy      Int?      @map("updated_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  optionGroup    OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  creator        User        @relation("optionPackageCreator", fields: [createdBy], references: [id])
+  updater        User?       @relation("optionPackageUpdater", fields: [updatedBy], references: [id])
+  lines          OptionLine[]
+
+  @@unique([optionGroupId, name])
+  @@index([optionGroupId])
+  @@index([status])
+  @@index([optionGroupId, isDefault])
+  @@map("option_packages")
+}
+
+model OptionLine {
+  id              Int       @id @default(autoincrement())
+  optionPackageId Int       @map("option_package_id")
+  itemId          Int       @map("item_id")
+  action          String    @db.VarChar(10) // 'ADD' or 'REMOVE'
+  quantityPer     Decimal   @map("quantity_per") @db.Decimal(10, 4)
+  scrapPercent    Decimal?  @map("scrap_percent") @db.Decimal(5, 2)
+  cutDetails      Json?     @map("cut_details")
+  sortOrder       Int       @default(0) @map("sort_order")
+  notes           String?
+
+  optionPackage   OptionPackage @relation(fields: [optionPackageId], references: [id], onDelete: Cascade)
+  item            Item          @relation(fields: [itemId], references: [id])
+
+  @@unique([optionPackageId, itemId, action])
+  @@index([optionPackageId])
+  @@map("option_lines")
 }

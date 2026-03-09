@@ -24,7 +24,7 @@ import {
 import { CheckCircle } from 'lucide-react';
 import { ImportTab } from '@/components/ImportTab';
 
-type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string };
+type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; allowDecimalQty?: boolean };
 
 const schema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -220,7 +220,7 @@ export function OpeningBalancePage() {
                 {(() => {
                   const watchedItemId = watch('itemId');
                   const selectedItem = items.find((i) => String(i.id) === watchedItemId);
-                  const isWholeUnit = selectedItem && !allowsDecimals(selectedItem.unitOfMeasure);
+                  const isWholeUnit = selectedItem && !allowsDecimals(selectedItem.unitOfMeasure) && !selectedItem.allowDecimalQty;
                   return (
                     <div className="space-y-1">
                       <Label htmlFor="quantity">Quantity <span className="text-red-500">*</span></Label>
@@ -256,6 +256,13 @@ export function OpeningBalancePage() {
                     min="0.01"
                     placeholder="0.00"
                     {...register('unitCost')}
+                    onBlur={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (!isNaN(val)) {
+                        e.target.value = val.toFixed(2);
+                        setValue('unitCost', val);
+                      }
+                    }}
                   />
                   {errors.unitCost && (
                     <p className="text-xs text-red-600 animate-field-error">{errors.unitCost.message}</p>

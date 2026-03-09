@@ -23,7 +23,7 @@ import {
 import { CheckCircle, AlertTriangle } from 'lucide-react';
 import { Combobox } from '@/components/ui/combobox';
 
-type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string };
+type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; allowDecimalQty?: boolean };
 type StockPosition = {
   item: { id: number };
   qtyByLocation: Record<string, number>;
@@ -318,7 +318,7 @@ export function TransferPage() {
             {...register('quantity', {
               validate: (v) => {
                 const item = items.find((i) => String(i.id) === watch('itemId'));
-                if (item && !allowsDecimals(item.unitOfMeasure) && v !== undefined && v % 1 !== 0) {
+                if (item && !allowsDecimals(item.unitOfMeasure) && !item.allowDecimalQty && v !== undefined && v % 1 !== 0) {
                   return `${item.itemCode} is measured in ${item.unitOfMeasure} — quantity must be a whole number.`;
                 }
                 return true;

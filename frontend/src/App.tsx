@@ -58,12 +58,13 @@ export default function App() {
               <Route path="/vendors" element={<VendorsPage />} />
               <Route path="/account" element={<AccountSettingsPage />} />
 
+              <Route path="/boms" element={<BOMsPage />} />
+
               {/* Admin only */}
               <Route element={<ProtectedRoute requiredRole="admin" />}>
                 <Route path="/users" element={<UsersPage />} />
                 <Route path="/import" element={<ImportPage />} />
                 <Route path="/opening-balances" element={<OpeningBalancePage />} />
-                <Route path="/boms" element={<BOMsPage />} />
               </Route>
             </Route>
           </Route>

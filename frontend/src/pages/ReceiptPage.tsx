@@ -34,7 +34,7 @@ import { AlertTriangle, CheckCircle, Plus, X, Clock } from 'lucide-react';
 import { Combobox } from '@/components/ui/combobox';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
-type Item = { id: number; itemCode: string; description: string; category?: string; unitOfMeasure: string; lastPurchaseCost: number | null };
+type Item = { id: number; itemCode: string; description: string; category?: string; unitOfMeasure: string; lastPurchaseCost: number | null; allowDecimalQty?: boolean };
 
 const lineItemSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -197,7 +197,8 @@ export function ReceiptPage() {
     const itemId = watchedLines[index]?.itemId;
     if (!itemId) return false;
     const uom = itemMap.get(itemId)?.unitOfMeasure;
-    return !!uom && !allowsDecimals(uom);
+    const item = itemMap.get(itemId);
+    return !!uom && !allowsDecimals(uom) && !item?.allowDecimalQty;
   }
   const lineTotals = watchedLines.map((li) => {
     const qty = Number(li.quantity) || 0;
@@ -309,6 +310,12 @@ export function ReceiptPage() {
                   value: String(v.id),
                   label: v.vendorName.trim(),
                   searchText: `${v.vendorCode} ${v.vendorName.trim()}`,
+                  renderLabel: (
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono font-semibold text-xs shrink-0">{v.vendorCode}</span>
+                      <span className="text-gray-500 truncate">{v.vendorName.trim()}</span>
+                    </span>
+                  ),
                 }))}
                 value={watch('vendorId')}
                 onValueChange={(v) => setValue('vendorId', v)}
@@ -402,16 +409,16 @@ export function ReceiptPage() {
             </Button>
           </div>
 
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="table-fixed min-w-[700px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10">#</TableHead>
-                  <TableHead className="w-36">Part #</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="w-28">Qty</TableHead>
-                  <TableHead className="w-44">Unit Cost ($)</TableHead>
-                  <TableHead className="w-28 text-right">Line Total</TableHead>
+                  <TableHead className="w-32">Part #</TableHead>
+                  <TableHead className="w-auto">Description</TableHead>
+                  <TableHead className="w-20">Qty</TableHead>
+                  <TableHead className="w-32">Unit Cost ($)</TableHead>
+                  <TableHead className="w-24 text-right">Line Total</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>

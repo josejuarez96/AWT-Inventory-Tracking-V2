@@ -362,7 +362,7 @@ export function PackageEditorDialog({ bomId, pkg, items, onClose, onSaved }: Pro
                   <TableRow>
                     <TableHead className="w-10">#</TableHead>
                     <TableHead className="w-20">Action</TableHead>
-                    <TableHead className="w-[100px]">Part #</TableHead>
+                    <TableHead className="w-36">Part #</TableHead>
                     <TableHead className="w-auto">Description</TableHead>
                     <TableHead className="w-20">Qty</TableHead>
                     <TableHead className="w-[100px]">Notes</TableHead>

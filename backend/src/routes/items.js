@@ -3,6 +3,7 @@ const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const { body, param, validationResult } = require('express-validator');
 const prisma = require('../lib/prisma');
+const { ALL_UOMS } = require('../lib/uom');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
@@ -20,6 +21,8 @@ function serializeItem(item) {
     standardCost: item.standardCost?.toNumber?.() ?? item.standardCost ?? null,
     lastPurchaseCost: item.lastPurchaseCost?.toNumber?.() ?? item.lastPurchaseCost ?? null,
     stockLength: item.stockLength?.toNumber?.() ?? item.stockLength ?? null,
+    purchaseUom: item.purchaseUom ?? null,
+    conversionFactor: item.conversionFactor?.toNumber?.() ?? item.conversionFactor ?? null,
     defaultVendorId: item.defaultVendorId ?? null,
     defaultVendor: item.defaultVendor ?? null,
   };
@@ -49,6 +52,8 @@ router.get('/', async (req, res) => {
       itemType: true,
       allowDecimalQty: true,
       stockLength: true,
+      purchaseUom: true,
+      conversionFactor: true,
       ...(showAll && { isActive: true, notes: true, createdAt: true }),
     },
   });
@@ -181,6 +186,12 @@ router.post('/import/preview', requireAdmin, upload.single('file'), (req, res) =
         errors.push({ rowNumber, field: 'standard_cost', message: 'standard_cost must be a non-negative number' });
       }
     }
+    if (row.conversion_factor && row.conversion_factor.trim() !== '') {
+      const val = parseFloat(row.conversion_factor);
+      if (isNaN(val) || val <= 0) {
+        errors.push({ rowNumber, field: 'conversion_factor', message: 'conversion_factor must be a positive number' });
+      }
+    }
   });
 
   return res.json({ rows, errors });
@@ -234,6 +245,8 @@ router.post(
       standardCost: row.standard_cost?.trim() ? parseFloat(row.standard_cost) : null,
       defaultVendorId: row.default_vendor_code?.trim() ? vendorMap[row.default_vendor_code.trim()] : null,
       notes: row.notes?.trim() || null,
+      purchaseUom: row.purchase_uom?.trim() || null,
+      conversionFactor: row.conversion_factor?.trim() ? parseFloat(row.conversion_factor) : null,
     }));
 
     try {
@@ -305,6 +318,8 @@ router.post(
     body('itemType').optional().isIn(['RAW', 'FINISHED', 'OTHER']).withMessage('itemType must be RAW, FINISHED, or OTHER'),
     body('allowDecimalQty').optional().isBoolean().withMessage('allowDecimalQty must be a boolean'),
     body('stockLength').optional({ nullable: true }).isFloat({ gt: 0 }).withMessage('stockLength must be > 0'),
+    body('purchaseUom').optional({ nullable: true }).trim(),
+    body('conversionFactor').optional({ nullable: true }).isFloat({ gt: 0 }).withMessage('conversionFactor must be > 0'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -312,7 +327,7 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId, allowDecimalQty, stockLength } = req.body;
+    const { description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId, allowDecimalQty, stockLength, purchaseUom, conversionFactor } = req.body;
     const itemCode = req.body.itemCode.toUpperCase();
 
     // Check unique itemCode (case-insensitive)
@@ -324,6 +339,21 @@ router.post(
     // stockLength requires allowDecimalQty
     if (stockLength != null && !allowDecimalQty) {
       return res.status(400).json({ error: 'stockLength can only be set on items with allowDecimalQty enabled' });
+    }
+
+    // purchaseUom must be a valid UOM
+    if (purchaseUom && !ALL_UOMS.includes(purchaseUom.toUpperCase())) {
+      return res.status(400).json({ error: `purchaseUom must be one of: ${ALL_UOMS.join(', ')}` });
+    }
+    // purchaseUom and conversionFactor must be set together
+    if (purchaseUom && !conversionFactor) {
+      return res.status(400).json({ error: 'conversionFactor is required when purchaseUom is set' });
+    }
+    if (conversionFactor && !purchaseUom) {
+      return res.status(400).json({ error: 'purchaseUom is required when conversionFactor is set' });
+    }
+    if (purchaseUom && purchaseUom === (unitOfMeasure || 'EA')) {
+      return res.status(400).json({ error: 'Purchase UOM must differ from consumption UOM' });
     }
 
     // Validate defaultVendorId if provided
@@ -350,6 +380,8 @@ router.post(
         itemType: req.body.itemType || 'RAW',
         allowDecimalQty: allowDecimalQty === true,
         stockLength: stockLength != null ? parseFloat(stockLength) : null,
+        purchaseUom: purchaseUom || null,
+        conversionFactor: conversionFactor != null ? parseFloat(conversionFactor) : null,
         ...(additionalVendorIds.length > 0 && {
           additionalVendors: {
             create: additionalVendorIds.map((vid) => ({ vendorId: vid })),
@@ -389,6 +421,8 @@ router.put(
     body('itemType').optional().isIn(['RAW', 'FINISHED', 'OTHER']).withMessage('itemType must be RAW, FINISHED, or OTHER'),
     body('allowDecimalQty').optional().isBoolean().withMessage('allowDecimalQty must be a boolean'),
     body('stockLength').optional({ nullable: true }).isFloat({ gt: 0 }).withMessage('stockLength must be > 0'),
+    body('purchaseUom').optional({ nullable: true }).trim(),
+    body('conversionFactor').optional({ nullable: true }).isFloat({ gt: 0 }).withMessage('conversionFactor must be > 0'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -402,7 +436,7 @@ router.put(
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    const { description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId, allowDecimalQty, stockLength } = req.body;
+    const { description, category, unitOfMeasure, minQuantity, maxQuantity, notes, standardCost, defaultVendorId, allowDecimalQty, stockLength, purchaseUom, conversionFactor } = req.body;
     const itemCode = req.body.itemCode ? req.body.itemCode.toUpperCase() : undefined;
 
     // If itemCode is changing, check uniqueness (case-insensitive)
@@ -418,6 +452,30 @@ router.put(
     const effectiveStockLength = stockLength !== undefined ? stockLength : existing.stockLength;
     if (effectiveStockLength != null && !effectiveAllowDecimal) {
       return res.status(400).json({ error: 'stockLength can only be set on items with allowDecimalQty enabled' });
+    }
+
+    // purchaseUom must be a valid UOM
+    if (purchaseUom && !ALL_UOMS.includes(purchaseUom.toUpperCase())) {
+      return res.status(400).json({ error: `purchaseUom must be one of: ${ALL_UOMS.join(', ')}` });
+    }
+    // Treat empty/null purchaseUom as "clear both"
+    const clearingPurchaseUom = purchaseUom !== undefined && !purchaseUom;
+    // purchaseUom + conversionFactor cross-validation
+    const effectiveUom = unitOfMeasure !== undefined ? (unitOfMeasure || 'EA') : existing.unitOfMeasure;
+    const effectivePurchaseUom = clearingPurchaseUom ? null : (purchaseUom !== undefined ? (purchaseUom || null) : existing.purchaseUom);
+    const effectiveConversionFactor = clearingPurchaseUom ? null : (conversionFactor !== undefined ? conversionFactor : existing.conversionFactor);
+    // If purchaseUom is changing to a new value, require conversionFactor to also be sent
+    if (purchaseUom && purchaseUom !== existing.purchaseUom && conversionFactor === undefined) {
+      return res.status(400).json({ error: 'conversionFactor is required when changing purchaseUom' });
+    }
+    if (effectivePurchaseUom && !effectiveConversionFactor) {
+      return res.status(400).json({ error: 'conversionFactor is required when purchaseUom is set' });
+    }
+    if (effectiveConversionFactor && !effectivePurchaseUom) {
+      return res.status(400).json({ error: 'purchaseUom is required when conversionFactor is set' });
+    }
+    if (effectivePurchaseUom && effectivePurchaseUom === effectiveUom) {
+      return res.status(400).json({ error: 'Purchase UOM must differ from consumption UOM' });
     }
 
     // Validate defaultVendorId if provided
@@ -443,6 +501,14 @@ router.put(
     // Nullify stockLength if allowDecimalQty is being disabled
     if (allowDecimalQty === false && existing.stockLength != null) data.stockLength = null;
     else if (stockLength !== undefined) data.stockLength = stockLength != null ? parseFloat(stockLength) : null;
+    // Purchase UOM fields
+    if (purchaseUom !== undefined) data.purchaseUom = purchaseUom || null;
+    if (conversionFactor !== undefined) data.conversionFactor = conversionFactor != null ? parseFloat(conversionFactor) : null;
+    // Clear both if purchaseUom is being removed
+    if (purchaseUom !== undefined && !purchaseUom) {
+      data.purchaseUom = null;
+      data.conversionFactor = null;
+    }
 
     // Sync additional vendors if provided
     const additionalVendorIds = req.body.additionalVendorIds;

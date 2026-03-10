@@ -163,7 +163,7 @@ router.post(
               // Priority: weighted avg from transactions > standardCost > null
               let unitCost = null;
               if (costMap[item.id]) {
-                unitCost = Math.round(costMap[item.id] * 100) / 100;
+                unitCost = Math.round(costMap[item.id] * 10000) / 10000;
               } else if (item.standardCost !== null) {
                 unitCost = Number(item.standardCost);
               }

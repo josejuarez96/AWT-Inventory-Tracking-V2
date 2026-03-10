@@ -68,16 +68,18 @@ model Item {
   minQuantity     Decimal?  @map("min_quantity") @db.Decimal(10, 2)
   maxQuantity     Decimal?  @map("max_quantity") @db.Decimal(10, 2)
   safetyStock     Decimal   @default(0) @map("safety_stock") @db.Decimal(10, 2)
-  standardCost    Decimal?  @map("standard_cost") @db.Decimal(10, 2)
-  lastPurchaseCost Decimal? @map("last_purchase_cost") @db.Decimal(10, 2)
+  standardCost    Decimal?  @map("standard_cost") @db.Decimal(10, 4)
+  lastPurchaseCost Decimal? @map("last_purchase_cost") @db.Decimal(10, 4)
   defaultVendorId Int?      @map("default_vendor_id")
   itemType        String    @default("RAW") @map("item_type") @db.VarChar(20) // 'RAW', 'FINISHED', 'OTHER'
   isActive        Boolean   @default(true) @map("is_active")
   notes           String?
   createdAt       DateTime  @default(now()) @map("created_at")
 
-  allowDecimalQty Boolean   @default(false) @map("allow_decimal_qty")
-  stockLength     Decimal?  @map("stock_length") @db.Decimal(10, 4)
+  allowDecimalQty  Boolean   @default(false) @map("allow_decimal_qty")
+  stockLength      Decimal?  @map("stock_length") @db.Decimal(10, 4)
+  purchaseUom      String?   @map("purchase_uom") @db.VarChar(20)
+  conversionFactor Decimal?  @map("conversion_factor") @db.Decimal(10, 4)
 
   defaultVendor   Vendor?   @relation("defaultVendorItems", fields: [defaultVendorId], references: [id])
   additionalVendors ItemVendor[]
@@ -98,8 +100,8 @@ model Transaction {
   vendorId        Int?      @map("vendor_id")
   location        String    @db.VarChar(50) // 'ADEL' or 'CALHOUN'
   quantity        Decimal   @db.Decimal(10, 2)
-  unitCost        Decimal?  @map("unit_cost") @db.Decimal(10, 2)
-  referencePrice  Decimal?  @map("reference_price") @db.Decimal(10, 2)
+  unitCost        Decimal?  @map("unit_cost") @db.Decimal(10, 4)
+  referencePrice  Decimal?  @map("reference_price") @db.Decimal(10, 4)
   invoiceNumber   String?   @map("invoice_number") @db.VarChar(100)
   transactionDate DateTime  @map("transaction_date") @db.Date
   notes           String?
@@ -153,7 +155,7 @@ model CycleCountLine {
   itemId        Int       @map("item_id")
   systemQty     Decimal   @map("system_qty") @db.Decimal(10, 2)
   countedQty    Decimal?  @map("counted_qty") @db.Decimal(10, 2)
-  unitCost      Decimal?  @map("unit_cost") @db.Decimal(10, 2)
+  unitCost      Decimal?  @map("unit_cost") @db.Decimal(10, 4)
   variance      Decimal?  @db.Decimal(10, 2)
   varianceValue Decimal?  @map("variance_value") @db.Decimal(10, 2)
   adjustmentId  Int?      @unique @map("adjustment_id")

@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { formatCurrency } from '@/lib/utils';
 import { LOCATIONS } from '@/lib/locations';
 import { useFormDirty } from '@/context/FormDirtyContext';
 import { Button } from '@/components/ui/button';
@@ -763,11 +764,31 @@ export function CreateProductionOrderPage() {
                 </div>
               )}
 
-              {/* Component count */}
+              {/* Component count + cost estimate */}
               {(fields.length > 0 || isConfigured) && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  {isConfigured ? resolvedData!.resolved.length : fields.length} component{(isConfigured ? resolvedData!.resolved.length : fields.length) !== 1 ? 's' : ''}
-                </p>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs text-muted-foreground">
+                    {isConfigured ? resolvedData!.resolved.length : fields.length} component{(isConfigured ? resolvedData!.resolved.length : fields.length) !== 1 ? 's' : ''}
+                  </p>
+                  {isConfigured && resolvedData && (() => {
+                    const qty = Number(watchedQuantity) || 1;
+                    const totalCost = resolvedData.resolved.reduce((s, r) => s + r.effectiveQty * qty * r.unitCost, 0);
+                    const hasNoCost = resolvedData.resolved.some(r => r.unitCost === 0);
+                    return (
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">
+                          Est. Cost: {formatCurrency(Math.round(totalCost * 100) / 100)}
+                          {qty > 1 && <span className="text-xs text-muted-foreground font-normal ml-1">({formatCurrency(Math.round(totalCost / qty * 100) / 100)}/ea)</span>}
+                        </p>
+                        {hasNoCost && (
+                          <p className="text-xs text-amber-600 flex items-center gap-1 justify-end">
+                            <AlertTriangle className="h-3 w-3" /> Some items have no cost data
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
               )}
             </div>
 

@@ -188,7 +188,7 @@ router.post(
         unitCost: { not: null },
         id: { not: created.id },
       },
-      orderBy: { transactionDate: 'desc' },
+      orderBy: [{ transactionDate: 'desc' }, { id: 'desc' }],
       select: { unitCost: true, transactionDate: true },
     });
 
@@ -294,7 +294,7 @@ router.post(
             unitCost: li.unitCost,
             invoiceNumber: invoiceNumber || null,
             transactionDate: parseDateLocal(transactionDate),
-            notes: notes || null,
+            notes: [notes, li.notes].filter(Boolean).join(' ') || null,
             createdBy: req.user.id,
             batchId,
           },
@@ -318,7 +318,7 @@ router.post(
             unitCost: { not: null },
             id: { notIn: createdIds },
           },
-          orderBy: { transactionDate: 'desc' },
+          orderBy: [{ transactionDate: 'desc' }, { id: 'desc' }],
           select: { unitCost: true },
         });
         prices[id] = lastPaid?.unitCost ? Number(lastPaid.unitCost) : null;
@@ -956,7 +956,7 @@ router.get('/stock-position', async (req, res) => {
     }
     const totalAvailable = totalQty - totalReserved;
     const avgCost = avgCostMap[item.id]
-      ? Math.round(avgCostMap[item.id] * 100) / 100
+      ? Math.round(avgCostMap[item.id] * 10000) / 10000
       : null;
     const totalValue = avgCost !== null
       ? Math.round(totalQty * avgCost * 100) / 100

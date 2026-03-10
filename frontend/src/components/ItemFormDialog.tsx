@@ -40,6 +40,8 @@ type Item = {
   itemType?: string;
   allowDecimalQty?: boolean;
   stockLength?: number | null;
+  purchaseUom?: string | null;
+  conversionFactor?: number | null;
   isActive?: boolean;
   notes?: string | null;
 };
@@ -58,6 +60,8 @@ type ItemForm = {
   itemType: string;
   allowDecimalQty: boolean;
   stockLength: string;
+  purchaseUom: string;
+  conversionFactor: string;
 };
 
 const EMPTY_FORM: ItemForm = {
@@ -74,6 +78,8 @@ const EMPTY_FORM: ItemForm = {
   itemType: 'RAW',
   allowDecimalQty: false,
   stockLength: '',
+  purchaseUom: '',
+  conversionFactor: '',
 };
 
 type Props = {
@@ -118,6 +124,8 @@ export function ItemFormDialog({ open, onClose, onSaved, editingItem, vendors }:
         itemType: editingItem.itemType ?? 'RAW',
         allowDecimalQty: editingItem.allowDecimalQty ?? false,
         stockLength: editingItem.stockLength != null ? String(editingItem.stockLength) : '',
+        purchaseUom: editingItem.purchaseUom ?? '',
+        conversionFactor: editingItem.conversionFactor != null ? String(editingItem.conversionFactor) : '',
       });
       // Fetch additional vendors
       api.get<{ item: Item }>(`/api/items/${editingItem.id}`)
@@ -191,6 +199,8 @@ export function ItemFormDialog({ open, onClose, onSaved, editingItem, vendors }:
       itemType: form.itemType,
       allowDecimalQty: form.allowDecimalQty,
       stockLength: form.stockLength ? parseFloat(form.stockLength) : null,
+      purchaseUom: form.purchaseUom || null,
+      conversionFactor: form.conversionFactor ? parseFloat(form.conversionFactor) : null,
     };
 
     try {
@@ -257,7 +267,11 @@ export function ItemFormDialog({ open, onClose, onSaved, editingItem, vendors }:
                 <Label htmlFor="unitOfMeasure">Unit of Measure</Label>
                 <Select
                   value={form.unitOfMeasure}
-                  onValueChange={(v) => setForm((f) => ({ ...f, unitOfMeasure: v }))}
+                  onValueChange={(v) => setForm((f) => ({
+                    ...f,
+                    unitOfMeasure: v,
+                    ...(f.purchaseUom === v && { purchaseUom: '', conversionFactor: '' }),
+                  }))}
                 >
                   <SelectTrigger id="unitOfMeasure">
                     <SelectValue placeholder="EA" />
@@ -299,6 +313,50 @@ export function ItemFormDialog({ open, onClose, onSaved, editingItem, vendors }:
                 )}
               </div>
             )}
+            {/* Purchase UOM + Conversion Factor */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="purchaseUom">Purchase UOM</Label>
+                <Select
+                  value={form.purchaseUom || '__same__'}
+                  onValueChange={(v) => {
+                    const val = v === '__same__' ? '' : v;
+                    setForm((f) => ({
+                      ...f,
+                      purchaseUom: val,
+                      conversionFactor: val ? f.conversionFactor : '',
+                    }));
+                  }}
+                >
+                  <SelectTrigger id="purchaseUom">
+                    <SelectValue placeholder="Same as consumption" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__same__">Same as UOM</SelectItem>
+                    {ALL_UOMS.filter((u) => u !== form.unitOfMeasure).map((uom) => (
+                      <SelectItem key={uom} value={uom}>{uom}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.purchaseUom && form.purchaseUom !== form.unitOfMeasure && (
+                <div className="space-y-2">
+                  <Label htmlFor="conversionFactor">
+                    1 {form.purchaseUom} = ___ {form.unitOfMeasure}
+                  </Label>
+                  <Input
+                    id="conversionFactor"
+                    type="number"
+                    step="any"
+                    min="0.0001"
+                    placeholder="e.g., 2500"
+                    value={form.conversionFactor}
+                    onChange={(e) => setForm((f) => ({ ...f, conversionFactor: e.target.value }))}
+                    required
+                  />
+                </div>
+              )}
+            </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description <span className="text-red-500">*</span></Label>
               <Input

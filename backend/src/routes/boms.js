@@ -9,7 +9,7 @@ router.use(authenticate);
 // Note: GET routes are open to all authenticated users (needed for kitting page).
 // Write operations (POST, PUT, PATCH) are admin-only via per-route requireAdmin.
 
-const ITEM_SELECT = { id: true, itemCode: true, description: true, unitOfMeasure: true, allowDecimalQty: true, stockLength: true };
+const ITEM_SELECT = { id: true, itemCode: true, description: true, unitOfMeasure: true, allowDecimalQty: true, stockLength: true, purchaseUom: true, conversionFactor: true };
 
 function serializeBomLine(line) {
   return {
@@ -174,7 +174,7 @@ router.post(
 
     const components = await prisma.item.findMany({
       where: { id: { in: componentIds }, isActive: true },
-      select: { id: true, itemCode: true, unitOfMeasure: true, allowDecimalQty: true },
+      select: { id: true, itemCode: true, unitOfMeasure: true, allowDecimalQty: true, stockLength: true },
     });
     if (components.length !== uniqueIds.size) {
       return res.status(400).json({ error: 'One or more component items not found or inactive' });
@@ -198,6 +198,12 @@ router.post(
             error: `scrapPercent must be between 0 and 100 (got ${sp} for ${comp?.itemCode ?? 'unknown'}).`,
           });
         }
+      }
+      // cutDetails requires stockLength on the item
+      if (l.cutDetails && comp && (comp.stockLength === null || comp.stockLength === undefined)) {
+        return res.status(400).json({
+          error: `${comp.itemCode} has cut details but no stock length defined — update the item first.`,
+        });
       }
     }
 
@@ -299,7 +305,7 @@ router.put(
       }
       const components = await prisma.item.findMany({
         where: { id: { in: componentIds }, isActive: true },
-        select: { id: true, itemCode: true, unitOfMeasure: true, allowDecimalQty: true },
+        select: { id: true, itemCode: true, unitOfMeasure: true, allowDecimalQty: true, stockLength: true },
       });
       if (components.length !== uniqueIds.size) {
         return res.status(400).json({ error: 'One or more component items not found or inactive' });
@@ -323,6 +329,12 @@ router.put(
               error: `scrapPercent must be between 0 and 100 (got ${sp} for ${comp?.itemCode ?? 'unknown'}).`,
             });
           }
+        }
+        // cutDetails requires stockLength on the item
+        if (l.cutDetails && comp && (comp.stockLength === null || comp.stockLength === undefined)) {
+          return res.status(400).json({
+            error: `${comp.itemCode} has cut details but no stock length defined — update the item first.`,
+          });
         }
       }
     }
@@ -490,7 +502,7 @@ router.patch(
           status: 'ACTIVE',
           id: { not: id },
         },
-        select: { id: true, bomCode: true, version: true },
+        select: { id: true, bomCode: true },
       });
 
       if (previousActive) {
@@ -683,6 +695,90 @@ router.delete(
     await prisma.bom.delete({ where: { id } });
 
     return res.json({ message: 'BOM deleted' });
+  }
+);
+
+// ── GET /api/boms/:id/cost-estimate ─────────────────────────────────────
+// Returns per-component costs and total BOM cost using resolveBom()
+router.get(
+  '/:id/cost-estimate',
+  param('id').isInt({ gt: 0 }),
+  query('qty').optional().isFloat({ gt: 0 }),
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    const id = parseInt(req.params.id);
+    const qty = parseFloat(req.query.qty) || 1;
+
+    const bom = await prisma.bom.findUnique({ where: { id }, select: { id: true } });
+    if (!bom) return res.status(404).json({ error: 'BOM not found' });
+
+    const { resolveBom } = require('../lib/resolveBom');
+    const result = await resolveBom(id);
+
+    if (result.errors.length > 0) {
+      return res.status(400).json({ error: result.errors.join('; ') });
+    }
+
+    // Determine cost source per component: need to re-query to distinguish weighted_avg vs standard vs none
+    const itemIds = [...new Set(result.resolved.map(r => r.itemId))];
+    let avgCostMap = {};
+    let standardCostMap = {};
+
+    if (itemIds.length > 0) {
+      const costRows = await prisma.$queryRaw`
+        SELECT "item_id" AS "itemId",
+               SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS "avgCost"
+        FROM transactions
+        WHERE transaction_type IN ('RECEIPT', 'OPENING_BALANCE', 'PRODUCTION')
+          AND unit_cost IS NOT NULL AND quantity > 0
+          AND "item_id" = ANY(${itemIds}::int[])
+        GROUP BY "item_id"
+      `;
+      for (const row of costRows) {
+        avgCostMap[row.itemId] = Number(row.avgCost ?? 0);
+      }
+
+      const itemsForCost = await prisma.item.findMany({
+        where: { id: { in: itemIds } },
+        select: { id: true, standardCost: true },
+      });
+      for (const item of itemsForCost) {
+        if (item.standardCost) standardCostMap[item.id] = Number(item.standardCost);
+      }
+    }
+
+    const warnings = [...result.warnings];
+    const components = result.resolved.map(r => {
+      let costSource = 'none';
+      if (avgCostMap[r.itemId] !== undefined) costSource = 'weighted_avg';
+      else if (standardCostMap[r.itemId] !== undefined) costSource = 'standard';
+
+      if (costSource === 'none') {
+        warnings.push(`${r.itemCode} has no cost data — showing $0.00`);
+      }
+
+      const lineCost = Math.round(r.effectiveQty * qty * r.unitCost * 100) / 100;
+      return {
+        itemId: r.itemId,
+        itemCode: r.itemCode,
+        description: r.description,
+        unitCost: r.unitCost,
+        effectiveQty: r.effectiveQty * qty,
+        lineCost,
+        costSource,
+      };
+    });
+
+    const totalCost = Math.round(components.reduce((s, c) => s + c.lineCost, 0) * 100) / 100;
+
+    return res.json({
+      components,
+      totalCost,
+      unitCostPerFG: qty > 0 ? Math.round((totalCost / qty) * 100) / 100 : 0,
+      warnings,
+    });
   }
 );
 

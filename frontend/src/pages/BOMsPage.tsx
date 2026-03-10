@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuthContext } from '@/context/AuthContext';
 import { api, ApiError } from '@/lib/api';
+import { formatCurrency } from '@/lib/utils';
 import { allowsDecimals } from '@/lib/uom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -37,13 +38,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, ChevronRight, MoreHorizontal, Plus, Search, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, MoreHorizontal, Plus, Search, X } from 'lucide-react';
 import { Combobox } from '@/components/ui/combobox';
 import { OptionGroupsSection } from '@/components/OptionGroupsSection';
 import CutPieceEditor from '@/components/CutPieceEditor';
 import { CATEGORY_PRESETS } from '@/lib/categoryPresets';
 
-type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; category?: string | null; itemType?: string; allowDecimalQty?: boolean; stockLength?: number | null };
+type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; category?: string | null; itemType?: string; allowDecimalQty?: boolean; stockLength?: number | null; purchaseUom?: string | null; conversionFactor?: number | null };
 
 type BomLine = {
   itemId: string;
@@ -122,6 +123,11 @@ export function BOMsPage() {
   const [stagingLine, setStagingLine] = useState<BomLine>({ ...EMPTY_LINE });
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [componentsSectionCollapsed, setComponentsSectionCollapsed] = useState(false);
+  const [costEstimate, setCostEstimate] = useState<{
+    components: { itemId: number; itemCode: string; unitCost: number; effectiveQty: number; lineCost: number; costSource: string }[];
+    totalCost: number;
+    warnings: string[];
+  } | null>(null);
 
   // Group form.lines by item category for display
   const groupedLines = useMemo(() => {
@@ -227,6 +233,7 @@ export function BOMsPage() {
     setFormError('');
     setExpandedCutLines(new Set());
     setStagingLine({ ...EMPTY_LINE });
+    setCostEstimate(null);
     setCollapsedCategories(new Set());
     setDialogOpen(true);
   }
@@ -260,7 +267,12 @@ export function BOMsPage() {
       setExpandedCutLines(cutExpanded);
       setStagingLine({ ...EMPTY_LINE });
       setCollapsedCategories(new Set());
+      setCostEstimate(null);
       setDialogOpen(true);
+      // Fetch cost estimate for view mode
+      if (readOnly) {
+        api.get<{ components: { itemId: number; itemCode: string; unitCost: number; effectiveQty: number; lineCost: number; costSource: string }[]; totalCost: number; warnings: string[] }>(`/api/boms/${bom.id}/cost-estimate`).then(setCostEstimate).catch(() => {});
+      }
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Failed to load BOM details');
     }
@@ -619,7 +631,16 @@ export function BOMsPage() {
                       <div className="w-16">
                         <Label className="text-xs text-muted-foreground mb-1 block">UOM</Label>
                         <div className="h-9 flex items-center text-sm text-muted-foreground">
-                          {stagingLine.itemId ? (items.find((i) => String(i.id) === stagingLine.itemId)?.unitOfMeasure ?? '—') : '—'}
+                          {(() => {
+                            const si = stagingLine.itemId ? items.find((i) => String(i.id) === stagingLine.itemId) : null;
+                            if (!si) return '—';
+                            return (
+                              <div>
+                                {si.unitOfMeasure}
+                                {si.purchaseUom && <div className="text-xs text-blue-500 leading-tight">bought in {si.purchaseUom}</div>}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                       <div className="w-28">
@@ -707,8 +728,18 @@ export function BOMsPage() {
                                         <>
                                           <TableCell className="whitespace-nowrap text-sm font-mono">{selectedItem?.itemCode ?? '—'}</TableCell>
                                           <TableCell className="text-sm">{selectedItem?.description ?? '—'}</TableCell>
-                                          <TableCell className="text-sm">{line.quantityPer || '—'}</TableCell>
-                                          <TableCell className="text-sm text-muted-foreground">{selectedItem?.unitOfMeasure ?? '—'}</TableCell>
+                                          <TableCell className="text-sm">
+                                            {line.quantityPer || '—'}
+                                            {selectedItem?.purchaseUom && selectedItem.conversionFactor && line.quantityPer && (
+                                              <div className="text-xs text-muted-foreground">= {(parseFloat(line.quantityPer) / selectedItem.conversionFactor).toFixed(2)} {selectedItem.purchaseUom}</div>
+                                            )}
+                                          </TableCell>
+                                          <TableCell className="text-sm text-muted-foreground">
+                                            {selectedItem?.unitOfMeasure ?? '—'}
+                                            {selectedItem?.purchaseUom && (
+                                              <div className="text-xs text-blue-500">bought in {selectedItem.purchaseUom}</div>
+                                            )}
+                                          </TableCell>
                                           <TableCell className="text-sm text-muted-foreground">{line.notes || ''}</TableCell>
                                           <TableCell />
                                         </>
@@ -762,25 +793,33 @@ export function BOMsPage() {
                                                 )}
                                               </button>
                                             ) : (
-                                              <Input
-                                                type="number"
-                                                step="any"
-                                                min="0.01"
-                                                placeholder="1"
-                                                className="h-9"
-                                                value={line.quantityPer}
-                                                onChange={(e) => updateLine(originalIndex, 'quantityPer', e.target.value)}
-                                                onBlur={(e) => {
-                                                  const val = parseFloat(e.target.value);
-                                                  if (!isNaN(val)) {
-                                                    updateLine(originalIndex, 'quantityPer', String(parseFloat(val.toFixed(4))));
-                                                  }
-                                                }}
-                                              />
+                                              <div>
+                                                <Input
+                                                  type="number"
+                                                  step="any"
+                                                  min="0.01"
+                                                  placeholder="1"
+                                                  className="h-9"
+                                                  value={line.quantityPer}
+                                                  onChange={(e) => updateLine(originalIndex, 'quantityPer', e.target.value)}
+                                                  onBlur={(e) => {
+                                                    const val = parseFloat(e.target.value);
+                                                    if (!isNaN(val)) {
+                                                      updateLine(originalIndex, 'quantityPer', String(parseFloat(val.toFixed(4))));
+                                                    }
+                                                  }}
+                                                />
+                                                {selectedItem?.purchaseUom && selectedItem.conversionFactor && line.quantityPer && (
+                                                  <div className="text-xs text-muted-foreground mt-0.5">= {(parseFloat(line.quantityPer) / selectedItem.conversionFactor).toFixed(2)} {selectedItem.purchaseUom}</div>
+                                                )}
+                                              </div>
                                             )}
                                           </TableCell>
                                           <TableCell className="text-sm text-muted-foreground">
                                             {selectedItem?.unitOfMeasure ?? '—'}
+                                            {selectedItem?.purchaseUom && (
+                                              <div className="text-xs text-blue-500">bought in {selectedItem.purchaseUom}</div>
+                                            )}
                                           </TableCell>
                                           <TableCell>
                                             <Input
@@ -825,6 +864,16 @@ export function BOMsPage() {
                                               }
                                             />
                                           </div>
+                                        </TableCell>
+                                      </TableRow>
+                                    )}
+                                    {/* Warning: item allows decimal qty but has no stock length */}
+                                    {!isCutMaterial && selectedItem?.allowDecimalQty && !selectedItem?.stockLength && !viewOnly && (
+                                      <TableRow className="bg-amber-50/50">
+                                        <TableCell colSpan={7} className="py-1 px-3">
+                                          <span className="text-xs text-amber-600">
+                                            This item allows decimal qty but has no stock length — set it in Item Master to enable cut pieces.
+                                          </span>
                                         </TableCell>
                                       </TableRow>
                                     )}
@@ -873,6 +922,51 @@ export function BOMsPage() {
                   allBoms={boms.map((b) => ({ id: b.id, bomCode: b.bomCode, name: b.name }))}
                   items={items}
                 />
+              )}
+
+              {/* Cost Estimate Panel (view mode only) */}
+              {viewOnly && costEstimate && (
+                <div className="border rounded-md p-3 bg-gray-50/50 space-y-2">
+                  <h4 className="text-sm font-semibold text-gray-700">Cost Estimate (Base BOM)</h4>
+                  {costEstimate.warnings.length > 0 && (
+                    <div className="space-y-0.5">
+                      {costEstimate.warnings.map((w, i) => (
+                        <div key={i} className="flex items-center gap-1 text-xs text-amber-600">
+                          <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                          {w}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Part #</TableHead>
+                        <TableHead className="text-xs text-right">Eff. Qty</TableHead>
+                        <TableHead className="text-xs text-right">Unit Cost</TableHead>
+                        <TableHead className="text-xs text-right">Ext. Cost</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {costEstimate.components.map((c) => (
+                        <TableRow key={c.itemId} className={c.costSource === 'none' ? 'bg-amber-50/50' : ''}>
+                          <TableCell className="text-xs font-mono">{c.itemCode}</TableCell>
+                          <TableCell className="text-xs text-right">{c.effectiveQty}</TableCell>
+                          <TableCell className="text-xs text-right">
+                            {formatCurrency(c.unitCost)}
+                            {c.costSource === 'standard' && <span className="text-muted-foreground ml-1">(std)</span>}
+                            {c.costSource === 'none' && <span className="text-amber-600 ml-1">(no data)</span>}
+                          </TableCell>
+                          <TableCell className="text-xs text-right font-medium">{formatCurrency(c.lineCost)}</TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="border-t-2">
+                        <TableCell colSpan={3} className="text-sm font-semibold text-right">Total BOM Cost</TableCell>
+                        <TableCell className="text-sm font-bold text-right">{formatCurrency(costEstimate.totalCost)}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
               )}
 
               {formError && <p className="text-sm text-red-500">{formError}</p>}

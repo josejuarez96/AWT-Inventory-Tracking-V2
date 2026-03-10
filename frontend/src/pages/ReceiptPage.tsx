@@ -34,7 +34,7 @@ import { AlertTriangle, CheckCircle, Plus, X, Clock } from 'lucide-react';
 import { Combobox } from '@/components/ui/combobox';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
-type Item = { id: number; itemCode: string; description: string; category?: string; unitOfMeasure: string; lastPurchaseCost: number | null; allowDecimalQty?: boolean };
+type Item = { id: number; itemCode: string; description: string; category?: string; unitOfMeasure: string; lastPurchaseCost: number | null; allowDecimalQty?: boolean; purchaseUom?: string | null; conversionFactor?: number | null };
 
 const lineItemSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -118,6 +118,13 @@ export function ReceiptPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingValues, setPendingValues] = useState<ReceiptFormValues | null>(null);
 
+  // Purchase UOM: track purchase-side inputs per line index
+  const [purchaseInputs, setPurchaseInputs] = useState<Record<number, {
+    purchaseQty: string;
+    purchaseCost: string;
+    manualOverride: boolean;
+  }>>({});
+
   const { setDirty: setFormDirty } = useFormDirty();
   const [userInteracted, setUserInteracted] = useState(false);
 
@@ -193,6 +200,12 @@ export function ReceiptPage() {
     return map;
   }, [items]);
 
+  function getItemConversion(itemId: string) {
+    const item = itemMap.get(itemId);
+    if (!item?.purchaseUom || !item?.conversionFactor) return null;
+    return { purchaseUom: item.purchaseUom, consumptionUom: item.unitOfMeasure, factor: item.conversionFactor };
+  }
+
   function isWholeUnitItem(index: number): boolean {
     const itemId = watchedLines[index]?.itemId;
     if (!itemId) return false;
@@ -229,6 +242,15 @@ export function ReceiptPage() {
   }
 
   function onFormValid(values: ReceiptFormValues) {
+    // Check whole-unit validation for conversion items (bypass of register validation)
+    for (let i = 0; i < values.lineItems.length; i++) {
+      const li = values.lineItems[i];
+      if (li.quantity && isWholeUnitItem(i) && !Number.isInteger(Number(li.quantity))) {
+        const item = itemMap.get(li.itemId);
+        setSubmitError(`${item?.itemCode ?? 'Item'} is measured in ${item?.unitOfMeasure ?? 'EA'} — consumption quantity must be a whole number.`);
+        return;
+      }
+    }
     setPendingValues(values);
     setConfirmOpen(true);
   }
@@ -248,11 +270,21 @@ export function ReceiptPage() {
         transactionDate: pendingValues.transactionDate,
         invoiceNumber: pendingValues.invoiceNumber || undefined,
         notes: pendingValues.notes?.trim() || '',
-        lineItems: pendingValues.lineItems.map((li) => ({
-          itemId: parseInt(li.itemId),
-          quantity: li.quantity,
-          unitCost: li.unitCost,
-        })),
+        lineItems: pendingValues.lineItems.map((li, idx) => {
+          const conv = getItemConversion(li.itemId);
+          const pi = purchaseInputs[idx];
+          let lineNotes = '';
+          if (conv && pi?.purchaseQty) {
+            const costStr = pi.purchaseCost ? ` @ $${pi.purchaseCost}/${conv.purchaseUom}` : '';
+            lineNotes = `[Purchase: ${pi.purchaseQty} ${conv.purchaseUom}${costStr}, factor: ${conv.factor}]`;
+          }
+          return {
+            itemId: parseInt(li.itemId),
+            quantity: li.quantity,
+            unitCost: li.unitCost,
+            ...(lineNotes && { notes: lineNotes }),
+          };
+        }),
       });
 
       setLastPaidPrices(data.lastPaidPrices);
@@ -274,6 +306,7 @@ export function ReceiptPage() {
         lineItems: [{ itemId: '', quantity: '' as unknown as number, unitCost: '' as unknown as number }],
       });
       setPendingValues(null);
+      setPurchaseInputs({});
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to save receipt.';
       setSubmitError(message);
@@ -436,7 +469,10 @@ export function ReceiptPage() {
                             searchText: `${item.itemCode} ${item.category ?? ''}`,
                           }))}
                           value={watchedLines[index]?.itemId}
-                          onValueChange={(v) => setValue(`lineItems.${index}.itemId`, v)}
+                          onValueChange={(v) => {
+                            setValue(`lineItems.${index}.itemId`, v);
+                            setPurchaseInputs((prev) => { const next = { ...prev }; delete next[index]; return next; });
+                          }}
                           placeholder="Part #..."
                           searchPlaceholder="Search part #..."
                           triggerClassName="h-9"
@@ -453,7 +489,10 @@ export function ReceiptPage() {
                             searchText: item.description,
                           }))}
                           value={watchedLines[index]?.itemId}
-                          onValueChange={(v) => setValue(`lineItems.${index}.itemId`, v)}
+                          onValueChange={(v) => {
+                            setValue(`lineItems.${index}.itemId`, v);
+                            setPurchaseInputs((prev) => { const next = { ...prev }; delete next[index]; return next; });
+                          }}
                           placeholder="Description..."
                           searchPlaceholder="Search description..."
                           triggerClassName="h-9"
@@ -461,8 +500,57 @@ export function ReceiptPage() {
                       </TableCell>
                       <TableCell>
                         {(() => {
+                          const conv = getItemConversion(watchedLines[index]?.itemId ?? '');
                           const wholeUnit = isWholeUnitItem(index);
                           const itemForValidation = itemMap.get(watchedLines[index]?.itemId);
+
+                          if (conv) {
+                            const pi = purchaseInputs[index] || { purchaseQty: '', purchaseCost: '', manualOverride: false };
+                            return (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    type="number"
+                                    step="any"
+                                    min="0.01"
+                                    placeholder="0"
+                                    className="h-9 w-16"
+                                    value={pi.purchaseQty}
+                                    onChange={(e) => {
+                                      const pqty = e.target.value;
+                                      setPurchaseInputs((prev) => ({ ...prev, [index]: { ...pi, purchaseQty: pqty } }));
+                                      if (!pi.manualOverride && pqty) {
+                                        const consumptionQty = parseFloat(pqty) * conv.factor;
+                                        setValue(`lineItems.${index}.quantity`, consumptionQty);
+                                      }
+                                    }}
+                                  />
+                                  <span className="text-xs text-gray-500 whitespace-nowrap">{conv.purchaseUom}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs text-gray-400">=</span>
+                                  <Input
+                                    type="number"
+                                    step={wholeUnit ? '1' : 'any'}
+                                    min="0.01"
+                                    className="h-7 w-20 text-xs"
+                                    value={watchedLines[index]?.quantity ?? ''}
+                                    onChange={(e) => {
+                                      setPurchaseInputs((prev) => ({ ...prev, [index]: { ...pi, manualOverride: true } }));
+                                      setValue(`lineItems.${index}.quantity`, parseFloat(e.target.value) || 0);
+                                    }}
+                                  />
+                                  <span className="text-xs text-gray-500 whitespace-nowrap">{conv.consumptionUom}</span>
+                                </div>
+                                {wholeUnit && watchedLines[index]?.quantity && !Number.isInteger(Number(watchedLines[index].quantity)) && (
+                                  <p className="text-xs text-red-600">
+                                    {conv.consumptionUom} requires a whole number — adjust purchase qty or override.
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          }
+
                           return (
                             <Input
                               type="number"
@@ -486,31 +574,73 @@ export function ReceiptPage() {
                         )}
                       </TableCell>
                       <TableCell className="relative">
-                        <div className="flex items-center gap-1.5">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0.01"
-                            placeholder="0.00"
-                            className="h-9 w-24"
-                            {...register(`lineItems.${index}.unitCost`)}
-                            onBlur={(e) => {
-                              const val = parseFloat(e.target.value);
-                              if (!isNaN(val)) {
-                                e.target.value = val.toFixed(2);
-                                setValue(`lineItems.${index}.unitCost`, val);
-                              }
-                            }}
-                          />
-                          {(() => {
-                            const lp = getLastPaid(index);
-                            return lp !== null ? (
-                              <span className="text-xs text-gray-400 whitespace-nowrap" title={`Last paid: ${formatCurrency(lp)}`}>
-                                {formatCurrency(lp)}
-                              </span>
-                            ) : null;
-                          })()}
-                        </div>
+                        {(() => {
+                          const conv = getItemConversion(watchedLines[index]?.itemId ?? '');
+
+                          if (conv) {
+                            const pi = purchaseInputs[index] || { purchaseQty: '', purchaseCost: '', manualOverride: false };
+                            return (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    placeholder="0.00"
+                                    className="h-9 w-24"
+                                    value={pi.purchaseCost}
+                                    onChange={(e) => {
+                                      const pcost = e.target.value;
+                                      setPurchaseInputs((prev) => ({ ...prev, [index]: { ...pi, purchaseCost: pcost } }));
+                                      if (pcost && conv.factor) {
+                                        const consumptionCost = parseFloat(pcost) / conv.factor;
+                                        setValue(`lineItems.${index}.unitCost`, parseFloat(consumptionCost.toFixed(4)));
+                                      }
+                                    }}
+                                    onBlur={(e) => {
+                                      const val = parseFloat(e.target.value);
+                                      if (!isNaN(val)) {
+                                        setPurchaseInputs((prev) => ({ ...prev, [index]: { ...pi, purchaseCost: val.toFixed(2) } }));
+                                      }
+                                    }}
+                                  />
+                                  <span className="text-xs text-gray-400 whitespace-nowrap">/{conv.purchaseUom}</span>
+                                </div>
+                                <div className="text-xs text-gray-400">
+                                  = {watchedLines[index]?.unitCost ? `$${Number(watchedLines[index].unitCost).toFixed(4)}/${conv.consumptionUom}` : '--'}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                placeholder="0.00"
+                                className="h-9 w-24"
+                                {...register(`lineItems.${index}.unitCost`)}
+                                onBlur={(e) => {
+                                  const val = parseFloat(e.target.value);
+                                  if (!isNaN(val)) {
+                                    e.target.value = val.toFixed(2);
+                                    setValue(`lineItems.${index}.unitCost`, val);
+                                  }
+                                }}
+                              />
+                              {(() => {
+                                const lp = getLastPaid(index);
+                                return lp !== null ? (
+                                  <span className="text-xs text-gray-400 whitespace-nowrap" title={`Last paid: ${formatCurrency(lp)}`}>
+                                    {formatCurrency(lp)}
+                                  </span>
+                                ) : null;
+                              })()}
+                            </div>
+                          );
+                        })()}
                         {errors.lineItems?.[index]?.unitCost && (
                           <p className="text-xs text-red-600 mt-0.5 absolute">{errors.lineItems[index].unitCost?.message}</p>
                         )}
@@ -593,10 +723,17 @@ export function ReceiptPage() {
               <div className="mt-2 border rounded-md divide-y text-xs">
                 {pendingValues.lineItems.map((li, idx) => {
                   const item = items.find((i) => String(i.id) === li.itemId);
+                  const conv = getItemConversion(li.itemId);
+                  const pi = purchaseInputs[idx];
                   return (
                     <div key={idx} className="flex justify-between px-2 py-1">
                       <span>{item?.itemCode ?? '--'}</span>
-                      <span>{li.quantity} x {formatCurrency(li.unitCost)}</span>
+                      <span>
+                        {conv && pi?.purchaseQty
+                          ? <span>{pi.purchaseQty} {conv.purchaseUom} <span className="text-gray-400">({li.quantity} {conv.consumptionUom})</span></span>
+                          : li.quantity
+                        } x {formatCurrency(li.unitCost)}
+                      </span>
                     </div>
                   );
                 })}

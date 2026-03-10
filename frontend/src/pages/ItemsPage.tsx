@@ -49,6 +49,8 @@ type Item = {
   itemType?: string;
   allowDecimalQty?: boolean;
   stockLength?: number | null;
+  purchaseUom?: string | null;
+  conversionFactor?: number | null;
   isActive?: boolean;
   notes?: string | null;
   createdAt?: string;
@@ -359,6 +361,18 @@ export function ItemsPage() {
                   <p className="text-gray-500">Unit of Measure</p>
                   <p className="font-medium">{detailItem.unitOfMeasure}</p>
                 </div>
+                {detailItem.purchaseUom && (
+                  <>
+                    <div>
+                      <p className="text-gray-500">Purchase UOM</p>
+                      <p className="font-medium">{detailItem.purchaseUom}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Conversion</p>
+                      <p className="font-medium">1 {detailItem.purchaseUom} = {detailItem.conversionFactor} {detailItem.unitOfMeasure}</p>
+                    </div>
+                  </>
+                )}
                 <div>
                   <p className="text-gray-500">Min Quantity</p>
                   <p className="font-medium">{detailItem.minQuantity ?? '—'}</p>

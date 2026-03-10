@@ -603,7 +603,7 @@ export function BOMsPage() {
                           triggerClassName="h-9"
                         />
                       </div>
-                      <div className="w-20">
+                      <div className="w-[72px]">
                         <Label className="text-xs text-muted-foreground mb-1 block">Qty</Label>
                         <Input
                           type="number"
@@ -615,6 +615,12 @@ export function BOMsPage() {
                           onChange={(e) => setStagingLine((s) => ({ ...s, quantityPer: e.target.value }))}
                           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStagingLine(); } }}
                         />
+                      </div>
+                      <div className="w-16">
+                        <Label className="text-xs text-muted-foreground mb-1 block">UOM</Label>
+                        <div className="h-9 flex items-center text-sm text-muted-foreground">
+                          {stagingLine.itemId ? (items.find((i) => String(i.id) === stagingLine.itemId)?.unitOfMeasure ?? '—') : '—'}
+                        </div>
                       </div>
                       <div className="w-28">
                         <Label className="text-xs text-muted-foreground mb-1 block">Notes</Label>
@@ -679,9 +685,10 @@ export function BOMsPage() {
                             <TableHeader>
                               <TableRow className="bg-gray-50/50">
                                 <TableHead className="w-10">#</TableHead>
-                                <TableHead className="w-48">Part #</TableHead>
-                                <TableHead className="w-[45%]">Description</TableHead>
-                                <TableHead className="w-20">Qty</TableHead>
+                                <TableHead className="w-44">Part #</TableHead>
+                                <TableHead className="w-[42%]">Description</TableHead>
+                                <TableHead className="w-[72px]">Qty</TableHead>
+                                <TableHead className="w-16">UOM</TableHead>
                                 <TableHead className="w-28">Notes</TableHead>
                                 <TableHead className="w-10" />
                               </TableRow>
@@ -701,6 +708,7 @@ export function BOMsPage() {
                                           <TableCell className="whitespace-nowrap text-sm font-mono">{selectedItem?.itemCode ?? '—'}</TableCell>
                                           <TableCell className="text-sm">{selectedItem?.description ?? '—'}</TableCell>
                                           <TableCell className="text-sm">{line.quantityPer || '—'}</TableCell>
+                                          <TableCell className="text-sm text-muted-foreground">{selectedItem?.unitOfMeasure ?? '—'}</TableCell>
                                           <TableCell className="text-sm text-muted-foreground">{line.notes || ''}</TableCell>
                                           <TableCell />
                                         </>
@@ -771,6 +779,9 @@ export function BOMsPage() {
                                               />
                                             )}
                                           </TableCell>
+                                          <TableCell className="text-sm text-muted-foreground">
+                                            {selectedItem?.unitOfMeasure ?? '—'}
+                                          </TableCell>
                                           <TableCell>
                                             <Input
                                               placeholder="Add note..."
@@ -796,7 +807,7 @@ export function BOMsPage() {
                                     {/* Cut piece editor — full-width expanded row */}
                                     {isExpanded && !viewOnly && (
                                       <TableRow className="bg-blue-50/30 hover:bg-blue-50/40">
-                                        <TableCell colSpan={6} className="py-2 px-3">
+                                        <TableCell colSpan={7} className="py-2 px-3">
                                           <div className="rounded border border-blue-100 bg-blue-50/50 p-3">
                                             <CutPieceEditor
                                               stockLength={selectedItem!.stockLength!}

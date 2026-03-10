@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { Fragment, useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuthContext } from '@/context/AuthContext';
 import { api, ApiError } from '@/lib/api';
 import { allowsDecimals } from '@/lib/uom';
@@ -41,6 +41,7 @@ import { ChevronDown, ChevronRight, MoreHorizontal, Plus, Search, X } from 'luci
 import { Combobox } from '@/components/ui/combobox';
 import { OptionGroupsSection } from '@/components/OptionGroupsSection';
 import CutPieceEditor from '@/components/CutPieceEditor';
+import { CATEGORY_PRESETS } from '@/lib/categoryPresets';
 
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; category?: string | null; itemType?: string; allowDecimalQty?: boolean; stockLength?: number | null };
 
@@ -118,6 +119,80 @@ export function BOMsPage() {
   const [actionSuccess, setActionSuccess] = useState('');
   const [confirmStatus, setConfirmStatus] = useState<{ id: number; newStatus: string; name: string } | null>(null);
   const [expandedCutLines, setExpandedCutLines] = useState<Set<number>>(new Set());
+  const [stagingLine, setStagingLine] = useState<BomLine>({ ...EMPTY_LINE });
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  const [componentsSectionCollapsed, setComponentsSectionCollapsed] = useState(false);
+
+  // Group form.lines by item category for display
+  const groupedLines = useMemo(() => {
+    const catOrder = new Map<string, number>(CATEGORY_PRESETS.map((c, i) => [c, i]));
+    const groups: { category: string; entries: { line: BomLine; originalIndex: number }[] }[] = [];
+    const catMap = new Map<string, { line: BomLine; originalIndex: number }[]>();
+
+    form.lines.forEach((line, index) => {
+      if (!line.itemId) return;
+      const item = items.find((i) => String(i.id) === line.itemId);
+      const cat = item?.category || 'Uncategorized';
+      if (!catMap.has(cat)) catMap.set(cat, []);
+      catMap.get(cat)!.push({ line, originalIndex: index });
+    });
+
+    // Sort categories by CATEGORY_PRESETS order, unknowns at end
+    const sorted = [...catMap.entries()].sort(([a], [b]) => {
+      const ai = catOrder.get(a) ?? Infinity;
+      const bi = catOrder.get(b) ?? Infinity;
+      if (ai !== bi) return ai - bi;
+      return a.localeCompare(b);
+    });
+
+    for (const [category, entries] of sorted) {
+      groups.push({ category, entries });
+    }
+    return groups;
+  }, [form.lines, items]);
+
+  // Sequential numbering across all groups
+  const lineNumberMap = useMemo(() => {
+    const map = new Map<number, number>();
+    let num = 1;
+    for (const group of groupedLines) {
+      for (const entry of group.entries) {
+        map.set(entry.originalIndex, num++);
+      }
+    }
+    return map;
+  }, [groupedLines]);
+
+  function toggleCategory(cat: string) {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  }
+
+  function addStagingLine() {
+    if (!stagingLine.itemId) return;
+    // Auto-expand the target category
+    const item = items.find((i) => String(i.id) === stagingLine.itemId);
+    const cat = item?.category || 'Uncategorized';
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      next.delete(cat);
+      return next;
+    });
+    // Append to form.lines
+    setForm((f) => {
+      const newIndex = f.lines.length;
+      // Auto-expand cut editor if cut material
+      if (item?.allowDecimalQty && item.stockLength) {
+        setExpandedCutLines((prev) => new Set(prev).add(newIndex));
+      }
+      return { ...f, lines: [...f.lines, { ...stagingLine }] };
+    });
+    setStagingLine({ ...EMPTY_LINE });
+  }
 
   useEffect(() => {
     if (actionSuccess) {
@@ -151,6 +226,8 @@ export function BOMsPage() {
     setForm(EMPTY_FORM);
     setFormError('');
     setExpandedCutLines(new Set());
+    setStagingLine({ ...EMPTY_LINE });
+    setCollapsedCategories(new Set());
     setDialogOpen(true);
   }
 
@@ -181,6 +258,8 @@ export function BOMsPage() {
       const cutExpanded = new Set<number>();
       lines.forEach((l, i) => { if (l.cutDetails) cutExpanded.add(i); });
       setExpandedCutLines(cutExpanded);
+      setStagingLine({ ...EMPTY_LINE });
+      setCollapsedCategories(new Set());
       setDialogOpen(true);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Failed to load BOM details');
@@ -242,13 +321,6 @@ export function BOMsPage() {
     });
   }
 
-  function addLine() {
-    setForm((f) => {
-      const newIndex = f.lines.length;
-      setExpandedCutLines((prev) => new Set(prev).add(newIndex));
-      return { ...f, lines: [...f.lines, { ...EMPTY_LINE }] };
-    });
-  }
 
   function toggleCutExpand(index: number) {
     setExpandedCutLines((prev) => {
@@ -479,195 +551,308 @@ export function BOMsPage() {
                 </>
               )}
 
-              {/* Component lines */}
+              {/* Component lines — grouped by category */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Components</Label>
-                  {!viewOnly && (
-                    <Button type="button" variant="outline" size="sm" onClick={addLine}>
-                      <Plus className="h-4 w-4 mr-1" />
-                      Add Component
-                    </Button>
-                  )}
-                </div>
-                <div className="rounded-md border overflow-x-auto">
-                  <Table className="table-fixed min-w-[700px]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-10">#</TableHead>
-                        <TableHead className="w-48">Part #</TableHead>
-                        <TableHead className="w-auto">Description</TableHead>
-                        <TableHead className="w-32">Category</TableHead>
-                        <TableHead className="w-20">Qty</TableHead>
-                        <TableHead className="w-[100px]">Notes</TableHead>
-                        <TableHead className="w-10" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {form.lines.map((line, index) => {
-                        const selectedItem = items.find((i) => String(i.id) === line.itemId);
-                        const isCutMaterial = selectedItem?.allowDecimalQty && selectedItem.stockLength;
-                        const isExpanded = isCutMaterial && expandedCutLines.has(index);
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-2 px-3 py-2 bg-slate-700 text-white rounded-md hover:bg-slate-800 transition-colors text-left"
+                  onClick={() => setComponentsSectionCollapsed((v) => !v)}
+                >
+                  {componentsSectionCollapsed
+                    ? <ChevronRight className="h-4 w-4" />
+                    : <ChevronDown className="h-4 w-4" />
+                  }
+                  <span className="text-sm font-semibold">Base Components</span>
+                  <span className="text-xs text-slate-300 ml-1">
+                    {form.lines.filter((l) => l.itemId).length} item{form.lines.filter((l) => l.itemId).length !== 1 ? 's' : ''}
+                  </span>
+                </button>
 
-                        return (
-                          <>
-                            <TableRow key={index}>
-                              <TableCell className="text-gray-400 text-sm">{index + 1}</TableCell>
-                              {viewOnly ? (
-                                <>
-                                  <TableCell className="whitespace-nowrap text-sm font-mono">{selectedItem?.itemCode ?? '—'}</TableCell>
-                                  <TableCell className="text-sm">{selectedItem?.description ?? '—'}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground">{selectedItem?.category ?? '—'}</TableCell>
-                                  <TableCell className="text-sm">{line.quantityPer || '—'}</TableCell>
-                                  <TableCell className="text-sm text-muted-foreground">{line.notes || ''}</TableCell>
-                                  <TableCell />
-                                </>
-                              ) : (
-                                <>
-                                  <TableCell>
-                                    <Combobox
-                                      options={componentItems.map((item) => ({
-                                        value: String(item.id),
-                                        label: item.itemCode,
-                                        searchText: item.itemCode,
-                                      }))}
-                                      value={line.itemId}
-                                      onValueChange={(v) => updateLineMulti(index, { itemId: v, scrapPercent: '', cutDetails: null })}
-                                      placeholder="Part #..."
-                                      searchPlaceholder="Search part #..."
-                                      triggerClassName="h-9"
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    <Combobox
-                                      options={componentItems.map((item) => ({
-                                        value: String(item.id),
-                                        label: item.description,
-                                        searchText: item.description,
-                                      }))}
-                                      value={line.itemId}
-                                      onValueChange={(v) => updateLineMulti(index, { itemId: v, scrapPercent: '', cutDetails: null })}
-                                      placeholder="Description..."
-                                      searchPlaceholder="Search description..."
-                                      triggerClassName="h-9"
-                                    />
-                                  </TableCell>
-                                  <TableCell className="text-xs text-muted-foreground truncate">
-                                    {selectedItem?.category ?? '—'}
-                                  </TableCell>
-                                  <TableCell>
-                                    {isCutMaterial ? (
-                                      <button
-                                        type="button"
-                                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 w-full"
-                                        onClick={() => toggleCutExpand(index)}
-                                      >
-                                        {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                        {line.cutDetails ? (
-                                          <span className="truncate" title={`${line.quantityPer} (${(() => {
-                                            const cd = line.cutDetails as { pieces?: { lengthInches: number; quantity: number }[] } | null;
-                                            return cd?.pieces?.map(p => `${p.quantity}×${p.lengthInches}in`).join(', ') ?? '';
-                                          })()}, ${line.scrapPercent || 0}% scrap)`}>
-                                            {line.quantityPer || '—'}
-                                          </span>
-                                        ) : (
-                                          <span>Cut...</span>
-                                        )}
-                                      </button>
-                                    ) : (
-                                      <Input
-                                        type="number"
-                                        step="any"
-                                        min="0.01"
-                                        placeholder="1"
-                                        className="h-9"
-                                        value={line.quantityPer}
-                                        onChange={(e) => updateLine(index, 'quantityPer', e.target.value)}
-                                        onBlur={(e) => {
-                                          const val = parseFloat(e.target.value);
-                                          if (!isNaN(val)) {
-                                            updateLine(index, 'quantityPer', String(parseFloat(val.toFixed(4))));
-                                          }
-                                        }}
-                                      />
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Input
-                                      placeholder="Add note..."
-                                      className="h-9 text-xs"
-                                      value={line.notes}
-                                      onChange={(e) => updateLine(index, 'notes', e.target.value)}
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    {form.lines.length > 1 && (
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8"
-                                        onClick={() => removeLine(index)}
-                                      >
-                                        <X className="h-4 w-4 text-gray-400" />
-                                      </Button>
-                                    )}
-                                  </TableCell>
-                                </>
-                              )}
-                            </TableRow>
-                            {/* Cut piece editor — full-width expanded row */}
-                            {isExpanded && !viewOnly && (
-                              <TableRow key={`${index}-cut`} className="bg-blue-50/30 hover:bg-blue-50/40">
-                                <TableCell colSpan={6} className="py-2 px-3">
-                                  <div className="rounded border border-blue-100 bg-blue-50/50 p-3">
-                                    <CutPieceEditor
-                                      stockLength={selectedItem.stockLength!}
-                                      value={{
-                                        cutDetails: line.cutDetails as { pieces: { lengthInches: number; quantity: number }[]; stockLengthInches: number } | null,
-                                        scrapPercent: line.scrapPercent ? parseFloat(line.scrapPercent) : null,
-                                        quantityPer: line.quantityPer ? parseFloat(line.quantityPer) : null,
-                                      }}
-                                      onChange={({ cutDetails, scrapPercent, quantityPer }) =>
-                                        updateLineMulti(index, {
-                                          quantityPer: quantityPer != null ? String(quantityPer) : '',
-                                          scrapPercent: scrapPercent != null ? String(scrapPercent) : '',
-                                          cutDetails,
-                                        })
-                                      }
-                                    />
-                                  </div>
-                                </TableCell>
+                {!componentsSectionCollapsed && <>
+                {/* Staging row — add new components here */}
+                {!viewOnly && (
+                  <div className="rounded-md border bg-gray-50/50 p-3">
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1 min-w-0">
+                        <Label className="text-xs text-muted-foreground mb-1 block">Part #</Label>
+                        <Combobox
+                          options={componentItems.map((item) => ({
+                            value: String(item.id),
+                            label: item.itemCode,
+                            searchText: item.itemCode,
+                          }))}
+                          value={stagingLine.itemId}
+                          onValueChange={(v) => setStagingLine((s) => ({ ...s, itemId: v }))}
+                          placeholder="Part #..."
+                          searchPlaceholder="Search part #..."
+                          triggerClassName="h-9"
+                        />
+                      </div>
+                      <div className="flex-[2] min-w-0">
+                        <Label className="text-xs text-muted-foreground mb-1 block">Description</Label>
+                        <Combobox
+                          options={componentItems.map((item) => ({
+                            value: String(item.id),
+                            label: item.description,
+                            searchText: item.description,
+                          }))}
+                          value={stagingLine.itemId}
+                          onValueChange={(v) => setStagingLine((s) => ({ ...s, itemId: v }))}
+                          placeholder="Description..."
+                          searchPlaceholder="Search description..."
+                          triggerClassName="h-9"
+                        />
+                      </div>
+                      <div className="w-20">
+                        <Label className="text-xs text-muted-foreground mb-1 block">Qty</Label>
+                        <Input
+                          type="number"
+                          step="any"
+                          min="0.01"
+                          placeholder="1"
+                          className="h-9"
+                          value={stagingLine.quantityPer}
+                          onChange={(e) => setStagingLine((s) => ({ ...s, quantityPer: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStagingLine(); } }}
+                        />
+                      </div>
+                      <div className="w-28">
+                        <Label className="text-xs text-muted-foreground mb-1 block">Notes</Label>
+                        <Input
+                          placeholder="Optional..."
+                          className="h-9 text-xs"
+                          value={stagingLine.notes}
+                          onChange={(e) => setStagingLine((s) => ({ ...s, notes: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStagingLine(); } }}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-9"
+                        onClick={addStagingLine}
+                        disabled={!stagingLine.itemId}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add
+                      </Button>
+                    </div>
+                    {stagingLine.itemId && (() => {
+                      const si = items.find((i) => String(i.id) === stagingLine.itemId);
+                      return si?.category ? (
+                        <p className="text-xs text-muted-foreground mt-1.5">
+                          Will be added to <span className="font-medium">{si.category}</span>
+                        </p>
+                      ) : null;
+                    })()}
+                  </div>
+                )}
+
+                {/* Grouped category sections */}
+                {groupedLines.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground text-sm border rounded-md">
+                    {viewOnly ? 'No base components.' : 'Add base components above — they will be automatically grouped by category.'}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  {groupedLines.map(({ category, entries }) => {
+                    const isCatCollapsed = collapsedCategories.has(category);
+                    return (
+                      <div key={category} className="rounded-md border border-l-[3px] border-l-slate-400 overflow-hidden">
+                        {/* Category header */}
+                        <button
+                          type="button"
+                          className="w-full flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-150 transition-colors text-left"
+                          onClick={() => toggleCategory(category)}
+                        >
+                          {isCatCollapsed
+                            ? <ChevronRight className="h-4 w-4 text-gray-500" />
+                            : <ChevronDown className="h-4 w-4 text-gray-500" />
+                          }
+                          <span className="text-sm font-medium text-gray-700">{category}</span>
+                          <span className="text-xs text-gray-400 ml-1">({entries.length})</span>
+                        </button>
+
+                        {/* Items table — hidden when collapsed */}
+                        {!isCatCollapsed && (
+                          <Table className="table-fixed w-full">
+                            <TableHeader>
+                              <TableRow className="bg-gray-50/50">
+                                <TableHead className="w-10">#</TableHead>
+                                <TableHead className="w-48">Part #</TableHead>
+                                <TableHead className="w-[45%]">Description</TableHead>
+                                <TableHead className="w-20">Qty</TableHead>
+                                <TableHead className="w-28">Notes</TableHead>
+                                <TableHead className="w-10" />
                               </TableRow>
-                            )}
-                            {/* Cut piece read-only summary for view mode */}
-                            {isCutMaterial && viewOnly && line.cutDetails && (
-                              <TableRow key={`${index}-cut-ro`} className="bg-gray-50/50">
-                                <TableCell colSpan={6} className="py-1.5 px-3">
-                                  <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4">
-                                    <span>Qty: {line.quantityPer}</span>
-                                    <span>Scrap: {line.scrapPercent || 0}%</span>
-                                    {(() => {
-                                      const cd = line.cutDetails as { pieces?: { lengthInches: number; quantity: number }[]; stockLengthInches?: number } | null;
-                                      if (!cd?.pieces) return null;
-                                      return (
+                            </TableHeader>
+                            <TableBody>
+                              {entries.map(({ line, originalIndex }) => {
+                                const selectedItem = items.find((i) => String(i.id) === line.itemId);
+                                const isCutMaterial = !!(selectedItem?.allowDecimalQty && selectedItem.stockLength);
+                                const isExpanded = isCutMaterial && expandedCutLines.has(originalIndex);
+
+                                return (
+                                  <Fragment key={originalIndex}>
+                                    <TableRow>
+                                      <TableCell className="text-gray-400 text-sm">{lineNumberMap.get(originalIndex) ?? ''}</TableCell>
+                                      {viewOnly ? (
                                         <>
-                                          <span>Stock: {cd.stockLengthInches}in</span>
-                                          <span>Cuts: {cd.pieces.map(p => `${p.quantity}×${p.lengthInches}in`).join(' + ')}</span>
+                                          <TableCell className="whitespace-nowrap text-sm font-mono">{selectedItem?.itemCode ?? '—'}</TableCell>
+                                          <TableCell className="text-sm">{selectedItem?.description ?? '—'}</TableCell>
+                                          <TableCell className="text-sm">{line.quantityPer || '—'}</TableCell>
+                                          <TableCell className="text-sm text-muted-foreground">{line.notes || ''}</TableCell>
+                                          <TableCell />
                                         </>
-                                      );
-                                    })()}
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                                      ) : (
+                                        <>
+                                          <TableCell>
+                                            <Combobox
+                                              options={componentItems.map((item) => ({
+                                                value: String(item.id),
+                                                label: item.itemCode,
+                                                searchText: item.itemCode,
+                                              }))}
+                                              value={line.itemId}
+                                              onValueChange={(v) => updateLineMulti(originalIndex, { itemId: v, scrapPercent: '', cutDetails: null })}
+                                              placeholder="Part #..."
+                                              searchPlaceholder="Search part #..."
+                                              triggerClassName="h-9"
+                                            />
+                                          </TableCell>
+                                          <TableCell>
+                                            <Combobox
+                                              options={componentItems.map((item) => ({
+                                                value: String(item.id),
+                                                label: item.description,
+                                                searchText: item.description,
+                                              }))}
+                                              value={line.itemId}
+                                              onValueChange={(v) => updateLineMulti(originalIndex, { itemId: v, scrapPercent: '', cutDetails: null })}
+                                              placeholder="Description..."
+                                              searchPlaceholder="Search description..."
+                                              triggerClassName="h-9"
+                                            />
+                                          </TableCell>
+                                          <TableCell>
+                                            {isCutMaterial ? (
+                                              <button
+                                                type="button"
+                                                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 w-full"
+                                                onClick={() => toggleCutExpand(originalIndex)}
+                                              >
+                                                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                                {line.cutDetails ? (
+                                                  <span className="truncate" title={`${line.quantityPer} (${(() => {
+                                                    const cd = line.cutDetails as { pieces?: { lengthInches: number; quantity: number }[] } | null;
+                                                    return cd?.pieces?.map(p => `${p.quantity}×${p.lengthInches}in`).join(', ') ?? '';
+                                                  })()}, ${line.scrapPercent || 0}% scrap)`}>
+                                                    {line.quantityPer || '—'}
+                                                  </span>
+                                                ) : (
+                                                  <span>Cut...</span>
+                                                )}
+                                              </button>
+                                            ) : (
+                                              <Input
+                                                type="number"
+                                                step="any"
+                                                min="0.01"
+                                                placeholder="1"
+                                                className="h-9"
+                                                value={line.quantityPer}
+                                                onChange={(e) => updateLine(originalIndex, 'quantityPer', e.target.value)}
+                                                onBlur={(e) => {
+                                                  const val = parseFloat(e.target.value);
+                                                  if (!isNaN(val)) {
+                                                    updateLine(originalIndex, 'quantityPer', String(parseFloat(val.toFixed(4))));
+                                                  }
+                                                }}
+                                              />
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            <Input
+                                              placeholder="Add note..."
+                                              className="h-9 text-xs"
+                                              value={line.notes}
+                                              onChange={(e) => updateLine(originalIndex, 'notes', e.target.value)}
+                                            />
+                                          </TableCell>
+                                          <TableCell>
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-8 w-8"
+                                              onClick={() => removeLine(originalIndex)}
+                                            >
+                                              <X className="h-4 w-4 text-gray-400" />
+                                            </Button>
+                                          </TableCell>
+                                        </>
+                                      )}
+                                    </TableRow>
+                                    {/* Cut piece editor — full-width expanded row */}
+                                    {isExpanded && !viewOnly && (
+                                      <TableRow className="bg-blue-50/30 hover:bg-blue-50/40">
+                                        <TableCell colSpan={6} className="py-2 px-3">
+                                          <div className="rounded border border-blue-100 bg-blue-50/50 p-3">
+                                            <CutPieceEditor
+                                              stockLength={selectedItem!.stockLength!}
+                                              value={{
+                                                cutDetails: line.cutDetails as { pieces: { lengthInches: number; quantity: number }[]; stockLengthInches: number } | null,
+                                                scrapPercent: line.scrapPercent ? parseFloat(line.scrapPercent) : null,
+                                                quantityPer: line.quantityPer ? parseFloat(line.quantityPer) : null,
+                                              }}
+                                              onChange={({ cutDetails, scrapPercent, quantityPer }) =>
+                                                updateLineMulti(originalIndex, {
+                                                  quantityPer: quantityPer != null ? String(quantityPer) : '',
+                                                  scrapPercent: scrapPercent != null ? String(scrapPercent) : '',
+                                                  cutDetails,
+                                                })
+                                              }
+                                            />
+                                          </div>
+                                        </TableCell>
+                                      </TableRow>
+                                    )}
+                                    {/* Cut piece read-only summary for view mode */}
+                                    {isCutMaterial && viewOnly && !!line.cutDetails && (
+                                      <TableRow className="bg-gray-50/50">
+                                        <TableCell colSpan={6} className="py-1.5 px-3">
+                                          <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4">
+                                            <span>Qty: {line.quantityPer}</span>
+                                            <span>Scrap: {line.scrapPercent || 0}%</span>
+                                            {(() => {
+                                              const cd = line.cutDetails as { pieces?: { lengthInches: number; quantity: number }[]; stockLengthInches?: number } | null;
+                                              if (!cd?.pieces) return null;
+                                              return (
+                                                <>
+                                                  <span>Stock: {cd.stockLengthInches}in</span>
+                                                  <span>Cuts: {cd.pieces.map(p => `${p.quantity}×${p.lengthInches}in`).join(' + ')}</span>
+                                                </>
+                                              );
+                                            })()}
+                                          </div>
+                                        </TableCell>
+                                      </TableRow>
+                                    )}
+                                  </Fragment>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
+                </>}
               </div>
+
+              {/* Divider between sections */}
+              {editingId && <hr className="border-t-2 border-gray-200 my-2" />}
 
               {/* Option Groups (only shown on existing BOMs) */}
               {editingId && (
@@ -680,7 +865,7 @@ export function BOMsPage() {
               )}
 
               {formError && <p className="text-sm text-red-500">{formError}</p>}
-              <div className="sticky bottom-0 bg-white border-t pt-3 pb-1 -mx-6 px-6 flex justify-end gap-2 z-10">
+              <div className="sticky bottom-0 bg-white border-t pt-3 pb-2 -mx-6 -mb-6 px-6 flex justify-end gap-2 z-20 shadow-[0_-8px_16px_-4px_rgba(0,0,0,0.15)]">
                 {viewOnly ? (
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                     Close

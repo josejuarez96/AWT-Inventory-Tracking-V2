@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { Fragment, useState, useCallback, useRef, useMemo } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { allowsDecimals } from '@/lib/uom';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ import {
 import { Combobox } from '@/components/ui/combobox';
 import CutPieceEditor from '@/components/CutPieceEditor';
 import { ChevronDown, ChevronRight, Plus, X } from 'lucide-react';
+import { CATEGORY_PRESETS } from '@/lib/categoryPresets';
 
 type Item = {
   id: number;
@@ -138,6 +139,64 @@ export function PackageEditorDialog({ bomId, pkg, items, onClose, onSaved }: Pro
       : [{ ...EMPTY_LINE }]
   ));
 
+  const [stagingLine, setStagingLine] = useState<LineForm>({ ...EMPTY_LINE });
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+
+  const groupedLines = useMemo(() => {
+    const catOrder = new Map<string, number>(CATEGORY_PRESETS.map((c, i) => [c, i]));
+    const catMap = new Map<string, { line: LineForm; originalIndex: number }[]>();
+
+    lines.forEach((line, index) => {
+      if (!line.itemId) return;
+      const item = items.find((i) => String(i.id) === line.itemId);
+      const cat = item?.category || 'Uncategorized';
+      if (!catMap.has(cat)) catMap.set(cat, []);
+      catMap.get(cat)!.push({ line, originalIndex: index });
+    });
+
+    return [...catMap.entries()].sort(([a], [b]) => {
+      const ai = catOrder.get(a) ?? Infinity;
+      const bi = catOrder.get(b) ?? Infinity;
+      if (ai !== bi) return ai - bi;
+      return a.localeCompare(b);
+    }).map(([category, entries]) => ({ category, entries }));
+  }, [lines, items]);
+
+  const lineNumberMap = useMemo(() => {
+    const map = new Map<number, number>();
+    let num = 1;
+    for (const group of groupedLines) {
+      for (const entry of group.entries) {
+        map.set(entry.originalIndex, num++);
+      }
+    }
+    return map;
+  }, [groupedLines]);
+
+  function toggleCategory(cat: string) {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  }
+
+  function addStagingLine() {
+    if (!stagingLine.itemId) return;
+    const item = items.find((i) => String(i.id) === stagingLine.itemId);
+    const cat = item?.category || 'Uncategorized';
+    setCollapsedCategories((prev) => { const next = new Set(prev); next.delete(cat); return next; });
+    setLines((prev) => {
+      const newIndex = prev.length;
+      if (item?.allowDecimalQty && item.stockLength && stagingLine.action === 'ADD') {
+        setExpandedCutLines((s) => new Set(s).add(newIndex));
+      }
+      return [...prev, { ...stagingLine }];
+    });
+    setStagingLine({ ...EMPTY_LINE });
+  }
+
   const isDirty = useCallback(() => {
     return JSON.stringify(headerForm) !== initialHeaderRef.current
       || JSON.stringify(lines) !== initialLinesRef.current;
@@ -183,13 +242,6 @@ export function PackageEditorDialog({ bomId, pkg, items, onClose, onSaved }: Pro
         else if (idx > index) next.add(idx - 1);
       }
       return next;
-    });
-  }
-
-  function addLine() {
-    setLines((prev) => {
-      setExpandedCutLines((s) => new Set(s).add(prev.length));
-      return [...prev, { ...EMPTY_LINE }];
     });
   }
 
@@ -348,159 +400,244 @@ export function PackageEditorDialog({ bomId, pkg, items, onClose, onSaved }: Pro
             )}
           </div>
 
-          {/* Component lines */}
+          {/* Component lines — grouped by category */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-medium">Component Lines</Label>
-              <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={addLine}>
-                <Plus className="h-3 w-3 mr-1" />
-                Add Line
-              </Button>
+              <span className="text-xs text-muted-foreground">
+                {lines.filter((l) => l.itemId).length} item{lines.filter((l) => l.itemId).length !== 1 ? 's' : ''}
+              </span>
             </div>
-            <div className="rounded-md border overflow-x-auto">
-              <Table className="table-fixed min-w-[650px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10">#</TableHead>
-                    <TableHead className="w-20">Action</TableHead>
-                    <TableHead className="w-48">Part #</TableHead>
-                    <TableHead className="w-auto">Description</TableHead>
-                    <TableHead className="w-32">Category</TableHead>
-                    <TableHead className="w-20">Qty</TableHead>
-                    <TableHead className="w-[100px]">Notes</TableHead>
-                    <TableHead className="w-8" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {lines.map((line, index) => {
-                    const selectedItem = items.find((i) => String(i.id) === line.itemId);
-                    const isCutMaterial = selectedItem?.allowDecimalQty && selectedItem.stockLength && line.action === 'ADD';
-                    const isExpanded = isCutMaterial && expandedCutLines.has(index);
 
-                    return (
-                      <>
-                        <TableRow key={index}>
-                          <TableCell className="text-gray-400 text-xs">{index + 1}</TableCell>
-                          <TableCell>
-                            <Select value={line.action} onValueChange={(v) => updateLine(index, 'action', v)}>
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="ADD">ADD</SelectItem>
-                                <SelectItem value="REMOVE">REMOVE</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell>
-                            <Combobox
-                              options={items.map((item) => ({
-                                value: String(item.id),
-                                label: item.itemCode,
-                                searchText: item.itemCode,
-                              }))}
-                              value={line.itemId}
-                              onValueChange={(v) => updateLineMulti(index, { itemId: v, scrapPercent: '', cutDetails: null })}
-                              placeholder="Part #..."
-                              searchPlaceholder="Search..."
-                              triggerClassName="h-8"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Combobox
-                              options={items.map((item) => ({
-                                value: String(item.id),
-                                label: item.description,
-                                searchText: item.description,
-                              }))}
-                              value={line.itemId}
-                              onValueChange={(v) => updateLineMulti(index, { itemId: v, scrapPercent: '', cutDetails: null })}
-                              placeholder="Description..."
-                              searchPlaceholder="Search..."
-                              triggerClassName="h-8"
-                            />
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground truncate">
-                            {selectedItem?.category ?? '—'}
-                          </TableCell>
-                          <TableCell>
-                            {isCutMaterial ? (
-                              <button
-                                type="button"
-                                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 w-full"
-                                onClick={() => toggleCutExpand(index)}
-                              >
-                                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                {line.cutDetails ? (
-                                  <span className="truncate">{line.quantityPer || '—'}</span>
-                                ) : (
-                                  <span>Cut...</span>
-                                )}
-                              </button>
-                            ) : (
-                              <Input
-                                type="number"
-                                step="any"
-                                min="0.01"
-                                placeholder="1"
-                                className="h-8"
-                                value={line.quantityPer}
-                                onChange={(e) => updateLine(index, 'quantityPer', e.target.value)}
-                              />
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              placeholder="Add note..."
-                              className="h-8 text-xs"
-                              value={line.notes}
-                              onChange={(e) => updateLine(index, 'notes', e.target.value)}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            {lines.length > 1 && (
-                              <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeLine(index)}>
-                                <X className="h-3 w-3 text-gray-400" />
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                        {/* Cut piece editor — full-width expanded row */}
-                        {isExpanded && (
-                          <TableRow key={`${index}-cut`} className="bg-blue-50/30 hover:bg-blue-50/40">
-                            <TableCell colSpan={7} className="py-2 px-3">
-                              <div className="rounded border border-blue-100 bg-blue-50/50 p-3">
-                                <CutPieceEditor
-                                  stockLength={selectedItem.stockLength!}
-                                  value={{
-                                    cutDetails: line.cutDetails as { pieces: { lengthInches: number; quantity: number }[]; stockLengthInches: number } | null,
-                                    scrapPercent: line.scrapPercent ? parseFloat(line.scrapPercent) : null,
-                                    quantityPer: line.quantityPer ? parseFloat(line.quantityPer) : null,
-                                  }}
-                                  onChange={({ cutDetails, scrapPercent, quantityPer }) =>
-                                    updateLineMulti(index, {
-                                      quantityPer: quantityPer != null ? String(quantityPer) : '',
-                                      scrapPercent: scrapPercent != null ? String(scrapPercent) : '',
-                                      cutDetails,
-                                    })
-                                  }
-                                />
-                              </div>
-                            </TableCell>
+            {/* Staging row */}
+            <div className="rounded-md border bg-gray-50/50 p-2">
+              <div className="flex items-end gap-2">
+                <div className="w-20">
+                  <Label className="text-xs text-muted-foreground mb-1 block">Action</Label>
+                  <Select value={stagingLine.action} onValueChange={(v) => setStagingLine((s) => ({ ...s, action: v }))}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ADD">ADD</SelectItem>
+                      <SelectItem value="REMOVE">REMOVE</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <Label className="text-xs text-muted-foreground mb-1 block">Part #</Label>
+                  <Combobox
+                    options={items.map((item) => ({
+                      value: String(item.id),
+                      label: item.itemCode,
+                      searchText: item.itemCode,
+                    }))}
+                    value={stagingLine.itemId}
+                    onValueChange={(v) => setStagingLine((s) => ({ ...s, itemId: v }))}
+                    placeholder="Part #..."
+                    searchPlaceholder="Search..."
+                    triggerClassName="h-8"
+                  />
+                </div>
+                <div className="flex-[2] min-w-0">
+                  <Label className="text-xs text-muted-foreground mb-1 block">Description</Label>
+                  <Combobox
+                    options={items.map((item) => ({
+                      value: String(item.id),
+                      label: item.description,
+                      searchText: item.description,
+                    }))}
+                    value={stagingLine.itemId}
+                    onValueChange={(v) => setStagingLine((s) => ({ ...s, itemId: v }))}
+                    placeholder="Description..."
+                    searchPlaceholder="Search..."
+                    triggerClassName="h-8"
+                  />
+                </div>
+                <div className="w-16">
+                  <Label className="text-xs text-muted-foreground mb-1 block">Qty</Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    placeholder="1"
+                    className="h-8"
+                    value={stagingLine.quantityPer}
+                    onChange={(e) => setStagingLine((s) => ({ ...s, quantityPer: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStagingLine(); } }}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8"
+                  onClick={addStagingLine}
+                  disabled={!stagingLine.itemId}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add
+                </Button>
+              </div>
+            </div>
+
+            {/* Grouped category sections */}
+            {groupedLines.length === 0 && (
+              <div className="text-center py-6 text-muted-foreground text-xs border rounded-md">
+                Add components above — they will be automatically grouped by category.
+              </div>
+            )}
+            <div className="space-y-2">
+              {groupedLines.map(({ category, entries }) => {
+                const isCatCollapsed = collapsedCategories.has(category);
+                return (
+                  <div key={category} className="rounded-md border border-l-[3px] border-l-slate-400 overflow-hidden">
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-150 transition-colors text-left"
+                      onClick={() => toggleCategory(category)}
+                    >
+                      {isCatCollapsed
+                        ? <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
+                        : <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
+                      }
+                      <span className="text-xs font-medium text-gray-700">{category}</span>
+                      <span className="text-xs text-gray-400">({entries.length})</span>
+                    </button>
+
+                    {!isCatCollapsed && (
+                      <Table className="table-fixed w-full">
+                        <TableHeader>
+                          <TableRow className="bg-gray-50/50">
+                            <TableHead className="w-10">#</TableHead>
+                            <TableHead className="w-20">Action</TableHead>
+                            <TableHead className="w-48">Part #</TableHead>
+                            <TableHead className="w-[45%]">Description</TableHead>
+                            <TableHead className="w-20">Qty</TableHead>
+                            <TableHead className="w-28">Notes</TableHead>
+                            <TableHead className="w-8" />
                           </TableRow>
-                        )}
-                      </>
-                    );
-                  })}
-                  {lines.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center text-xs text-gray-400 py-4">
-                        No lines. Click &quot;Add Line&quot; to add components.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {entries.map(({ line, originalIndex }) => {
+                            const selectedItem = items.find((i) => String(i.id) === line.itemId);
+                            const isCutMaterial = !!(selectedItem?.allowDecimalQty && selectedItem.stockLength && line.action === 'ADD');
+                            const isExpanded = isCutMaterial && expandedCutLines.has(originalIndex);
+
+                            return (
+                              <Fragment key={originalIndex}>
+                                <TableRow>
+                                  <TableCell className="text-gray-400 text-xs">{lineNumberMap.get(originalIndex) ?? ''}</TableCell>
+                                  <TableCell>
+                                    <Select value={line.action} onValueChange={(v) => updateLine(originalIndex, 'action', v)}>
+                                      <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="ADD">ADD</SelectItem>
+                                        <SelectItem value="REMOVE">REMOVE</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Combobox
+                                      options={items.map((item) => ({
+                                        value: String(item.id),
+                                        label: item.itemCode,
+                                        searchText: item.itemCode,
+                                      }))}
+                                      value={line.itemId}
+                                      onValueChange={(v) => updateLineMulti(originalIndex, { itemId: v, scrapPercent: '', cutDetails: null })}
+                                      placeholder="Part #..."
+                                      searchPlaceholder="Search..."
+                                      triggerClassName="h-8"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Combobox
+                                      options={items.map((item) => ({
+                                        value: String(item.id),
+                                        label: item.description,
+                                        searchText: item.description,
+                                      }))}
+                                      value={line.itemId}
+                                      onValueChange={(v) => updateLineMulti(originalIndex, { itemId: v, scrapPercent: '', cutDetails: null })}
+                                      placeholder="Description..."
+                                      searchPlaceholder="Search..."
+                                      triggerClassName="h-8"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    {isCutMaterial ? (
+                                      <button
+                                        type="button"
+                                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 w-full"
+                                        onClick={() => toggleCutExpand(originalIndex)}
+                                      >
+                                        {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                        {line.cutDetails ? (
+                                          <span className="truncate">{line.quantityPer || '—'}</span>
+                                        ) : (
+                                          <span>Cut...</span>
+                                        )}
+                                      </button>
+                                    ) : (
+                                      <Input
+                                        type="number"
+                                        step="any"
+                                        min="0.01"
+                                        placeholder="1"
+                                        className="h-8"
+                                        value={line.quantityPer}
+                                        onChange={(e) => updateLine(originalIndex, 'quantityPer', e.target.value)}
+                                      />
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input
+                                      placeholder="Add note..."
+                                      className="h-8 text-xs"
+                                      value={line.notes}
+                                      onChange={(e) => updateLine(originalIndex, 'notes', e.target.value)}
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeLine(originalIndex)}>
+                                      <X className="h-3 w-3 text-gray-400" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                                {isExpanded && (
+                                  <TableRow className="bg-blue-50/30 hover:bg-blue-50/40">
+                                    <TableCell colSpan={7} className="py-2 px-3">
+                                      <div className="rounded border border-blue-100 bg-blue-50/50 p-3">
+                                        <CutPieceEditor
+                                          stockLength={selectedItem!.stockLength!}
+                                          value={{
+                                            cutDetails: line.cutDetails as { pieces: { lengthInches: number; quantity: number }[]; stockLengthInches: number } | null,
+                                            scrapPercent: line.scrapPercent ? parseFloat(line.scrapPercent) : null,
+                                            quantityPer: line.quantityPer ? parseFloat(line.quantityPer) : null,
+                                          }}
+                                          onChange={({ cutDetails, scrapPercent, quantityPer }) =>
+                                            updateLineMulti(originalIndex, {
+                                              quantityPer: quantityPer != null ? String(quantityPer) : '',
+                                              scrapPercent: scrapPercent != null ? String(scrapPercent) : '',
+                                              cutDetails,
+                                            })
+                                          }
+                                        />
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </Fragment>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 

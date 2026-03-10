@@ -497,6 +497,7 @@ export function BOMsPage() {
                         <TableHead className="w-10">#</TableHead>
                         <TableHead className="w-48">Part #</TableHead>
                         <TableHead className="w-auto">Description</TableHead>
+                        <TableHead className="w-32">Category</TableHead>
                         <TableHead className="w-20">Qty</TableHead>
                         <TableHead className="w-[100px]">Notes</TableHead>
                         <TableHead className="w-10" />
@@ -516,6 +517,7 @@ export function BOMsPage() {
                                 <>
                                   <TableCell className="whitespace-nowrap text-sm font-mono">{selectedItem?.itemCode ?? '—'}</TableCell>
                                   <TableCell className="text-sm">{selectedItem?.description ?? '—'}</TableCell>
+                                  <TableCell className="text-sm text-muted-foreground">{selectedItem?.category ?? '—'}</TableCell>
                                   <TableCell className="text-sm">{line.quantityPer || '—'}</TableCell>
                                   <TableCell className="text-sm text-muted-foreground">{line.notes || ''}</TableCell>
                                   <TableCell />
@@ -549,6 +551,9 @@ export function BOMsPage() {
                                       searchPlaceholder="Search description..."
                                       triggerClassName="h-9"
                                     />
+                                  </TableCell>
+                                  <TableCell className="text-xs text-muted-foreground truncate">
+                                    {selectedItem?.category ?? '—'}
                                   </TableCell>
                                   <TableCell>
                                     {isCutMaterial ? (

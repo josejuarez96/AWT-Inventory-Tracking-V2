@@ -34,6 +34,7 @@ type Item = {
   itemCode: string;
   description: string;
   unitOfMeasure: string;
+  category?: string | null;
   allowDecimalQty?: boolean;
   stockLength?: number | null;
 };
@@ -364,6 +365,7 @@ export function PackageEditorDialog({ bomId, pkg, items, onClose, onSaved }: Pro
                     <TableHead className="w-20">Action</TableHead>
                     <TableHead className="w-48">Part #</TableHead>
                     <TableHead className="w-auto">Description</TableHead>
+                    <TableHead className="w-32">Category</TableHead>
                     <TableHead className="w-20">Qty</TableHead>
                     <TableHead className="w-[100px]">Notes</TableHead>
                     <TableHead className="w-8" />
@@ -417,6 +419,9 @@ export function PackageEditorDialog({ bomId, pkg, items, onClose, onSaved }: Pro
                               searchPlaceholder="Search..."
                               triggerClassName="h-8"
                             />
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground truncate">
+                            {selectedItem?.category ?? '—'}
                           </TableCell>
                           <TableCell>
                             {isCutMaterial ? (

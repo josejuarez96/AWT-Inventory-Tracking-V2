@@ -142,6 +142,7 @@ router.post('/import/preview', requireAdmin, upload.single('file'), (req, res) =
   });
 
   const errors = [];
+  const warnings = [];
   rows.forEach((row, index) => {
     const rowNumber = index + 2;
     if (!row.item_code || row.item_code.trim() === '') {
@@ -186,6 +187,14 @@ router.post('/import/preview', requireAdmin, upload.single('file'), (req, res) =
         errors.push({ rowNumber, field: 'standard_cost', message: 'standard_cost must be a non-negative number' });
       }
     }
+    // Warn (non-blocking) if standard_cost looks like a purchase-unit price
+    if (row.standard_cost?.trim() && row.purchase_uom?.trim() && row.conversion_factor?.trim()) {
+      const cost = parseFloat(row.standard_cost);
+      const factor = parseFloat(row.conversion_factor);
+      if (!isNaN(cost) && !isNaN(factor) && factor > 1 && cost > 1) {
+        warnings.push({ rowNumber, field: 'standard_cost', message: `standard_cost should be per ${row.unit_of_measure?.trim() || 'EA'} (consumption unit), not per ${row.purchase_uom.trim()}. If $${cost} is per ${row.purchase_uom.trim()}, use ${(cost / factor).toFixed(4)} instead.` });
+      }
+    }
     if (row.conversion_factor && row.conversion_factor.trim() !== '') {
       const val = parseFloat(row.conversion_factor);
       if (isNaN(val) || val <= 0) {
@@ -194,7 +203,7 @@ router.post('/import/preview', requireAdmin, upload.single('file'), (req, res) =
     }
   });
 
-  return res.json({ rows, errors });
+  return res.json({ rows, errors, warnings });
 });
 
 // POST /api/items/import — commit validated rows (JSON body)

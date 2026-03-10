@@ -117,7 +117,11 @@ export function ItemFormDialog({ open, onClose, onSaved, editingItem, vendors }:
         unitOfMeasure: editingItem.unitOfMeasure,
         minQuantity: editingItem.minQuantity != null ? String(editingItem.minQuantity) : '',
         maxQuantity: editingItem.maxQuantity != null ? String(editingItem.maxQuantity) : '',
-        standardCost: editingItem.standardCost != null ? String(editingItem.standardCost) : '',
+        standardCost: editingItem.standardCost != null
+          ? (editingItem.purchaseUom && editingItem.conversionFactor
+              ? String(editingItem.standardCost * editingItem.conversionFactor)
+              : String(editingItem.standardCost))
+          : '',
         defaultVendorId: editingItem.defaultVendorId != null ? String(editingItem.defaultVendorId) : '',
         additionalVendorIds: [],
         notes: editingItem.notes ?? '',
@@ -192,7 +196,11 @@ export function ItemFormDialog({ open, onClose, onSaved, editingItem, vendors }:
       unitOfMeasure: form.unitOfMeasure.trim() || 'EA',
       minQuantity: form.minQuantity ? parseFloat(form.minQuantity) : null,
       maxQuantity: form.maxQuantity ? parseFloat(form.maxQuantity) : null,
-      standardCost: form.standardCost ? parseFloat(form.standardCost) : null,
+      standardCost: form.standardCost
+        ? (form.purchaseUom && form.conversionFactor
+            ? parseFloat((parseFloat(form.standardCost) / parseFloat(form.conversionFactor)).toFixed(4))
+            : parseFloat(form.standardCost))
+        : null,
       defaultVendorId: form.defaultVendorId ? parseInt(form.defaultVendorId) : null,
       additionalVendorIds: form.additionalVendorIds.filter((id) => id).map((id) => parseInt(id)),
       notes: form.notes.trim() || null,
@@ -427,22 +435,31 @@ export function ItemFormDialog({ open, onClose, onSaved, editingItem, vendors }:
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="standardCost">Standard Cost ($)</Label>
+                <Label htmlFor="standardCost">
+                  {form.purchaseUom && form.conversionFactor
+                    ? `Standard Cost ($/${form.purchaseUom})`
+                    : 'Standard Cost ($)'}
+                </Label>
                 <Input
                   id="standardCost"
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="0.0001"
                   value={form.standardCost}
                   onChange={(e) => setForm((f) => ({ ...f, standardCost: e.target.value }))}
                   onBlur={(e) => {
                     const val = parseFloat(e.target.value);
                     if (!isNaN(val)) {
-                      setForm((f) => ({ ...f, standardCost: val.toFixed(2) }));
+                      setForm((f) => ({ ...f, standardCost: val.toFixed(4) }));
                     }
                   }}
-                  placeholder="0.00"
+                  placeholder="0.0000"
                 />
+                {form.purchaseUom && form.conversionFactor && form.standardCost && (
+                  <p className="text-xs text-muted-foreground">
+                    = ${(parseFloat(form.standardCost) / parseFloat(form.conversionFactor)).toFixed(4)}/{form.unitOfMeasure || 'EA'}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="defaultVendorId">Default Vendor</Label>

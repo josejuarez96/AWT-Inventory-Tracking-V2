@@ -35,7 +35,7 @@ type Transaction = {
   notes: string | null;
   transactionDate: string;
   createdAt: string;
-  item: { itemCode: string; description: string };
+  item: { itemCode: string; description: string; unitOfMeasure?: string; purchaseUom?: string | null; conversionFactor?: number | null };
   vendor: { vendorName: string } | null;
   user: { fullName: string };
   productionOrder: { id: number; orderNumber: string } | null;
@@ -181,12 +181,24 @@ export function TransactionHistoryPage() {
   }
 
   // Extract adjustment reason from notes "[Reason] optional text"
+  // Also strips "[Purchase: ...]" audit notes from display (shown structurally elsewhere)
   function parseNotes(t: Transaction): { reason: string | null; text: string | null } {
-    if (t.transactionType === 'ADJUSTMENT' && t.notes) {
-      const match = t.notes.match(/^\[(.+?)\]\s*(.*)?$/);
+    let notes = t.notes;
+    // Strip purchase audit note — displayed structurally in Qty/Value columns
+    if (notes) notes = notes.replace(/\s*\[Purchase:[^\]]*\]/g, '').trim() || null;
+    if (t.transactionType === 'ADJUSTMENT' && notes) {
+      const match = notes.match(/^\[(.+?)\]\s*(.*)?$/);
       if (match) return { reason: match[1], text: match[2] || null };
     }
-    return { reason: null, text: t.notes };
+    return { reason: null, text: notes };
+  }
+
+  // Extract purchase info from notes "[Purchase: 2 ROLL @ $172.50/ROLL, factor: 2500]"
+  function parsePurchaseNote(notes: string | null): { purchaseQty: number; purchaseUom: string; purchaseCostPer: number } | null {
+    if (!notes) return null;
+    const match = notes.match(/\[Purchase:\s*([\d.]+)\s+(\S+)\s+@\s+\$([\d.]+)/);
+    if (!match) return null;
+    return { purchaseQty: parseFloat(match[1]), purchaseUom: match[2], purchaseCostPer: parseFloat(match[3]) };
   }
 
   return (
@@ -362,19 +374,37 @@ export function TransactionHistoryPage() {
                     {/* Location */}
                     <TableCell className="text-sm text-gray-600">{t.location}</TableCell>
 
-                    {/* Qty — colored +/- */}
+                    {/* Qty — colored +/- with purchase context */}
                     <TableCell className="text-right font-mono text-sm font-medium">
                       <span className={t.quantity >= 0 ? 'text-green-600' : 'text-red-600'}>
                         {t.quantity >= 0 ? '+' : ''}{t.quantity}
                       </span>
+                      {t.transactionType === 'RECEIPT' && (() => {
+                        const pn = parsePurchaseNote(t.notes);
+                        if (pn) return (
+                          <div className="text-[10px] text-gray-400 font-normal">
+                            ({pn.purchaseQty} {pn.purchaseUom})
+                          </div>
+                        );
+                        return null;
+                      })()}
                     </TableCell>
 
-                    {/* Value — total + unit cost hint */}
+                    {/* Value — total + unit cost hint, with purchase context */}
                     <TableCell className="text-right text-sm">
                       {totalCost !== null ? (
                         <>
                           <span className="font-medium">{formatCurrency(totalCost)}</span>
-                          <span className="text-xs text-gray-400 ml-1">@ {formatCurrency(t.unitCost!)}</span>
+                          <span className="text-xs text-gray-400 ml-1">@ {formatCurrency(t.unitCost!)}/{t.item.unitOfMeasure ?? 'EA'}</span>
+                          {t.transactionType === 'RECEIPT' && (() => {
+                            const pn = parsePurchaseNote(t.notes);
+                            if (pn) return (
+                              <div className="text-[10px] text-gray-400">
+                                {formatCurrency(pn.purchaseCostPer)}/{pn.purchaseUom}
+                              </div>
+                            );
+                            return null;
+                          })()}
                         </>
                       ) : (
                         <span className="text-gray-300">—</span>

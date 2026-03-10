@@ -449,8 +449,8 @@ export function ReceiptPage() {
                   <TableHead className="w-10">#</TableHead>
                   <TableHead className="w-48">Part #</TableHead>
                   <TableHead className="w-auto">Description</TableHead>
-                  <TableHead className="w-20">Qty</TableHead>
-                  <TableHead className="w-32">Unit Cost ($)</TableHead>
+                  <TableHead className="w-36">Qty</TableHead>
+                  <TableHead className="w-40">Unit Cost ($)</TableHead>
                   <TableHead className="w-24 text-right">Line Total</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
@@ -507,37 +507,49 @@ export function ReceiptPage() {
                           if (conv) {
                             const pi = purchaseInputs[index] || { purchaseQty: '', purchaseCost: '', manualOverride: false };
                             return (
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-1">
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-1.5">
                                   <Input
                                     type="number"
                                     step="any"
                                     min="0.01"
                                     placeholder="0"
-                                    className="h-9 w-16"
+                                    className="h-9 w-20"
                                     value={pi.purchaseQty}
                                     onChange={(e) => {
                                       const pqty = e.target.value;
-                                      setPurchaseInputs((prev) => ({ ...prev, [index]: { ...pi, purchaseQty: pqty } }));
+                                      const updatedPi = { ...pi, purchaseQty: pqty };
+                                      setPurchaseInputs((prev) => ({ ...prev, [index]: updatedPi }));
                                       if (!pi.manualOverride && pqty) {
                                         const consumptionQty = parseFloat(pqty) * conv.factor;
                                         setValue(`lineItems.${index}.quantity`, consumptionQty);
+                                        // Recalc cost if purchase cost is set
+                                        if (pi.purchaseCost) {
+                                          const cCost = parseFloat(pi.purchaseCost) / (consumptionQty / parseFloat(pqty));
+                                          setValue(`lineItems.${index}.unitCost`, parseFloat((cCost / conv.factor).toFixed(4)));
+                                        }
                                       }
                                     }}
                                   />
                                   <span className="text-xs text-gray-500 whitespace-nowrap">{conv.purchaseUom}</span>
                                 </div>
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1.5">
                                   <span className="text-xs text-gray-400">=</span>
                                   <Input
                                     type="number"
                                     step={wholeUnit ? '1' : 'any'}
                                     min="0.01"
-                                    className="h-7 w-20 text-xs"
+                                    className="h-7 w-24 text-xs"
                                     value={watchedLines[index]?.quantity ?? ''}
                                     onChange={(e) => {
+                                      const newConsQty = parseFloat(e.target.value) || 0;
                                       setPurchaseInputs((prev) => ({ ...prev, [index]: { ...pi, manualOverride: true } }));
-                                      setValue(`lineItems.${index}.quantity`, parseFloat(e.target.value) || 0);
+                                      setValue(`lineItems.${index}.quantity`, newConsQty);
+                                      // Recalc unit cost based on actual consumption qty
+                                      if (pi.purchaseCost && newConsQty > 0 && pi.purchaseQty) {
+                                        const totalPurchaseCost = parseFloat(pi.purchaseCost) * parseFloat(pi.purchaseQty);
+                                        setValue(`lineItems.${index}.unitCost`, parseFloat((totalPurchaseCost / newConsQty).toFixed(4)));
+                                      }
                                     }}
                                   />
                                   <span className="text-xs text-gray-500 whitespace-nowrap">{conv.consumptionUom}</span>
@@ -580,21 +592,29 @@ export function ReceiptPage() {
                           if (conv) {
                             const pi = purchaseInputs[index] || { purchaseQty: '', purchaseCost: '', manualOverride: false };
                             return (
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-1">
+                              <div className="space-y-1.5">
+                                <div className="flex items-center gap-1.5">
                                   <Input
                                     type="number"
                                     step="0.01"
                                     min="0.01"
                                     placeholder="0.00"
-                                    className="h-9 w-24"
+                                    className="h-9 w-28"
                                     value={pi.purchaseCost}
                                     onChange={(e) => {
                                       const pcost = e.target.value;
                                       setPurchaseInputs((prev) => ({ ...prev, [index]: { ...pi, purchaseCost: pcost } }));
-                                      if (pcost && conv.factor) {
-                                        const consumptionCost = parseFloat(pcost) / conv.factor;
-                                        setValue(`lineItems.${index}.unitCost`, parseFloat(consumptionCost.toFixed(4)));
+                                      if (pcost && pi.purchaseQty) {
+                                        const consQty = watchedLines[index]?.quantity;
+                                        if (consQty && Number(consQty) > 0) {
+                                          // Use actual consumption qty (handles manual override)
+                                          const totalPurchaseCost = parseFloat(pcost) * parseFloat(pi.purchaseQty);
+                                          setValue(`lineItems.${index}.unitCost`, parseFloat((totalPurchaseCost / Number(consQty)).toFixed(4)));
+                                        } else {
+                                          // Fallback to factor-based calc
+                                          const consumptionCost = parseFloat(pcost) / conv.factor;
+                                          setValue(`lineItems.${index}.unitCost`, parseFloat(consumptionCost.toFixed(4)));
+                                        }
                                       }
                                     }}
                                     onBlur={(e) => {
@@ -605,6 +625,16 @@ export function ReceiptPage() {
                                     }}
                                   />
                                   <span className="text-xs text-gray-400 whitespace-nowrap">/{conv.purchaseUom}</span>
+                                  {(() => {
+                                    const lp = getLastPaid(index);
+                                    if (lp === null) return null;
+                                    const lpPurchase = lp * conv.factor;
+                                    return (
+                                      <span className="text-xs text-gray-400 whitespace-nowrap" title={`Last paid: ${formatCurrency(lpPurchase)}/${conv.purchaseUom}`}>
+                                        {formatCurrency(lpPurchase)}
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
                                 <div className="text-xs text-gray-400">
                                   = {watchedLines[index]?.unitCost ? `$${Number(watchedLines[index].unitCost).toFixed(4)}/${conv.consumptionUom}` : '--'}
@@ -680,14 +710,16 @@ export function ReceiptPage() {
           </div>
 
           {/* Per-line variance warnings */}
-          {watchedLines.map((_, index) => {
+          {watchedLines.map((li, index) => {
             const variance = getVariance(index);
             if (!variance) return null;
+            const conv = getItemConversion(li?.itemId ?? '');
+            const displayCost = conv ? formatCurrency(variance.lastPaid * conv.factor) + `/${conv.purchaseUom}` : formatCurrency(variance.lastPaid);
             return (
               <Alert key={index} variant="destructive" className="py-2">
                 <AlertTriangle className="h-4 w-4" />
                 <AlertDescription>
-                  Line {index + 1}: Unit cost differs from last paid ({formatCurrency(variance.lastPaid)}) by{' '}
+                  Line {index + 1}: Unit cost differs from last paid ({displayCost}) by{' '}
                   {(variance.delta * 100).toFixed(1)}%. Double-check before saving.
                 </AlertDescription>
               </Alert>
@@ -732,7 +764,10 @@ export function ReceiptPage() {
                         {conv && pi?.purchaseQty
                           ? <span>{pi.purchaseQty} {conv.purchaseUom} <span className="text-gray-400">({li.quantity} {conv.consumptionUom})</span></span>
                           : li.quantity
-                        } x {formatCurrency(li.unitCost)}
+                        } x {conv && pi?.purchaseCost
+                          ? <span>{formatCurrency(parseFloat(pi.purchaseCost))}/{conv.purchaseUom}</span>
+                          : formatCurrency(li.unitCost)
+                        }
                       </span>
                     </div>
                   );

@@ -275,10 +275,17 @@ export function ItemsPage() {
                   <TableCell className="text-right text-sm">{item.minQuantity ?? '—'}</TableCell>
                   <TableCell className="text-right text-sm">{item.maxQuantity ?? '—'}</TableCell>
                   <TableCell className="text-right text-sm">
-                    {item.standardCost != null ? `$${item.standardCost.toFixed(2)}` : '—'}
+                    {item.standardCost != null ? `$${item.standardCost.toFixed(2)}/${item.unitOfMeasure}` : '—'}
                   </TableCell>
                   <TableCell className="text-right text-sm">
-                    {item.lastPurchaseCost != null ? `$${item.lastPurchaseCost.toFixed(2)}` : '—'}
+                    {item.lastPurchaseCost != null ? (
+                      <span>
+                        ${item.lastPurchaseCost.toFixed(2)}/{item.unitOfMeasure}
+                        {item.purchaseUom && item.conversionFactor && (
+                          <span className="text-xs text-muted-foreground block">${(item.lastPurchaseCost * item.conversionFactor).toFixed(2)}/{item.purchaseUom}</span>
+                        )}
+                      </span>
+                    ) : '—'}
                   </TableCell>
                   <TableCell className="text-sm text-gray-500">
                     {item.defaultVendor ? item.defaultVendor.vendorCode : '—'}
@@ -383,11 +390,33 @@ export function ItemsPage() {
                 </div>
                 <div>
                   <p className="text-gray-500">Standard Cost</p>
-                  <p className="font-medium">{detailItem.standardCost != null ? `$${detailItem.standardCost.toFixed(2)}` : '—'}</p>
+                  <p className="font-medium">
+                    {detailItem.standardCost != null ? (
+                      <>
+                        ${detailItem.standardCost.toFixed(4)}/{detailItem.unitOfMeasure}
+                        {detailItem.purchaseUom && detailItem.conversionFactor && (
+                          <span className="text-sm text-muted-foreground ml-1">
+                            (${(detailItem.standardCost * detailItem.conversionFactor).toFixed(2)}/{detailItem.purchaseUom})
+                          </span>
+                        )}
+                      </>
+                    ) : '—'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-gray-500">Last Purchase Cost</p>
-                  <p className="font-medium">{detailItem.lastPurchaseCost != null ? `$${detailItem.lastPurchaseCost.toFixed(2)}` : '—'}</p>
+                  <p className="font-medium">
+                    {detailItem.lastPurchaseCost != null ? (
+                      <>
+                        ${detailItem.lastPurchaseCost.toFixed(4)}/{detailItem.unitOfMeasure}
+                        {detailItem.purchaseUom && detailItem.conversionFactor && (
+                          <span className="text-sm text-muted-foreground ml-1">
+                            (${(detailItem.lastPurchaseCost * detailItem.conversionFactor).toFixed(2)}/{detailItem.purchaseUom})
+                          </span>
+                        )}
+                      </>
+                    ) : '—'}
+                  </p>
                 </div>
               </div>
 

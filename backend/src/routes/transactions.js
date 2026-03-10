@@ -150,11 +150,18 @@ router.post(
           quantity: { equals: quantity },
           createdAt: { gte: oneDayAgo },
         },
-        include: { item: { select: { itemCode: true } } },
+        include: { item: { select: { itemCode: true, purchaseUom: true, conversionFactor: true } } },
       });
       if (duplicate) {
+        const dItem = duplicate.item;
+        const dQty = Number(duplicate.quantity);
+        let qtyLabel = `qty ${dQty}`;
+        if (dItem.purchaseUom && dItem.conversionFactor && dItem.conversionFactor !== 1) {
+          const pQty = Math.round((dQty / dItem.conversionFactor) * 10000) / 10000;
+          qtyLabel = `qty ${pQty} ${dItem.purchaseUom} / ${dQty} consumed`;
+        }
         return res.status(409).json({
-          error: `Possible duplicate: a receipt for ${duplicate.item.itemCode} (qty ${Number(duplicate.quantity)}) from the same vendor was created recently. Submit again with skipDuplicateCheck to proceed.`,
+          error: `Possible duplicate: a receipt for ${dItem.itemCode} (${qtyLabel}) from the same vendor was created recently. Submit again with skipDuplicateCheck to proceed.`,
           isDuplicate: true,
         });
       }
@@ -1068,7 +1075,7 @@ router.get(
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          item: { select: { id: true, itemCode: true, description: true } },
+          item: { select: { id: true, itemCode: true, description: true, unitOfMeasure: true, purchaseUom: true, conversionFactor: true } },
           vendor: { select: { vendorName: true } },
           user: { select: { fullName: true } },
           productionOrder: { select: { id: true, orderNumber: true } },

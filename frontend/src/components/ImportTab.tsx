@@ -18,6 +18,7 @@ type ImportState = {
   file: File | null;
   rows: Record<string, string>[];
   errors: PreviewError[];
+  warnings: PreviewError[];
   isPreviewing: boolean;
   isCommitting: boolean;
   commitResult: { inserted: number } | null;
@@ -28,6 +29,7 @@ const EMPTY_STATE: ImportState = {
   file: null,
   rows: [],
   errors: [],
+  warnings: [],
   isPreviewing: false,
   isCommitting: false,
   commitResult: null,
@@ -97,6 +99,7 @@ export function ImportTab({
         isPreviewing: false,
         rows: data.rows,
         errors: data.errors,
+        warnings: data.warnings ?? [],
         commitResult: null,
       }));
     } catch {
@@ -108,7 +111,7 @@ export function ImportTab({
     setState((s) => ({ ...s, isCommitting: true, errorMessage: null }));
     try {
       const data = await api.post<{ inserted: number }>(commitEndpoint, { rows: state.rows });
-      setState((s) => ({ ...s, isCommitting: false, commitResult: data, rows: [], errors: [], file: null }));
+      setState((s) => ({ ...s, isCommitting: false, commitResult: data, rows: [], errors: [], warnings: [], file: null }));
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Import failed.';
@@ -182,6 +185,20 @@ export function ImportTab({
             <ul className="list-disc list-inside space-y-0.5 text-xs">
               {state.errors.map((e, i) => (
                 <li key={i}>Row {e.rowNumber}: {e.field} — {e.message}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Warnings (non-blocking) */}
+      {state.warnings.length > 0 && (
+        <Alert>
+          <AlertDescription>
+            <p className="font-medium mb-1 text-amber-700">{state.warnings.length} warning(s) — review before importing:</p>
+            <ul className="list-disc list-inside space-y-0.5 text-xs text-amber-600">
+              {state.warnings.map((w, i) => (
+                <li key={i}>Row {w.rowNumber}: {w.field} — {w.message}</li>
               ))}
             </ul>
           </AlertDescription>

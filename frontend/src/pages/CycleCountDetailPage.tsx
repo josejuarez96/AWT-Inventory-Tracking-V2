@@ -4,7 +4,7 @@ import { api, ApiError } from '@/lib/api';
 import { useFormDirty } from '@/context/FormDirtyContext';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { allowsDecimals } from '@/lib/uom';
-import { AdminAuthDialog } from '@/components/AdminAuthDialog';
+import { AdminAuthDialog } from '@/components/shared/AdminAuthDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

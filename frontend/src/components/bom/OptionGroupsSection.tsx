@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ChevronDown, ChevronRight, MoreHorizontal, Plus, X } from 'lucide-react';
-import { PackageEditorDialog } from '@/components/PackageEditorDialog';
+import { PackageEditorDialog } from '@/components/bom/PackageEditorDialog';
 
 // ---------- types ----------
 

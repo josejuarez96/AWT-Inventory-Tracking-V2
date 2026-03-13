@@ -64,8 +64,12 @@ testsprite_tests/tmp/
 .claude/
 
 # Personal reference materials
-Testing Notes/
-UI Design Inspo/
+docs/testing/
+docs/design-reference/
+docs/archive/
+
+# Sample/sandbox data
+sandbox_data/
 
 # Root-level test scripts (kept locally, not in repo)
 /manual-test.js

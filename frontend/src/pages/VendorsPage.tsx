@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, Pencil, Plus, Search, CheckCircle, X } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { AdminAuthDialog } from '@/components/AdminAuthDialog';
+import { AdminAuthDialog } from '@/components/shared/AdminAuthDialog';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 type Vendor = {

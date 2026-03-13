@@ -27,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, Plus, Search, CheckCircle, X } from 'lucide-react';
-import { ItemFormDialog } from '@/components/ItemFormDialog';
+import { ItemFormDialog } from '@/components/shared/ItemFormDialog';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
 

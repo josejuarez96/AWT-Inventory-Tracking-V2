@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Combobox } from '@/components/ui/combobox';
-import CutPieceEditor from '@/components/CutPieceEditor';
+import CutPieceEditor from '@/components/bom/CutPieceEditor';
 import { ChevronDown, ChevronRight, Plus, X } from 'lucide-react';
 import { CATEGORY_PRESETS } from '@/lib/categoryPresets';
 

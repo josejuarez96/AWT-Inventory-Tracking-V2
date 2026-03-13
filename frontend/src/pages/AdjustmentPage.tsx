@@ -8,7 +8,7 @@ import { allowsDecimals } from '@/lib/uom';
 import { todayLocalStr } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useFormDirty } from '@/context/FormDirtyContext';
-import { AdminAuthDialog } from '@/components/AdminAuthDialog';
+import { AdminAuthDialog } from '@/components/shared/AdminAuthDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

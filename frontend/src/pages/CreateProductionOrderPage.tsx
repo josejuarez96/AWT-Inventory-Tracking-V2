@@ -29,9 +29,9 @@ import {
   OptionSelectorSidebar,
   type OptionGroup,
   type Selection,
-} from '@/components/OptionSelectorSidebar';
+} from '@/components/bom/OptionSelectorSidebar';
 import { formatCutDescription, formatConsumption, formatEffectiveQtyTooltip } from '@/lib/cutDisplay';
-import { RepeatOrderDialog, type RepeatOrderConfig } from '@/components/RepeatOrderDialog';
+import { RepeatOrderDialog, type RepeatOrderConfig } from '@/components/shared/RepeatOrderDialog';
 
 const schema = z.object({
   bomId: z.string().optional(),

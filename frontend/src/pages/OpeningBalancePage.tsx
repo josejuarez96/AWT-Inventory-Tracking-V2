@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { CheckCircle } from 'lucide-react';
-import { ImportTab } from '@/components/ImportTab';
+import { ImportTab } from '@/components/shared/ImportTab';
 
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; allowDecimalQty?: boolean };
 

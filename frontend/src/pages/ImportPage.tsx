@@ -1,5 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ImportTab } from '@/components/ImportTab';
+import { ImportTab } from '@/components/shared/ImportTab';
 
 export function ImportPage() {
   return (

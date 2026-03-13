@@ -40,8 +40,8 @@ import {
 } from '@/components/ui/select';
 import { AlertTriangle, ChevronDown, ChevronRight, MoreHorizontal, Plus, Search, X } from 'lucide-react';
 import { Combobox } from '@/components/ui/combobox';
-import { OptionGroupsSection } from '@/components/OptionGroupsSection';
-import CutPieceEditor from '@/components/CutPieceEditor';
+import { OptionGroupsSection } from '@/components/bom/OptionGroupsSection';
+import CutPieceEditor from '@/components/bom/CutPieceEditor';
 import { CATEGORY_PRESETS } from '@/lib/categoryPresets';
 
 type Item = { id: number; itemCode: string; description: string; unitOfMeasure: string; category?: string | null; itemType?: string; allowDecimalQty?: boolean; stockLength?: number | null; purchaseUom?: string | null; conversionFactor?: number | null };

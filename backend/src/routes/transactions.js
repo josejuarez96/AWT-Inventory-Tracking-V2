@@ -1,7 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
 const multer = require('multer');
-const bcrypt = require('bcrypt');
 const { parse } = require('csv-parse/sync');
 const { body, query, validationResult } = require('express-validator');
 const prisma = require('../lib/prisma');
@@ -9,27 +8,7 @@ const { authenticate, requireAdmin } = require('../middleware/auth');
 const { LOCATIONS } = require('../lib/locations');
 const { getReservedQuantitiesMap, getReservedQty } = require('../lib/reservations');
 const { allowsDecimals } = require('../lib/uom');
-
-async function verifyAdminCredentials(authHeader) {
-  try {
-    if (!authHeader || !authHeader.startsWith('Basic ')) return false;
-    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
-    const colonIdx = decoded.indexOf(':');
-    if (colonIdx < 1) return false;
-    const username = decoded.slice(0, colonIdx);
-    const password = decoded.slice(colonIdx + 1);
-    if (!username || !password) return false;
-
-    const adminUser = await prisma.user.findUnique({
-      where: { username: username.toLowerCase() },
-    });
-    if (!adminUser || !adminUser.isActive || adminUser.role !== 'admin') return false;
-
-    return bcrypt.compare(password, adminUser.passwordHash);
-  } catch {
-    return false;
-  }
-}
+const { verifyAdminCredentials } = require('../lib/adminAuth');
 
 // Adjustment threshold — requires admin approval if exceeded
 const ADJ_THRESHOLD_PCT = 0.10; // 10% of current stock
@@ -656,28 +635,11 @@ router.post(
       });
     }
 
-    // Block negative adjustments that would make available stock go below zero
-    if (quantity < 0) {
-      const stockResult = await prisma.transaction.aggregate({
-        where: { itemId, location },
-        _sum: { quantity: true },
-      });
-      const currentStock = Number(stockResult._sum.quantity ?? 0);
-      const reserved = await getReservedQty(itemId, location);
-      const available = currentStock - reserved;
-      if (available + quantity < 0) {
-        return res.status(400).json({
-          error: `Adjustment would result in negative available stock. On hand: ${currentStock}, Reserved: ${reserved}, Available: ${available}, Adjustment: ${quantity}`,
-        });
-      }
-    }
-
     const formattedNotes = notes ? `[${reason}] ${notes}` : `[${reason}]`;
 
-    // Non-admin threshold check: large adjustments require admin authorization
+    // Non-admin threshold check (runs outside transaction since it may return early)
     if (req.user.role !== 'admin') {
       const absQty = Math.abs(quantity);
-      // Get available stock for percentage check (on hand - reserved)
       const stockAgg = await prisma.transaction.aggregate({
         where: { itemId, location },
         _sum: { quantity: true },
@@ -686,7 +648,6 @@ router.post(
       const reservedForThreshold = await getReservedQty(itemId, location);
       const currentStock = onHand - reservedForThreshold;
 
-      // Get avg cost for value impact check
       const costRow = await prisma.$queryRaw`
         SELECT SUM(quantity * unit_cost) / NULLIF(SUM(quantity), 0) AS "avgCost"
         FROM transactions
@@ -727,28 +688,52 @@ router.post(
       }
     }
 
-    const created = await prisma.transaction.create({
-      data: {
-        transactionType: 'ADJUSTMENT',
-        itemId,
-        location,
-        quantity,
-        transactionDate: transactionDate ? parseDateLocal(transactionDate) : new Date(),
-        notes: formattedNotes,
-        createdBy: req.user.id,
-      },
-      include: {
-        item: { select: { id: true, itemCode: true, description: true } },
-        user: { select: { fullName: true } },
-      },
-    });
+    // Stock check + write in a serializable transaction to prevent race conditions
+    try {
+      const created = await prisma.$transaction(async (tx) => {
+        // Block negative adjustments that would make available stock go below zero
+        if (quantity < 0) {
+          const stockResult = await tx.transaction.aggregate({
+            where: { itemId, location },
+            _sum: { quantity: true },
+          });
+          const currentStock = Number(stockResult._sum.quantity ?? 0);
+          const reserved = await getReservedQty(itemId, location, tx);
+          const available = currentStock - reserved;
+          if (available + quantity < 0) {
+            throw new Error(`Adjustment would result in negative available stock. On hand: ${currentStock}, Reserved: ${reserved}, Available: ${available}, Adjustment: ${quantity}`);
+          }
+        }
 
-    return res.status(201).json({
-      transaction: {
-        ...created,
-        quantity: Number(created.quantity),
-      },
-    });
+        return tx.transaction.create({
+          data: {
+            transactionType: 'ADJUSTMENT',
+            itemId,
+            location,
+            quantity,
+            transactionDate: transactionDate ? parseDateLocal(transactionDate) : new Date(),
+            notes: formattedNotes,
+            createdBy: req.user.id,
+          },
+          include: {
+            item: { select: { id: true, itemCode: true, description: true } },
+            user: { select: { fullName: true } },
+          },
+        });
+      }, { isolationLevel: 'Serializable' });
+
+      return res.status(201).json({
+        transaction: {
+          ...created,
+          quantity: Number(created.quantity),
+        },
+      });
+    } catch (err) {
+      if (err.message.startsWith('Adjustment would result in negative')) {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
   }
 );
 

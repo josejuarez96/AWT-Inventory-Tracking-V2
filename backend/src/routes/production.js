@@ -1,37 +1,16 @@
 const express = require('express');
 const crypto = require('crypto');
 const { body, query, validationResult } = require('express-validator');
-const bcrypt = require('bcrypt');
 const prisma = require('../lib/prisma');
 const { authenticate } = require('../middleware/auth');
 const { LOCATIONS } = require('../lib/locations');
 const { getReservedQuantitiesMap } = require('../lib/reservations');
 const { allowsDecimals } = require('../lib/uom');
+const { verifyAdminCredentials } = require('../lib/adminAuth');
 
 const router = express.Router();
 router.use(authenticate);
 const PO_UNIT_THRESHOLD = 25; // Orders above this require admin auth
-
-async function verifyAdminCredentials(authHeader) {
-  try {
-    if (!authHeader || !authHeader.startsWith('Basic ')) return false;
-    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
-    const colonIdx = decoded.indexOf(':');
-    if (colonIdx < 1) return false;
-    const username = decoded.slice(0, colonIdx);
-    const password = decoded.slice(colonIdx + 1);
-    if (!username || !password) return false;
-
-    const adminUser = await prisma.user.findUnique({
-      where: { username: username.toLowerCase() },
-    });
-    if (!adminUser || !adminUser.isActive || adminUser.role !== 'admin') return false;
-
-    return bcrypt.compare(password, adminUser.passwordHash);
-  } catch {
-    return false;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // POST /api/production/kit — Execute a kitting/production order

@@ -1,10 +1,10 @@
 const express = require('express');
 const { body, query, validationResult } = require('express-validator');
-const bcrypt = require('bcrypt');
 const prisma = require('../lib/prisma');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const { LOCATIONS } = require('../lib/locations');
 const { allowsDecimals } = require('../lib/uom');
+const { verifyAdminCredentials } = require('../lib/adminAuth');
 
 const router = express.Router();
 router.use(authenticate);
@@ -12,27 +12,6 @@ router.use(authenticate);
 // Variance thresholds — a line is "large" if it exceeds either
 const VARIANCE_THRESHOLD_PCT = 0.10; // 10%
 const VARIANCE_THRESHOLD_VALUE = 500; // $500
-
-async function verifyAdminCredentials(authHeader) {
-  try {
-    if (!authHeader || !authHeader.startsWith('Basic ')) return false;
-    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
-    const colonIdx = decoded.indexOf(':');
-    if (colonIdx < 1) return false;
-    const username = decoded.slice(0, colonIdx);
-    const password = decoded.slice(colonIdx + 1);
-    if (!username || !password) return false;
-
-    const adminUser = await prisma.user.findUnique({
-      where: { username: username.toLowerCase() },
-    });
-    if (!adminUser || !adminUser.isActive || adminUser.role !== 'admin') return false;
-
-    return bcrypt.compare(password, adminUser.passwordHash);
-  } catch {
-    return false;
-  }
-}
 
 function isLargeVariance(systemQty, variance, varianceValue) {
   const sysNum = Number(systemQty);
@@ -330,13 +309,7 @@ router.get('/variance-history', requireAdmin, async (req, res) => {
     prisma.cycleCountLine.count({ where }),
   ]);
 
-  // Compute totals across ALL matching lines (not just the page)
-  const totalsResult = await prisma.cycleCountLine.aggregate({
-    where,
-    _sum: { varianceValue: true },
-  });
-
-  // Separate positive/negative totals with raw approach
+  // Compute positive/negative variance totals across ALL matching lines (not just the page)
   const allVarianceLines = await prisma.cycleCountLine.findMany({
     where,
     select: { varianceValue: true },

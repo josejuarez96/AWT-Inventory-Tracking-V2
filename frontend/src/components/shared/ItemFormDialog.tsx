@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { AdminAuthDialog } from '@/components/AdminAuthDialog';
+import { AdminAuthDialog } from '@/components/shared/AdminAuthDialog';
 import { CATEGORIES } from '@/lib/categories';
 import { ALL_UOMS, allowsDecimals } from '@/lib/uom';
 

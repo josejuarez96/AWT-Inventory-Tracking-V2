@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { useAuthContext } from '@/context/AuthContext';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -6,6 +6,14 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -28,6 +36,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal, Plus, Search, CheckCircle, X } from 'lucide-react';
 import { ItemFormDialog } from '@/components/shared/ItemFormDialog';
+import { CATEGORIES } from '@/lib/categories';
 
 type Vendor = { id: number; vendorCode: string; vendorName: string };
 
@@ -69,6 +78,10 @@ export function ItemsPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [filterCategory, setFilterCategory] = useState('ALL');
+  const [filterType, setFilterType] = useState('ALL');
+  const [filterStatus, setFilterStatus] = useState('ACTIVE');
+  const [filterVendor, setFilterVendor] = useState('ALL');
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
 
@@ -157,13 +170,51 @@ export function ItemsPage() {
     }
   }
 
+  // Derive unique vendors from loaded items for the vendor filter dropdown
+  const vendorOptions = useMemo(() => {
+    const map = new Map<number, { id: number; code: string; name: string }>();
+    for (const item of items) {
+      if (item.defaultVendor) {
+        map.set(item.defaultVendor.id, {
+          id: item.defaultVendor.id,
+          code: item.defaultVendor.vendorCode,
+          name: item.defaultVendor.vendorName,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
+  }, [items]);
+
+  const hasActiveFilters = search !== '' || filterCategory !== 'ALL' || filterType !== 'ALL' || filterStatus !== 'ACTIVE' || filterVendor !== 'ALL';
+
+  function clearAllFilters() {
+    setSearch('');
+    setFilterCategory('ALL');
+    setFilterType('ALL');
+    setFilterStatus('ACTIVE');
+    setFilterVendor('ALL');
+  }
+
   const filtered = items.filter((item) => {
-    const q = search.toLowerCase();
-    return (
-      item.itemCode.toLowerCase().includes(q) ||
-      item.description.toLowerCase().includes(q) ||
-      (item.category ?? '').toLowerCase().includes(q)
-    );
+    // Text search
+    if (search) {
+      const q = search.toLowerCase();
+      if (
+        !item.itemCode.toLowerCase().includes(q) &&
+        !item.description.toLowerCase().includes(q) &&
+        !(item.category ?? '').toLowerCase().includes(q)
+      ) return false;
+    }
+    // Category
+    if (filterCategory !== 'ALL' && (item.category ?? '') !== filterCategory) return false;
+    // Type
+    if (filterType !== 'ALL' && (item.itemType ?? 'RAW') !== filterType) return false;
+    // Status
+    if (filterStatus === 'ACTIVE' && item.isActive === false) return false;
+    if (filterStatus === 'INACTIVE' && item.isActive !== false) return false;
+    // Vendor
+    if (filterVendor !== 'ALL' && String(item.defaultVendorId ?? '') !== filterVendor) return false;
+    return true;
   });
 
   return (
@@ -181,27 +232,88 @@ export function ItemsPage() {
         )}
       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-2">
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input
-            placeholder="Search by code, description, or category..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+      {/* Filters */}
+      <div className="flex flex-wrap gap-4 items-end">
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Search</Label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Code, description, category..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 w-56"
+            />
+          </div>
         </div>
-        {search && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-gray-500 hover:text-gray-700"
-            onClick={() => setSearch('')}
-          >
-            <X className="h-3 w-3 mr-1" />
-            Clear
-          </Button>
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Category</Label>
+          <Select value={filterCategory} onValueChange={setFilterCategory}>
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Categories</SelectItem>
+              {CATEGORIES.map((cat) => (
+                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Type</Label>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Types</SelectItem>
+              <SelectItem value="RAW">Raw</SelectItem>
+              <SelectItem value="FINISHED">Finished</SelectItem>
+              <SelectItem value="OTHER">Other</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Status</Label>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ACTIVE">Active</SelectItem>
+              <SelectItem value="INACTIVE">Inactive</SelectItem>
+              <SelectItem value="ALL">All</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-gray-500">Vendor</Label>
+          <Select value={filterVendor} onValueChange={setFilterVendor}>
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Vendors</SelectItem>
+              {vendorOptions.map((v) => (
+                <SelectItem key={v.id} value={String(v.id)}>{v.code} — {v.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {hasActiveFilters && (
+          <div className="space-y-1">
+            <Label className="text-xs text-gray-500">&nbsp;</Label>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-gray-500 hover:text-gray-700"
+              onClick={clearAllFilters}
+            >
+              <X className="h-3 w-3 mr-1" />
+              Clear Filters
+            </Button>
+          </div>
         )}
       </div>
 
@@ -234,7 +346,7 @@ export function ItemsPage() {
         <p className="text-sm text-gray-500">Loading items...</p>
       ) : filtered.length === 0 ? (
         <p className="text-sm text-gray-500">
-          {search ? 'No items match your search.' : 'No items found. Add one to get started.'}
+          {hasActiveFilters ? 'No items match your filters.' : 'No items found. Add one to get started.'}
         </p>
       ) : (
         <div className="rounded-md border">
@@ -331,8 +443,8 @@ export function ItemsPage() {
 
       {!isLoading && (
         <p className="text-xs text-gray-400">
-          {filtered.length} item{filtered.length !== 1 ? 's' : ''}
-          {search && ` matching "${search}"`}
+          Showing {filtered.length} of {items.length} item{items.length !== 1 ? 's' : ''}
+          {hasActiveFilters && ' (filtered)'}
         </p>
       )}
 

@@ -325,7 +325,7 @@ export function PackageEditorDialog({ bomId, pkg, items, onClose, onSaved }: Pro
   return (
     <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent
-        className="sm:max-w-4xl max-h-[85vh] overflow-y-auto"
+        className="sm:max-w-[90vw] max-h-[85vh] overflow-y-auto"
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => { e.preventDefault(); handleClose(); }}
       >
@@ -412,7 +412,7 @@ export function PackageEditorDialog({ bomId, pkg, items, onClose, onSaved }: Pro
             {/* Staging row */}
             <div className="rounded-md border bg-gray-50/50 p-2">
               <div className="flex items-end gap-2">
-                <div className="w-20">
+                <div className="w-24">
                   <Label className="text-xs text-muted-foreground mb-1 block">Action</Label>
                   <Select value={stagingLine.action} onValueChange={(v) => setStagingLine((s) => ({ ...s, action: v }))}>
                     <SelectTrigger className="h-8 text-xs">
@@ -509,12 +509,12 @@ export function PackageEditorDialog({ bomId, pkg, items, onClose, onSaved }: Pro
                         <TableHeader>
                           <TableRow className="bg-gray-50/50">
                             <TableHead className="w-10">#</TableHead>
-                            <TableHead className="w-20">Action</TableHead>
-                            <TableHead className="w-48">Part #</TableHead>
-                            <TableHead className="w-[45%]">Description</TableHead>
-                            <TableHead className="w-20">Qty</TableHead>
+                            <TableHead className="w-24">Action</TableHead>
+                            <TableHead className="w-44">Part #</TableHead>
+                            <TableHead className="w-[42%]">Description</TableHead>
+                            <TableHead className="w-[72px]">Qty</TableHead>
                             <TableHead className="w-28">Notes</TableHead>
-                            <TableHead className="w-8" />
+                            <TableHead className="w-10" />
                           </TableRow>
                         </TableHeader>
                         <TableBody>
